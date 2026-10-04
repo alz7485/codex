@@ -1,5 +1,6 @@
 import copy
 import sys
+from shiboken6 import isValid
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QRectF, Signal
@@ -122,6 +123,7 @@ class Window(QMainWindow):
         self.active_pages = {}
         self.dirty, self.loading = False, False
         self.variable_error = False
+        self._closing = False
         self.resize(1380, 880)
         self.setWindowTitle('E3D PML Form Designer — E3D 4.0 想定')
         toolbar = self.addToolBar('ファイル')
@@ -144,7 +146,7 @@ class Window(QMainWindow):
         self.objects = QListWidget(); self.objects.currentRowChanged.connect(self.choose_row); ll.addWidget(self.objects)
         left.setMinimumWidth(180); columns.addWidget(left)
         middle = QSplitter(Qt.Vertical)
-        self.scene = Scene(); self.scene.selectionChanged.connect(self.selection_changed)
+        self.scene = Scene(self); self.scene.selectionChanged.connect(self.selection_changed)
         self.view = QGraphicsView(self.scene)
         self.view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         middle.addWidget(self.view)
@@ -214,7 +216,7 @@ class Window(QMainWindow):
 
     @staticmethod
     def connect_field(w, fn):
-        if isinstance(w, QLineEdit): w.editingFinished.connect(fn)
+        if isinstance(w, QLineEdit): w.textEdited.connect(fn)
         elif isinstance(w, QComboBox): w.currentTextChanged.connect(fn)
         else: w.valueChanged.connect(fn)
 
@@ -305,13 +307,16 @@ class Window(QMainWindow):
         if old_name != g.name:
             for child in self.form.gadgets:
                 if child.parent.lower() == old_name.lower(): child.parent = g.name
-        g.items = self.choices.toPlainText().splitlines(); g.body = self.body.toPlainText()
+        choices = self.choices.toPlainText()
+        g.items = choices.split('\n') if choices else []; g.body = self.body.toPlainText()
         if g.kind == 'option':
             commands = self.choice_commands.toPlainText().split('\n')
-            g.item_commands = commands[:len(g.items)] + [''] * max(0, len(g.items) - len(commands))
+            g.item_commands = (commands if self.choice_commands.toPlainText() else [])
+            if len(g.item_commands) < len(g.items): g.item_commands += [''] * (len(g.items) - len(g.item_commands))
         self.refresh(rebuild=False)
 
     def refresh(self, rebuild=True):
+        if self._closing or not isValid(self) or not isValid(self.scene): return
         self.loading = True
         variable_text = '\n'.join(f'{k}={v}' for k,v in self.form.variables.items())
         if not self.variable_error and self.variables.toPlainText() != variable_text:
@@ -343,8 +348,8 @@ class Window(QMainWindow):
                 elif isinstance(w, QComboBox): w.setCurrentText(value)
                 else: w.setText(value)
             # Do not reset typing cursor in multi-line editors on every keystroke.
-            if self.choices.toPlainText() != '\n'.join(g.items): self.choices.setPlainText('\n'.join(g.items))
-            if self.choice_commands.toPlainText() != '\n'.join(g.item_commands): self.choice_commands.setPlainText('\n'.join(g.item_commands))
+            if rebuild and self.choices.toPlainText() != '\n'.join(g.items): self.choices.setPlainText('\n'.join(g.items))
+            if rebuild and self.choice_commands.toPlainText() != '\n'.join(g.item_commands): self.choice_commands.setPlainText('\n'.join(g.item_commands))
             self.choice_commands.setEnabled(g.kind == 'option')
             if self.body.toPlainText() != g.body: self.body.setPlainText(g.body)
             self.props.setEnabled(True)
@@ -365,7 +370,7 @@ class Window(QMainWindow):
             self.selected = index if index >= 0 else None; self.refresh()
 
     def selection_changed(self):
-        if self.loading: return
+        if self._closing or not isValid(self) or not isValid(self.scene) or self.loading: return
         items = self.scene.selectedItems()
         self.selected = items[0].data(0) if items else None
         # Defer rebuilding the scene until mouse event delivery completes.
@@ -373,6 +378,7 @@ class Window(QMainWindow):
         QTimer.singleShot(0, self.sync_selection)
 
     def sync_selection(self):
+        if self._closing or not isValid(self) or not isValid(self.scene): return
         # Property loading only: keep the grabbed graphics item alive while dragging.
         self.loading = True
         if self.selected is not None:
@@ -504,6 +510,7 @@ class Window(QMainWindow):
 
     def closeEvent(self, event):
         if self.confirm_discard():
+            self._closing = True
             self.scene.blockSignals(True)
             event.accept()
         else: event.ignore()

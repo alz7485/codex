@@ -1,9 +1,12 @@
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import tempfile
+import json
+import sys
+from unittest.mock import patch
 import unittest
 from pathlib import Path
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QPoint, QEvent, QCoreApplication, QTimer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from e3d_designer.model import Form, Gadget, literal
@@ -11,6 +14,13 @@ from e3d_designer.app import Window, atomic_write, SX, SY
 
 
 class ModelTests(unittest.TestCase):
+    def test_malformed_project_field_types_are_rejected(self):
+        base=json.loads(Form(gadgets=[Gadget(callback='run')]).dumps())
+        for key,value in [('body',123),('parent',123),('label',None),('items','ABC'),('item_commands',[123]),('width','10')]:
+            with self.subTest(key=key):
+                raw=json.loads(json.dumps(base));raw['form']['gadgets'][0][key]=value
+                with self.assertRaises(ValueError): Form.loads(json.dumps(raw))
+
     def test_full_form_roundtrip_and_export(self):
         f = Form(gadgets=[Gadget(kind=k, name=k+'1', y=i*2, height=1,
                 items=['A','B'] if k in ('option','list') else [],
@@ -172,6 +182,50 @@ class GuiTests(unittest.TestCase):
     def setUpClass(cls): cls.app=QApplication.instance() or QApplication([])
     def setUp(self): self.w=Window(); self.w.show(); self.app.processEvents()
     def tearDown(self): self.w.dirty=False; self.w.close(); self.app.processEvents()
+
+    def test_ctrl_s_saves_current_line_edit_without_focus_change(self):
+        self.w.add('button')
+        with tempfile.TemporaryDirectory() as d:
+            self.w.path=Path(d)/'design.json'
+            for editor,value in [(self.w.fields['label'],'Changed'),(self.w.fname,'changedform')]:
+                editor.setFocus();self.app.processEvents();editor.selectAll();QTest.keyClicks(editor,value)
+                QTest.keyClick(editor,Qt.Key_S,Qt.ControlModifier);self.app.processEvents()
+            loaded=Form.loads(self.w.path.read_text())
+            self.assertEqual(loaded.gadgets[0].label,'Changed')
+            self.assertEqual(loaded.name,'changedform')
+            self.assertEqual(self.w.fields['label'].text(),'Changed')
+
+    def test_option_newline_typing_preserves_text_and_cursor(self):
+        self.w.add('option')
+        self.w.choice_commands.setPlainText('FIRST\nSECOND')
+        for editor in (self.w.choices,self.w.choice_commands):
+            editor.setFocus();self.app.processEvents()
+            editor.moveCursor(editor.textCursor().MoveOperation.End)
+            QTest.keyClick(editor,Qt.Key_Return);QTest.keyClicks(editor,'Third')
+            self.assertTrue(editor.toPlainText().endswith('\nThird'))
+            self.assertEqual(editor.textCursor().position(),len(editor.toPlainText()))
+        self.assertEqual(self.w.form.gadgets[0].items,['Item A','Item B','Third'])
+        self.assertEqual(self.w.form.gadgets[0].item_commands,['FIRST','SECOND','Third'])
+        self.assertIn("'Third' 'Third'",self.w.form.pml())
+
+    def test_extra_option_commands_are_not_silently_deleted(self):
+        self.w.add('option')
+        self.w.choice_commands.setPlainText('FIRST\nSECOND\nTHIRD')
+        self.assertEqual(self.w.choice_commands.toPlainText(),'FIRST\nSECOND\nTHIRD')
+        self.assertEqual(self.w.form.gadgets[0].item_commands,['FIRST','SECOND','THIRD'])
+        with self.assertRaises(ValueError): self.w.form.pml()
+        self.w.choices.setPlainText('A\nB\nC')
+        self.assertIn("'C' 'THIRD'",self.w.form.pml())
+
+    def test_close_with_selected_item_and_queued_callback_has_no_exception(self):
+        errors=[]
+        with patch.object(sys,'excepthook',lambda *args: errors.append(args)):
+            w=Window();w.show();w.add('button');w.selection_changed()
+            QTimer.singleShot(0,w.refresh)
+            w.dirty=False;w.close();w.deleteLater()
+            QCoreApplication.sendPostedEvents(None,QEvent.DeferredDelete)
+            self.app.processEvents()
+        self.assertEqual(errors,[])
 
     def test_palette_properties_history_and_save(self):
         self.w.add('text')

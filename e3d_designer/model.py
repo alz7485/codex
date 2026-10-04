@@ -78,6 +78,23 @@ class Form:
 
     def validate(self):
         names, callbacks = set(), {}
+        for key in ('name', 'title', 'after_show_code', 'default_body'):
+            if not isinstance(getattr(self, key), str): raise ValueError(f'{key} は文字列で指定してください。')
+        if not isinstance(self.variables, dict) or any(not isinstance(k,str) or not isinstance(v,str) for k,v in self.variables.items()):
+            raise ValueError('変数は名前と初期値の文字列を指定してください。')
+        if not isinstance(self.gadgets, list) or any(not isinstance(g,Gadget) for g in self.gadgets):
+            raise ValueError('部品は配列で指定してください。')
+        for g in self.gadgets:
+            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body'):
+                if not isinstance(getattr(g,key),str): raise ValueError(f'部品の {key} は文字列で指定してください。')
+            for key in ('items','item_commands'):
+                value = getattr(g,key)
+                if not isinstance(value,list) or any(not isinstance(item,str) for item in value):
+                    raise ValueError(f'{key} は文字列の配列で指定してください。')
+            for key in ('x','y','width','height'):
+                value = getattr(g,key)
+                if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value):
+                    raise ValueError('座標とサイズには有限数を指定してください。')
         if not IDENTIFIER.fullmatch(self.name):
             raise ValueError('フォーム名は英字で始まる英数字・_ にしてください。')
         if not isinstance(self.show_form, bool) or not isinstance(self.after_show_code, str):
