@@ -356,3 +356,65 @@ GUI に CONTAINER を追加するときは、配置だけでなく import、名�
 ## 更新内容と未実装の区別
 
 今回追加したのは調査資料です。SLIDER、RTOGGLE、VIEW、ALPHA コマンド欄、COMBO、CONTAINER の GUI 部品はまだ実装していません。LIST は基本部品のみで、複数選択・複数列・実値編集は未対応です。公開例とユーザー情報を今後の仕様検討に使います。
+
+## 15. 座標以外の配置: PATH / ALIGN / 相対参照
+
+ユーザー指摘を踏まえ、[Form Layout and Gadgets](https://github.com/nhdang117/PML.Learning/blob/57d55443a63f2cc7ec897c56ba1ae259f4b43bd1/docs/guide/form-layout-and-gadgets.md)、[Forms の Gadget Positioning Using Paths](https://github.com/shivangKheradiya/AVEVA_PML/blob/2d3a87205cb80fbc68ca6b0518c9cf58dbd14285/10.%20Forms/README.md#gadget-positioning-using-paths)、[実際の BSSPipelineSlopeNET.pmlfrm](https://github.com/ibesedin/AVEVA-1/blob/3fd6f30dc1725e97cd11b5893acd1cbab6d6c303/BSSPipelineSlopeNET.pmlfrm) を照合しました。
+
+| 機能 | コード | 意味 |
+| --- | --- | --- |
+| 下へ順に配置 | `PATH DOWN` | 後続の部品を下方向へ配置 |
+| 右へ順に配置 | `PATH RIGHT` | 後続の部品を右方向へ配置 |
+| 縦・横の間隔 | `VDIST 0.5` / `HDIST 1` | 自動配置の部品間隔 |
+| 水平方向の整列 | `HALIGN LEFT` / `CENTRE` / `RIGHT` | PATH と組み合わせ、後続部品を前の部品に対して整列 |
+| 垂直方向の整列 | `VALIGN TOP` / `CENTRE` / `BOTTOM` | PATH と組み合わせ、後続部品を前の部品に対して整列 |
+| 指定部品の左端と下端 | `AT XMIN.name YMAX.name+0.5` | 他部品の端を参照して配置 |
+| 指定部品の右隣 | `AT XMAX.name+1 YMIN.name` | X と Y を他部品から取得 |
+| 指定部品の右端に揃える | `AT XMAX.name-SIZE YMIN.name` | 自部品の幅を差し引いて右端を一致させる |
+| 幅を揃える | `WIDTH.name` | 指定部品の幅を参照 |
+| 親のサイズ変更へ追従 | `ANCHOR RIGHT+BOTTOM` | 初期整列とは別に、指定辺への距離を保持 |
+| 親の残り領域を埋める | `DOCK FILL` | 親コンテナの領域を埋める |
+
+HALIGN / VALIGN を「無条件にフォーム全体の左・中央・右へ移動する命令」とは説明しません。PATH、前のガジェット、所属コンテナと組み合わせる整列命令です。親の右端に揃える場合は `XMAX FORM-SIZE` などの参照構文、サイズ変更への追従は ANCHOR / DOCK と区別します。
+
+下方向に左端を揃えて並べる例（setup form 内）:
+
+```pml
+BUTTON .first AT X 1 Y 1 'First' WIDTH 20
+PATH DOWN
+VDIST 0.5
+HALIGN LEFT
+BUTTON .second 'Second' WIDTH 12
+BUTTON .third 'Third' WIDTH 16
+```
+
+中央合わせ・右端合わせは、同じ位置で `HALIGN CENTRE` / `HALIGN RIGHT` を設定する方式です。具体的な基準となる範囲と最終表示は E3D で確認します。
+
+他部品の右隣と、その下へ配置する例:
+
+```pml
+TEXT .name AT X 1 Y 1 'Name' WIDTH 20 IS STRING
+BUTTON .apply AT XMAX.name+1 YMIN.name 'Apply' WIDTH 12
+PARAGRAPH .hint AT XMIN.name YMAX.name+0.5 TEXT 'Enter a name' WIDTH 30
+```
+
+右端を揃える例:
+
+```pml
+BUTTON .apply AT XMAX.name-SIZE YMAX.name+0.5 'Apply' WIDTH 12
+```
+
+サイズも他部品へ合わせる例:
+
+```pml
+FRAME .copy 'Copy' WIDTH.original HEIGHT TO MAX.original
+EXIT
+```
+
+この例は `.original` が先に定義されていることが前提です。`WIDTH.original` は幅の参照、`HEIGHT TO MAX.original` は下端までの寸法です。
+
+**現エディタの制約:** x / y / width / height は数値のみであり、この相対配置・自動配置はまだ GUI / データモデルに実装していません。対応には「座標」「PATH 自動配置」「参照部品と辺・オフセット」「ANCHOR / DOCK」を別の設定として保持し、参照先が先に定義される出力順と、参照循環の検出が必要です。画面上で一度揃えて固定座標を出力する機能と、PML の相対参照を出力する機能は区別します。
+
+COMBO の追加確認: [Form Layout and Gadgets の本文](https://github.com/nhdang117/PML.Learning/blob/57d55443a63f2cc7ec897c56ba1ae259f4b43bd1/docs/guide/form-layout-and-gadgets.md) には `combobox .colour tagwidth 6 |Colour| scroll 20 width 10` という定義例もありました。公開例に COMBO と COMBOBOX の両方があり、E3D 4.0 での受理範囲は実機確認とします。
+
+ロード方式の追加確認: [公開された Forms の説明](https://github.com/mikhalchankasm/vscode-pml-aveva-e3d/blob/07971b883c53ae665d3c02c7670c1e8cdaa76343/hide_examples/forms/forms.md) は `.pmlfrm` の初回表示時自動ロードと、昔の `$m` によるフォーム定義マクロの互換方式を区別しています。ユーザーの一体型命令列と定義ファイルの違いを検証すべきという先の判断を補強します。
