@@ -97,7 +97,7 @@ class ModelTests(unittest.TestCase):
 
     def test_list_position_precedes_label_in_each_layout_mode(self):
         base=Gadget(name='base',x=2,y=1)
-        listing=Gadget(kind='list',name='results',label='Results',x=4,y=5,width=20,height=3,callback='onSelect')
+        listing=Gadget(kind='list',name='results',label='Results',x=4,y=5,width=20,height=3,callback='onSelect',body='q var !this.results.val')
         form=Form(gadgets=[base,listing])
         self.assertIn("list .results AT X 4 Y 5 'Results' SINGLE WIDTH 20 HEIGHT 3 callback '!this.onSelect()'",form.pml(normalize=False))
         listing.layout_mode='RELATIVE';listing.xref='base';listing.yref='base';listing.width_ref='base'
@@ -329,7 +329,7 @@ class ModelTests(unittest.TestCase):
         with self.assertRaises(ValueError): f.pml(normalize=False)
 
     def test_show_then_program_before_method_definitions(self):
-        f=Form(after_show_code="$p 'Ready'",gadgets=[Gadget(callback='onRun')])
+        f=Form(after_show_code="$p 'Ready'",gadgets=[Gadget(callback='onRun',body="$p 'Run'")])
         pml=Form.loads(f.dumps()).pml(normalize=False)
         self.assertIn("exit\n\nSHOW !!userform\n\n$p 'Ready'\n\ndefine method .userform()",pml)
         self.assertLess(pml.index('SHOW !!userform'),pml.index('define method .onRun()'))
@@ -351,7 +351,7 @@ class ModelTests(unittest.TestCase):
     def test_button_background_and_call_order(self):
         f=Form(gadgets=[Gadget(kind='button',name='apply',label='Apply',x=2,y=3,width=20,background='5',command='SAVEWORK')])
         self.assertIn("BUTTON .apply AT X 2 Y 3 BACKGROUND 5 'Apply' CALL 'SAVEWORK' WIDTH 20",Form.loads(f.dumps()).pml(normalize=False))
-        f.gadgets[0].background=''; f.gadgets[0].command=''; f.gadgets[0].callback='onApply'
+        f.gadgets[0].background=''; f.gadgets[0].command=''; f.gadgets[0].callback='onApply'; f.gadgets[0].body="$p 'Run'"
         self.assertIn("BUTTON .apply AT X 2 Y 3 'Apply' CALL '!this.onApply()' WIDTH 20",f.pml(normalize=False))
         self.assertIn('define method .onApply()',f.pml(normalize=False))
         f.gadgets[0].callback=''
@@ -361,7 +361,7 @@ class ModelTests(unittest.TestCase):
         for value_type in ('STRING', 'REAL'):
             f=Form(gadgets=[Gadget(kind='text',name='input1',label='Input',x=2,y=3,width=20,value_type=value_type,command='SAVEWORK')])
             self.assertIn(f"TEXT .input1 AT X 2 Y 3 'Input' CALL 'SAVEWORK' WIDTH 20 IS {value_type}",Form.loads(f.dumps()).pml(normalize=False))
-        f.gadgets[0].command=''; f.gadgets[0].callback='onInput'
+        f.gadgets[0].command=''; f.gadgets[0].callback='onInput'; f.gadgets[0].body="$p 'Run'"
         self.assertIn("CALL '!this.onInput()' WIDTH 20 IS REAL", f.pml(normalize=False))
         self.assertIn('define method .onInput()',f.pml(normalize=False))
         f.gadgets[0].callback=''
@@ -371,7 +371,7 @@ class ModelTests(unittest.TestCase):
     def test_toggle_call_syntax(self):
         f=Form(gadgets=[Gadget(kind='toggle',name='enabled',label='Enabled',x=2,y=7,command="$p 'clicked'")])
         self.assertIn("TOGGLE .enabled AT X 2 Y 7 'Enabled' CALL |$p 'clicked'|",f.pml(normalize=False))
-        f.gadgets[0].command=''; f.gadgets[0].callback='toggleAction'
+        f.gadgets[0].command=''; f.gadgets[0].callback='toggleAction'; f.gadgets[0].body="$p 'Run'"
         self.assertIn("CALL '!this.toggleAction()'",f.pml(normalize=False))
         f.gadgets[0].command='SAVEWORK'
         with self.assertRaises(ValueError): f.pml(normalize=False)

@@ -110,13 +110,13 @@ class WorkflowUiTests(unittest.TestCase):
         for kind in ('button','text','toggle','list','combo','slider','selector'):
             w.add(kind);g=w.form.gadgets[w.selected]
             self.assertTrue(g.name);self.assertTrue(g.callback)
-            self.assertIn(g.callback,w.code.toPlainText().lower())
+            self.assertNotIn(g.callback.lower(),w.code.toPlainText().lower())
         names=[g.name.lower() for g in w.form.gadgets]
         methods=[g.callback.lower() for g in w.form.gadgets]
         self.assertEqual(len(set(names)),len(names));self.assertEqual(len(set(methods)),len(methods))
         output=self.folder/'automatic.mac';w.output_folder.setText(str(self.folder))
         with patch('e3d_designer.app.QFileDialog.getSaveFileName',return_value=(str(output),'')):w.export()
-        self.assertTrue(output.exists());self.assertIn('Define Method .ON_BUTTON1()',output.read_bytes().decode('cp932'))
+        self.assertTrue(output.exists());self.assertNotIn('Define Method .ON_BUTTON1()',output.read_bytes().decode('cp932'))
 
     def test_generated_names_avoid_existing_variables_and_member_names(self):
         w=self.w;w.form=Form(variables={'button1':''},gadgets=[Gadget(kind='paragraph',name='on_button2',x=40,width=1)])

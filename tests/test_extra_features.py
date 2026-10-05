@@ -18,7 +18,7 @@ from e3d_designer.names import rename,reference_locations,actual_name
 class ExtraModelTests(unittest.TestCase):
     def test_pixmap_paragraph_button_toggle_and_option(self):
         gadgets=[Gadget(kind=kind,name=kind+'Pic',display_mode='PIXMAP',pixmap_path=r'C:\Images\sample.png') for kind in ('paragraph','button','toggle')]
-        gadgets.append(Gadget(kind='option',name='imageChoice',display_mode='PIXMAP',items=[r'/C:\Images\red.gif',r'/C:\Images\yellow.gif'],item_values=['RED','YELLOW'],callback='imageChanged'))
+        gadgets.append(Gadget(kind='option',name='imageChoice',display_mode='PIXMAP',items=[r'/C:\Images\red.gif',r'/C:\Images\yellow.gif'],item_values=['RED','YELLOW'],callback='imageChanged',body='q var !this.imageChoice.val'))
         form=Form(gadgets=gadgets);pml=Form.loads(form.dumps()).pml(normalize=False)
         self.assertIn('PARAGRAPH .paragraphPic AT X 2 Y 1 PIXMAP WIDTH 14 HEIGHT 1',pml)
         for name in ('paragraphPic','buttonPic','togglePic'): self.assertIn(f"!this.{name}.AddPixmap('C:\\Images\\sample.png')",pml)
