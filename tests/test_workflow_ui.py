@@ -105,6 +105,15 @@ class WorkflowUiTests(unittest.TestCase):
         self.assertIn('名前=初期値',w.output_validation.text())
         w.variables.setPlainText('mode=A');self.assertIn('問題なし',w.output_validation.text())
 
+    def test_combo_tagwid_inspector_and_undo(self):
+        w=self.w;w.add('combo');name=w.form.gadgets[w.selected].name
+        self.assertTrue(w.fields['combo_tagwid'].isEnabled())
+        w.fields['combo_tagwid'].setText('6.5');w.update_gadget()
+        self.assertIn("Tagwid 6.5 'Choice'",w.code.toPlainText())
+        self.assertEqual(Form.loads(w.form.dumps()).named(name).combo_tagwid,'6.5')
+        w.undo();self.assertEqual(w.form.named(name).combo_tagwid,'')
+        w.add('button');self.assertFalse(w.fields['combo_tagwid'].isEnabled())
+
     def test_combo_scroll_inspector_and_undo(self):
         w=self.w;w.add('combo');g=w.form.gadgets[w.selected]
         self.assertTrue(w.fields['combo_scroll'].isEnabled())

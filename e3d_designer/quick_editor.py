@@ -110,6 +110,7 @@ class MiniProperties(QDialog):
             widget=QDoubleSpinBox();widget.setDecimals(1);widget.setSingleStep(.1);widget.setRange(.1,100000) if key in ('width','height') else widget.setRange(-100000,100000)
             widget.setValue(getattr(g,key));widget.setProperty('baseline',widget.value());self.fields[key]=widget;fields.addRow(title,widget)
         text('name','オブジェクト名')
+        if g.kind=='combo':text('combo_tagwid','TAGWID（表示名の幅）')
         if g.kind!='line':text('label','表示名')
         if g.kind in ('option','combo','list'):
             button=QPushButton('項目・値を表で編集…');button.clicked.connect(self.edit_items);fields.addRow('値',button)

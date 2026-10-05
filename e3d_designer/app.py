@@ -625,7 +625,7 @@ class Window(QMainWindow):
                 ('slider_step','slider_value'),('off_value','on_value'),('view_type','view_aspect'),('display_mode','button_role')):
             pairs[first] = pairs[second] = first
         for key, label in [('name', '部品名'), ('label', '表示文字'), ('x', 'X'), ('y', 'Y'), ('width', '幅'), ('height', '高さ / 行数'), ('value_type', '入力型'), ('initial', '初期値'), ('callback', 'メソッド名'), ('command', 'CALL コマンド'), ('background', 'BACKGROUND (空欄＝背景色)'), ('orientation', 'LINE の向き'), ('frame_style', 'FRAME 形式'), ('parent', '親コンテナ'), ('layout_mode', '配置方式'), ('path', '配置方向'), ('halign', '水平整列'), ('valign', '垂直整列'), ('hgap', '横間隔'), ('vgap', '縦間隔'), ('xref', 'X 基準部品'), ('xedge', 'X 基準辺'), ('xanchor', '自部品の X 辺'), ('xoffset', 'X オフセット'), ('yref', 'Y 基準部品'), ('yedge', 'Y 基準辺'), ('yoffset', 'Y オフセット'), ('width_ref', '幅を揃える部品'),
-                ('selection_mode','LIST 選択方式'), ('list_mode','LIST 表示方式'), ('table_method','表の設定メソッド名'), ('combo_keyword','COMBO 定義キーワード'), ('combo_scroll','SCROLL（表示量）'),
+                ('selection_mode','LIST 選択方式'), ('list_mode','LIST 表示方式'), ('table_method','表の設定メソッド名'), ('combo_keyword','COMBO 定義キーワード'), ('combo_scroll','SCROLL（表示量）'), ('combo_tagwid','TAGWID（表示名の幅）'),
                 ('slider_orientation','SLIDER の向き'), ('slider_min','最小値'), ('slider_max','最大値'), ('slider_step','刻み'), ('slider_value','スライダー初期値'),
                 ('off_value','ラジオ OFF 実値'), ('on_value','ラジオ ON 実値'),
                 ('view_type','VIEW 形式'), ('view_aspect','ASPECT (VIEW)'), ('channels','ALPHA チャンネル'),
@@ -646,7 +646,7 @@ class Window(QMainWindow):
                 w.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
                 w.setMinimumContentsLength(8)
             layout_keys={'parent','layout_mode','path','halign','valign','hgap','vgap','xref','xedge','xanchor','xoffset','yref','yedge','yoffset','width_ref'}
-            content_keys={'selection_mode','list_mode','table_method','combo_keyword','combo_scroll','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','view_aspect','channels','assembly','namespace','control_type','pixmap_path','database'}
+            content_keys={'selection_mode','list_mode','table_method','combo_keyword','combo_scroll','combo_tagwid','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','view_aspect','channels','assembly','namespace','control_type','pixmap_path','database'}
             action_keys={'callback','command','popup_menu','action_mode','macro_path','macro_flag','macro_value'}
             self.prop_layout.current='配置' if key in layout_keys else '内容' if key in content_keys else '動作' if key in action_keys else '基本'
             if key in ('name','callback'):label+='（任意変更）'
@@ -1270,6 +1270,8 @@ class Window(QMainWindow):
         self.fields['table_method'].setEnabled(gadget.kind == 'list' and gadget.list_mode == 'TABLE')
         self.fields['combo_keyword'].setEnabled(gadget.kind == 'combo')
         self.fields['combo_scroll'].setEnabled(gadget.kind == 'combo')
+        self.fields['combo_tagwid'].setEnabled(gadget.kind == 'combo')
+        self.fields['combo_tagwid'].setPlaceholderText('0以上 / 空欄なら指定しない')
         self.fields['combo_scroll'].setPlaceholderText('正の整数 / 空欄なら指定しない')
         for key in ('slider_orientation','slider_min','slider_max','slider_step','slider_value'):
             self.fields[key].setEnabled(gadget.kind == 'slider')
@@ -1308,7 +1310,7 @@ class Window(QMainWindow):
         relevant['command'] = gadget.kind in ('button','text','toggle') and gadget.button_role not in ('OK','CANCEL','HELP') and not macro
         for key in ('path','halign','valign','hgap','vgap'): relevant[key] = gadget.layout_mode == 'AUTO'
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): relevant[key] = gadget.layout_mode == 'RELATIVE'
-        for key in ('selection_mode','list_mode','table_method','combo_keyword','combo_scroll','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','view_aspect','channels','assembly','namespace','control_type'):
+        for key in ('selection_mode','list_mode','table_method','combo_keyword','combo_scroll','combo_tagwid','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','view_aspect','channels','assembly','namespace','control_type'):
             relevant[key] = self.fields[key].isEnabled()
         for key,visible in relevant.items(): self.prop_layout.setRowVisible(self.fields[key],visible)
         boolean=gadget.kind in ('toggle','rtoggle')

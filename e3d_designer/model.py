@@ -65,6 +65,7 @@ class Gadget:
     selection_mode: str = 'SINGLE'
     combo_keyword: str = 'COMBO'
     combo_scroll: str = '20'
+    combo_tagwid: str = ''
     slider_orientation: str = 'HORIZONTAL'
     slider_min: float = 0
     slider_max: float = 100
@@ -280,7 +281,7 @@ class Form:
         if not isinstance(self.gadgets, list) or any(not isinstance(g,Gadget) for g in self.gadgets):
             raise ValueError('部品は配列で指定してください。')
         for g in self.gadgets:
-            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','combo_scroll','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method','display_mode','pixmap_path','popup_menu','database','button_role','action_mode','macro_path','macro_flag','macro_value','comment'):
+            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','combo_scroll','combo_tagwid','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method','display_mode','pixmap_path','popup_menu','database','button_role','action_mode','macro_path','macro_flag','macro_value','comment'):
                 if not isinstance(getattr(g,key),str): raise ValueError(f'部品の {key} は文字列で指定してください。')
             for key in ('items','item_commands','item_values','headings','pane_lines'):
                 value = getattr(g,key)
@@ -402,6 +403,8 @@ class Form:
                         raise ValueError(f'{g.name}: REAL の初期値は有限数にしてください。') from None
                 else:
                     literal(g.initial)
+            if g.kind == 'combo' and g.combo_tagwid and (not re.fullmatch(r'[0-9]+(?:\.[0-9]+)?',g.combo_tagwid) or not math.isfinite(float(g.combo_tagwid))):
+                raise ValueError('COMBO の TAGWID は0以上の数値、または空欄にしてください。')
             if g.kind == 'combo' and g.combo_scroll and (not re.fullmatch(r'[0-9]+',g.combo_scroll) or int(g.combo_scroll)<1):
                 raise ValueError('COMBO の SCROLL は正の整数、または空欄にしてください。')
             if g.selection_mode not in ('SINGLE','MULTIPLE','MULTI') or g.combo_keyword not in ('COMBO','COMBOBOX'):
@@ -665,8 +668,9 @@ class Form:
                 background = f'BACKGROUND {int(g.background)} ' if g.background else ''
                 line = f'list .{g.name} {background}{position} {label} {selection} {width_clause} HEIGHT {n(g.height)}' + callback
             elif g.kind == 'combo':
+                tagwid = f'TAGWID {g.combo_tagwid} ' if g.combo_tagwid else ''
                 scroll = f'SCROLL {g.combo_scroll} ' if g.combo_scroll else ''
-                line = f'{g.combo_keyword} .{g.name} {label} {position} {scroll}{width_clause}'
+                line = f'{g.combo_keyword} .{g.name} {tagwid}{label} {position} {scroll}{width_clause}'
             elif g.kind == 'textpane':
                 line = f'TEXTPANE .{g.name} {label}'+(' FIXCHARS' if g.fixed_font else '')+f' {position} {width_clause} HEIGHT {n(g.height)}'
             elif g.kind == 'selector':

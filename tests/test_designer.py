@@ -107,6 +107,21 @@ class ModelTests(unittest.TestCase):
         self.assertNotIn('AT ',line)
         self.assertIn("'Results' SINGLE WIDTH.base HEIGHT 3",line)
 
+    def test_combo_tagwid_precedes_display_label_and_preserves_scroll_order(self):
+        for keyword in ('COMBO','COMBOBOX'):
+            f=Form(gadgets=[Gadget(kind='combo',name='Choice',label='My Choice',combo_keyword=keyword,combo_tagwid='6.5',combo_scroll='12')])
+            code=Form.loads(f.dumps()).pml(normalize=False)
+            self.assertIn(keyword+" .Choice TAGWID 6.5 'My Choice' AT X 2 Y 1 SCROLL 12 WIDTH 14",code)
+            for value in ('0','2.0',''):
+                f.gadgets[0].combo_tagwid=value;f.validate()
+            self.assertNotIn('TAGWID',f.pml(normalize=False))
+            for value in ('-1','nan','inf','6 EXIT'):
+                f.gadgets[0].combo_tagwid=value
+                with self.assertRaises(ValueError):f.validate()
+        raw=json.loads(Form(gadgets=[Gadget(kind='combo')]).dumps())
+        del raw['form']['gadgets'][0]['combo_tagwid']
+        self.assertEqual(Form.loads(json.dumps(raw)).gadgets[0].combo_tagwid,'')
+
     def test_combo_scroll_precedes_width_and_is_saved(self):
         for keyword in ('COMBO','COMBOBOX'):
             form=Form(gadgets=[Gadget(kind='combo',name='Choice',combo_keyword=keyword,combo_scroll='12',width=18)])
