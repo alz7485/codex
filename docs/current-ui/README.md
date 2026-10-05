@@ -7,6 +7,8 @@
 - [動作設定](workflow-actions.png)
 - [生成コードと保存・出力](workflow-output.png)
 
+[初期値のプルダウンとテキスト入力の表示](initial-preview.png)では、TRUE/FALSEの選択欄と、枠外の表示名・枠内の値を確認できます。
+
 以下は過去の画面例です。
 
 ---

@@ -263,6 +263,13 @@ class Item(QGraphicsObject):
             g.width,g.height = old_width,old_height
         self.resizing.emit(); event.accept()
 
+    def text_regions(self,metrics):
+        rect=self.boundingRect()
+        label_width=min(metrics.horizontalAdvance(self.gadget.label)+8,max(0,rect.width()*.45)) if self.gadget.label else 0
+        label=QRectF(4,1,max(0,label_width-4),max(0,rect.height()-2))
+        entry=rect.adjusted(label_width+4 if label_width else 1,1,-1,-1)
+        return label,entry
+
     def paint(self, painter, option, widget=None):
         r, g = self.boundingRect(), self.gadget
         painter.setRenderHint(QPainter.Antialiasing)
@@ -300,6 +307,9 @@ class Item(QGraphicsObject):
                 painter.drawLine(r.left(), r.center().y(), r.right(), r.center().y())
             else:
                 painter.drawLine(r.center().x(), r.top(), r.center().x(), r.bottom())
+        elif g.kind=='text':
+            _,entry=self.text_regions(painter.fontMetrics())
+            painter.drawRect(entry)
         else:
             painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), 3, 3)
         painter.setPen(QColor(foreground_color(background) if background else '#182b40'))
@@ -319,10 +329,14 @@ class Item(QGraphicsObject):
             if self.form.children(g.name) and g.frame_style == 'TABSET': text = ''
             if parent and parent.frame_style == 'TABSET': text = ''
         if g.kind == 'paragraph' and g.background: text += f' [BG {g.background}]'
-        if g.kind == 'text': text += '  [' + g.initial + ']'
-        if g.kind == 'toggle': text = '☐ ' + text
+        if g.kind == 'text':
+            label,entry=self.text_regions(painter.fontMetrics())
+            painter.drawText(label,Qt.AlignLeft|Qt.AlignVCenter,painter.fontMetrics().elidedText(g.label,Qt.ElideRight,max(0,int(label.width()))))
+            painter.drawText(entry.adjusted(5,1,-5,-1),Qt.AlignLeft|Qt.AlignVCenter,g.initial)
+            text=''
+        if g.kind == 'toggle': text = ('☑ ' if g.initial.upper()=='TRUE' else '☐ ') + text
         if g.kind in ('option','combo') and g.display_mode != 'PIXMAP': text += '  ▾'
-        if g.kind == 'rtoggle': text = '○ '+text
+        if g.kind == 'rtoggle': text = ('● ' if g.initial.upper()=='TRUE' else '○ ')+text
         if g.kind == 'slider': text = ''
         if g.kind in ('view','commandline'):
             painter.setPen(QColor('#d7e7f7'))
@@ -634,6 +648,11 @@ class Window(QMainWindow):
             if key in ('name','callback','table_method','macro_flag','macro_value'):
                 w.setToolTip('自動設定・自動生成されます。管理用の名前にしたい場合だけ変更してください。')
         self.fields['action_mode'].setItemData(0,'CODE');self.fields['action_mode'].setItemData(1,'MACRO')
+        self.initial_choice=QComboBox()
+        for value in ('','TRUE','FALSE'):self.initial_choice.addItem(value,value)
+        self.initial_choice.currentIndexChanged.connect(self.update_initial_choice)
+        self.initial_choice.setToolTip('空欄＝設定しない。TRUE / FALSEを選ぶとDEFAULTへ自動出力します。')
+        self.prop_layout.current='基本';self.prop_layout.addRow('初期値',self.initial_choice,'value_type')
         self.fields['action_mode'].setItemText(0,'手入力のコマンド / メソッド')
         self.fields['action_mode'].setItemText(1,'外部マクロを実行')
         self.fields['macro_flag'].setPlaceholderText('例: buttonFlag（!! は不要・空欄ならフラグなし）')
@@ -1132,6 +1151,12 @@ class Window(QMainWindow):
         self.variable_error = False
         self.checkpoint(); self.form.variables = values; self.refresh()
 
+    def update_initial_choice(self):
+        if self.loading or self.selected is None:return
+        if self.form.gadgets[self.selected].kind not in ('toggle','rtoggle'):return
+        self.fields['initial'].setText(self.initial_choice.currentData())
+        self.update_gadget()
+
     def update_default_body(self):
         if self.loading: return
         self.checkpoint(); self.form.default_body = self.default_body.toPlainText(); self.refresh()
@@ -1245,6 +1270,10 @@ class Window(QMainWindow):
         for key in ('selection_mode','list_mode','table_method','combo_keyword','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','view_aspect','channels','assembly','namespace','control_type'):
             relevant[key] = self.fields[key].isEnabled()
         for key,visible in relevant.items(): self.prop_layout.setRowVisible(self.fields[key],visible)
+        boolean=gadget.kind in ('toggle','rtoggle')
+        self.prop_layout.setRowVisible(self.fields['initial'],relevant['initial'] and not boolean)
+        self.prop_layout.setRowVisible(self.initial_choice,boolean)
+        self.initial_choice.setCurrentIndex(max(0,self.initial_choice.findData(gadget.initial.upper())))
         for editor,visible in ((self.choose_background,relevant['background']),(self.macro_browse,macro),(self.macro_template,macro),(self.choices,gadget.kind in ('option','combo') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
                                (self.choice_commands,gadget.kind == 'option' and gadget.display_mode == 'TEXT'),
                                (self.item_values,gadget.kind == 'combo' or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
