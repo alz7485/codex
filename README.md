@@ -152,7 +152,7 @@ rtog・グリッド・PML.NET 部品、既存 PML のインポート、E3D と�
 | --- | --- |
 | SLIDER | HORIZONTAL / VERTICAL、最小値・最大値・STEP・VAL。イベントメソッドは `(!gad is GADGET, !event is STRING)` を持つ open callback です。DEFAULT や通常部品と同じメソッド名は使えません。 |
 | RTOGGLE | 通常 FRAME を選んで追加し、OFF / ON の実値を指定します。同じ FRAME 内をラジオグループとして出力します。選択状態は FRAME 側で管理されます。 |
-| LIST | SINGLE / MULTI の選択方式、表示名 `.dtext`、実値 `.rtext`。複数列は未対応です。 |
+| LIST | SINGLE / MULTI の選択方式、単列の表示名 `.dtext`・実値 `.rtext`、複数列の SetHeadings / SetRows。 |
 | COMBO | 編集可能な選択欄として定義します。公開例に合わせ、定義キーワードを COMBO / COMBOBOX から選べます。表示名と実値に対応します。 |
 | VIEW | ALPHA / AREA / PLOT / VOLUME、幅・高さ、内部の追加 PML。追加 PML には VIEW の外枠や EXIT を書きません。 |
 | コマンド欄 | VIEW ALPHA として出力し、CHANNEL REQUESTS / COMMANDS を指定できます。 |
@@ -163,3 +163,32 @@ LIST / COMBO の実値は表示名と同じ行数で入力します。実値を�
 CONTAINER のアセンブリ・名前空間・型をすべて空欄にした場合は、Control 接続を DEFAULT などに記述してください。入力値に応じた外部 DLL は E3D 側で準備する必要があります。保持用メンバー名は `部品名Control` です。イベント購読や終了処理は用途に応じて記述してください。
 
 キャンバスではスライダーの初期位置や部品の形を概略表示します。E3D のモデル描画、コマンド実行、外部 DLL の読み込みはプレビューでは実行しません。VIEW VOLUME のモデル表示には drawlist の作成・接続なども必要です。SLIDER の表示文字は出力されず、RTOGGLE / COMBO の高さなどはプレビュー用です。追加ガジェットの構文・イベントは E3D 4.0 実機での確認が必要です。構文の出典は [調査資料](docs/pml-examples-research.md) を参照してください。
+
+## LIST の複数列
+
+LIST を選び、「LIST 表示方式」を `TABLE` にすると表入力欄を表示します。先頭行に見出し、その下に各行のデータを入力します。「+ 列」「+ 行」で増やし、削除する列・行のセルを選んで「列削除」「行削除」で減らします。最後の1列と見出し行は残します。セルを編集中でも保存に反映し、Undo / Redo と複製に対応します。
+
+`SINGLE` / `MULTI` は行の単一選択・複数選択の設定で、列数とは独立です。`SIMPLE` に戻すと単列リストを使い、表データは保持します。TABLE では単列の `.dtext` / `.rtext` を出力せず、見出しと二次元の行配列を使います。
+
+ユーザー提供の例に合わせ、TABLE の定義には `HEIGHT` を出力します。位置の AT は表示名の前、SHOW はすべてのメソッド定義より前です。設定メソッド名は編集可能で、空欄なら `populate_部品名` にします。コンストラクタからこのメソッドを呼びます。
+
+```pml
+define method .fillEquipment()
+  !HEAD = ARRAY()
+  !HEAD[1] = '番号'
+  !HEAD[2] = '種類'
+  !THIS.equipment.setheadings(!HEAD)
+  !ROWS = ARRAY()
+  !ROWS[1] = ARRAY()
+  !ROWS[1][1] = 'P-101'
+  !ROWS[1][2] = 'Pump'
+  !ROWS[2] = ARRAY()
+  !ROWS[2][1] = 'T-201'
+  !ROWS[2][2] = 'Tank'
+  !THIS.equipment.setrows(!ROWS)
+endmethod
+```
+
+`!ROWS[行番号][列番号]` はどちらも1から始まります。SetRows は調査済みの公開資料を参考にしています。E3D 4.0 実機の構文・表示・選択動作は未検証です。サンプルは `examples/multicolumn.json` / `examples/multicolumn.pmlfrm` です。
+
+![複数列 LIST の編集画面](docs/ui-multicolumn.png)

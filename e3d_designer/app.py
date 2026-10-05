@@ -169,7 +169,19 @@ class Item(QGraphicsObject):
             painter.setPen(QColor('#d7e7f7'))
             text = ('ALPHA\n> ' if g.kind == 'commandline' or g.view_type == 'ALPHA' else g.view_type+'\n') + g.label
         if g.kind == 'container': text = 'PML.NET\n'+(g.control_type or g.label)
-        if g.kind == 'list': text = '\n'.join(g.items) or g.label
+        if g.kind == 'list':
+            if g.list_mode == 'TABLE' and g.headings:
+                painter.save(); painter.setClipRect(r.adjusted(1,1,-1,-1))
+                column_width = r.width()/len(g.headings)
+                for row,values in enumerate([g.headings,*g.rows]):
+                    if row*SY >= r.height(): break
+                    for column,value in enumerate(values):
+                        cell = QRectF(column*column_width,row*SY,column_width,SY)
+                        painter.setPen(QColor('#9caabd')); painter.setBrush(QColor('#dfeaf5' if row == 0 else '#ffffff'))
+                        painter.drawRect(cell); painter.setPen(QColor('#182b40'))
+                        painter.drawText(cell.adjusted(4,1,-4,-1),Qt.AlignLeft|Qt.AlignVCenter,value)
+                painter.restore(); text = ''
+            else: text = '\n'.join(g.items) or g.label
         painter.drawText(r.adjusted(7, 2, -7, -2), Qt.AlignLeft | (Qt.AlignTop if g.kind == 'frame' else Qt.AlignVCenter), text)
         if self.isSelected():
             painter.setPen(QPen(QColor('#2277cc'), 2, Qt.DashLine))
@@ -220,6 +232,14 @@ class ObjectList(QListWidget):
         try: super().dropEvent(event)
         finally: self.blockSignals(previous)
         self.commit_order()
+
+
+class TableCell(QLineEdit):
+    focused = Signal()
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self.focused.emit()
 
 
 class Scene(QGraphicsScene):
@@ -314,7 +334,7 @@ class Window(QMainWindow):
         self.props = QWidget(); self.prop_layout = QFormLayout(self.props)
         self.fields = {}
         for key, label in [('name', '部品名'), ('label', '表示文字'), ('x', 'X'), ('y', 'Y'), ('width', '幅'), ('height', '高さ / 行数'), ('value_type', '入力型'), ('initial', '初期値'), ('callback', 'メソッド名'), ('command', 'CALL コマンド'), ('background', 'BACKGROUND (空欄＝背景色)'), ('orientation', 'LINE の向き'), ('frame_style', 'FRAME 形式'), ('parent', '親コンテナ'), ('layout_mode', '配置方式'), ('path', '配置方向'), ('halign', '水平整列'), ('valign', '垂直整列'), ('hgap', '横間隔'), ('vgap', '縦間隔'), ('xref', 'X 基準部品'), ('xedge', 'X 基準辺'), ('xanchor', '自部品の X 辺'), ('xoffset', 'X オフセット'), ('yref', 'Y 基準部品'), ('yedge', 'Y 基準辺'), ('yoffset', 'Y オフセット'), ('width_ref', '幅を揃える部品'),
-                ('selection_mode','LIST 選択方式'), ('combo_keyword','COMBO 定義キーワード'),
+                ('selection_mode','LIST 選択方式'), ('list_mode','LIST 表示方式'), ('table_method','表の設定メソッド名'), ('combo_keyword','COMBO 定義キーワード'),
                 ('slider_orientation','SLIDER の向き'), ('slider_min','最小値'), ('slider_max','最大値'), ('slider_step','刻み'), ('slider_value','スライダー初期値'),
                 ('off_value','ラジオ OFF 実値'), ('on_value','ラジオ ON 実値'),
                 ('view_type','VIEW 形式'), ('channels','ALPHA チャンネル'),
@@ -325,9 +345,9 @@ class Window(QMainWindow):
                 w = self.number(-300 if key in ('xoffset','yoffset') else 0 if key in ('x','y','hgap','vgap') else 1, 300)
             elif key in ('parent','xref','yref','width_ref'):
                 w = QComboBox(); w.addItem('(フォーム直下)', '')
-            elif key in ('value_type','orientation','frame_style','layout_mode','path','halign','valign','xedge','yedge','xanchor','selection_mode','combo_keyword','slider_orientation','view_type','channels'):
+            elif key in ('value_type','orientation','frame_style','layout_mode','path','halign','valign','xedge','yedge','xanchor','selection_mode','combo_keyword','slider_orientation','view_type','channels','list_mode'):
                 w = QComboBox()
-                w.addItems({'value_type': ['STRING', 'REAL'], 'orientation': ['HORIZ', 'VERT'], 'frame_style': ['FRAME','TABSET'], 'layout_mode': ['ABSOLUTE','AUTO','RELATIVE'], 'path': ['DOWN','RIGHT','UP','LEFT'], 'halign': ['LEFT','CENTRE','RIGHT'], 'valign': ['TOP','CENTRE','BOTTOM'], 'xedge': ['XMIN','XMAX'], 'yedge': ['YMIN','YMAX'], 'xanchor': ['LEFT','RIGHT'], 'selection_mode':['SINGLE','MULTI'], 'combo_keyword':['COMBO','COMBOBOX'], 'slider_orientation':['HORIZONTAL','VERTICAL'], 'view_type':['ALPHA','AREA','PLOT','VOLUME'], 'channels':['NONE','REQUESTS','COMMANDS','BOTH']}[key])
+                w.addItems({'value_type': ['STRING', 'REAL'], 'orientation': ['HORIZ', 'VERT'], 'frame_style': ['FRAME','TABSET'], 'layout_mode': ['ABSOLUTE','AUTO','RELATIVE'], 'path': ['DOWN','RIGHT','UP','LEFT'], 'halign': ['LEFT','CENTRE','RIGHT'], 'valign': ['TOP','CENTRE','BOTTOM'], 'xedge': ['XMIN','XMAX'], 'yedge': ['YMIN','YMAX'], 'xanchor': ['LEFT','RIGHT'], 'list_mode':['SIMPLE','TABLE'], 'selection_mode':['SINGLE','MULTI'], 'combo_keyword':['COMBO','COMBOBOX'], 'slider_orientation':['HORIZONTAL','VERTICAL'], 'view_type':['ALPHA','AREA','PLOT','VOLUME'], 'channels':['NONE','REQUESTS','COMMANDS','BOTH']}[key])
             else: w = QLineEdit()
             self.fields[key] = w; self.prop_layout.addRow(label, w); self.connect_field(w, self.update_gadget)
         self.choices = QPlainTextEdit(); self.choices.setMaximumHeight(100)
@@ -341,6 +361,17 @@ class Window(QMainWindow):
         self.item_values.setPlaceholderText('表示名と同じ行順で実値を指定。空欄なら rtext を省略')
         self.prop_layout.addRow('LIST / COMBO 実値 (1行1項目)', self.item_values)
         self.item_values.textChanged.connect(self.update_gadget)
+        self.list_table_group = QWidget(); table_layout = QVBoxLayout(self.list_table_group)
+        table_layout.setContentsMargins(0,0,0,0)
+        table_note = QLabel('複数列 LIST：先頭行が見出しです。各セルに値を入力します。')
+        table_note.setWordWrap(True); table_layout.addWidget(table_note)
+        self.list_table = QTableWidget(); self.list_table.setMinimumHeight(160); self.list_table.setMaximumHeight(260)
+        self.list_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table_layout.addWidget(self.list_table)
+        buttons = QHBoxLayout()
+        for label, handler in (('+ 列',self.add_table_column),('列削除',self.delete_table_column),('+ 行',self.add_table_row),('行削除',self.delete_table_row)):
+            button = QPushButton(label); button.clicked.connect(handler); buttons.addWidget(button)
+        table_layout.addLayout(buttons); self.prop_layout.addRow(self.list_table_group)
         self.view_code = QPlainTextEdit(); self.view_code.setMaximumHeight(120)
         self.view_code.setPlaceholderText('LIMITS AUTO など。VIEW の外枠・EXIT は不要')
         self.prop_layout.addRow('VIEW 内の追加 PML', self.view_code)
@@ -575,7 +606,8 @@ class Window(QMainWindow):
         self.fields['width'].setEnabled(not gadget.width_ref)
 
     def enable_gadget_fields(self, gadget):
-        for key in ('selection_mode',): self.fields[key].setEnabled(gadget.kind == 'list')
+        for key in ('selection_mode','list_mode'): self.fields[key].setEnabled(gadget.kind == 'list')
+        self.fields['table_method'].setEnabled(gadget.kind == 'list' and gadget.list_mode == 'TABLE')
         self.fields['combo_keyword'].setEnabled(gadget.kind == 'combo')
         for key in ('slider_orientation','slider_min','slider_max','slider_step','slider_value'):
             self.fields[key].setEnabled(gadget.kind == 'slider')
@@ -596,12 +628,12 @@ class Window(QMainWindow):
         }
         for key in ('path','halign','valign','hgap','vgap'): relevant[key] = gadget.layout_mode == 'AUTO'
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): relevant[key] = gadget.layout_mode == 'RELATIVE'
-        for key in ('selection_mode','combo_keyword','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','channels','assembly','namespace','control_type'):
+        for key in ('selection_mode','list_mode','table_method','combo_keyword','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','channels','assembly','namespace','control_type'):
             relevant[key] = self.fields[key].isEnabled()
         for key,visible in relevant.items(): self.prop_layout.setRowVisible(self.fields[key],visible)
-        for editor,visible in ((self.choices,gadget.kind in ('option','list','combo')),
+        for editor,visible in ((self.choices,gadget.kind in ('option','combo') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
                                (self.choice_commands,gadget.kind == 'option'),
-                               (self.item_values,gadget.kind in ('list','combo')),
+                               (self.item_values,gadget.kind == 'combo' or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
                                (self.view_code,gadget.kind in ('view','commandline')),
                                (self.body,bool(gadget.callback)), (self.container_hint,gadget.kind == 'container')):
             self.prop_layout.setRowVisible(editor,visible)
@@ -611,6 +643,59 @@ class Window(QMainWindow):
             for editor, value in ((self.item_values,'\n'.join(gadget.item_values)), (self.view_code,gadget.view_code)):
                 if editor.toPlainText() != value: editor.setPlainText(value)
         self.enable_gadget_fields(gadget)
+        self.sync_list_table(gadget,rebuild)
+
+    def current_table(self):
+        if self.selected is None: return None
+        g = self.form.gadgets[self.selected]
+        return g if g.kind == 'list' and g.list_mode == 'TABLE' else None
+
+    def sync_list_table(self, gadget, rebuild=True):
+        active = gadget.kind == 'list' and gadget.list_mode == 'TABLE'
+        self.prop_layout.setRowVisible(self.list_table_group,active)
+        if not active or not rebuild: return
+        self.list_table.setRowCount(0); self.list_table.setColumnCount(len(gadget.headings))
+        self.list_table.setHorizontalHeaderLabels([f'列{i+1}' for i in range(len(gadget.headings))])
+        values = [gadget.headings,*gadget.rows]
+        self.list_table.setRowCount(len(values)); self.list_table.setVerticalHeaderLabels(['見出し',*[str(i) for i in range(1,len(values))]])
+        for row,cells in enumerate(values):
+            for column,value in enumerate(cells):
+                editor = TableCell(value)
+                if row == 0: editor.setStyleSheet('background: #dfeaf5;')
+                editor.focused.connect(lambda r=row,c=column: self.list_table.setCurrentCell(r,c))
+                editor.textEdited.connect(lambda text,r=row,c=column: self.update_table_cell(r,c,text))
+                self.list_table.setCellWidget(row,column,editor)
+
+    def update_table_cell(self, row, column, text):
+        g = self.current_table()
+        if self.loading or g is None: return
+        self.checkpoint()
+        cells = g.headings if row == 0 else g.rows[row-1]
+        cells[column] = text; self.refresh(rebuild=False)
+
+    def add_table_column(self):
+        g = self.current_table()
+        if g is None: return
+        self.checkpoint(); g.headings.append(f'見出し{len(g.headings)+1}')
+        for row in g.rows: row.append('')
+        self.refresh()
+
+    def delete_table_column(self):
+        g = self.current_table(); column = self.list_table.currentColumn()
+        if g is None or len(g.headings) <= 1 or not 0 <= column < len(g.headings): return
+        self.checkpoint(); g.headings.pop(column)
+        for row in g.rows: row.pop(column)
+        self.refresh()
+
+    def add_table_row(self):
+        g = self.current_table()
+        if g is None: return
+        self.checkpoint(); g.rows.append(['']*len(g.headings)); self.refresh()
+
+    def delete_table_row(self):
+        g = self.current_table(); row = self.list_table.currentRow()-1
+        if g is None or not 0 <= row < len(g.rows): return
+        self.checkpoint(); g.rows.pop(row); self.refresh()
 
     def apply_page_visibility(self):
         if self.selected is not None and self.selected < len(self.form.gadgets):
@@ -646,10 +731,15 @@ class Window(QMainWindow):
     def update_gadget(self):
         if self.loading or self.selected is None: return
         self.checkpoint(); g = self.form.gadgets[self.selected]
+        old_mode = g.list_mode
         old_name = g.name
         for key, w in self.fields.items():
             value = w.currentData() if key in ('parent','xref','yref','width_ref') else w.value() if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
             setattr(g, key, value)
+        table_changed = old_mode != g.list_mode
+        if g.kind == 'list' and g.list_mode == 'TABLE' and not g.headings:
+            g.headings = ['見出し1','見出し2']; g.rows = [['','']]
+            table_changed = True
         if old_name != g.name:
             for child in self.form.gadgets:
                 for key in ('parent','xref','yref','width_ref'):
@@ -668,7 +758,7 @@ class Window(QMainWindow):
             commands = self.choice_commands.toPlainText().split('\n')
             g.item_commands = (commands if self.choice_commands.toPlainText() else [])
             if len(g.item_commands) < len(g.items): g.item_commands += [''] * (len(g.items) - len(g.item_commands))
-        self.refresh(rebuild=False)
+        self.refresh(rebuild=table_changed)
 
     def refresh(self, rebuild=True):
         if self._closing or not isValid(self) or not isValid(self.scene): return
@@ -832,6 +922,7 @@ class Window(QMainWindow):
         mapping = {}
         for g in copies:
             old = g.name; g.name = self.unique_name(g.kind); mapping[old.lower()] = g.name
+            if g.kind == 'list' and g.list_mode == 'TABLE': g.table_method = ''
             self.form.gadgets.append(g)
         for g in copies:
             for key in ('parent','xref','yref','width_ref'):

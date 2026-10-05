@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "form": {
+    "name": "tableDemo",
+    "title": "Multi-column LIST",
+    "dock_right": true,
+    "show_form": true,
+    "after_show_code": "",
+    "default_body": "",
+    "width": 70,
+    "height": 22,
+    "gadgets": [
+      {
+        "kind": "list",
+        "name": "equipment",
+        "label": "Equipment",
+        "x": 2,
+        "y": 2,
+        "width": 50,
+        "height": 8,
+        "value_type": "STRING",
+        "initial": "",
+        "items": [],
+        "item_commands": [],
+        "callback": "",
+        "command": "",
+        "background": "",
+        "orientation": "HORIZ",
+        "frame_style": "FRAME",
+        "parent": "",
+        "body": "",
+        "layout_mode": "ABSOLUTE",
+        "path": "DOWN",
+        "halign": "LEFT",
+        "valign": "TOP",
+        "hgap": 1,
+        "vgap": 0.5,
+        "xref": "",
+        "yref": "",
+        "xedge": "XMIN",
+        "yedge": "YMAX",
+        "xanchor": "LEFT",
+        "xoffset": 0,
+        "yoffset": 0.5,
+        "width_ref": "",
+        "item_values": [],
+        "selection_mode": "SINGLE",
+        "combo_keyword": "COMBO",
+        "slider_orientation": "HORIZONTAL",
+        "slider_min": 0,
+        "slider_max": 100,
+        "slider_step": 1,
+        "slider_value": 50,
+        "off_value": "",
+        "on_value": "ON",
+        "view_type": "VOLUME",
+        "channels": "BOTH",
+        "view_code": "",
+        "assembly": "",
+        "namespace": "",
+        "control_type": "",
+        "list_mode": "TABLE",
+        "table_method": "fillEquipment",
+        "headings": [
+          "番号",
+          "名称",
+          "種類"
+        ],
+        "rows": [
+          [
+            "P-101",
+            "Pump 101",
+            "Pump"
+          ],
+          [
+            "T-201",
+            "Tank 201",
+            "Tank"
+          ]
+        ]
+      }
+    ],
+    "variables": {},
+    "menus": []
+  }
+}

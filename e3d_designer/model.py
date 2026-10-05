@@ -67,6 +67,10 @@ class Gadget:
     assembly: str = ''
     namespace: str = ''
     control_type: str = ''
+    list_mode: str = 'SIMPLE'
+    table_method: str = ''
+    headings: list[str] = field(default_factory=list)
+    rows: list[list[str]] = field(default_factory=list)
 
 
 @dataclass
@@ -206,12 +210,24 @@ class Form:
         if not isinstance(self.gadgets, list) or any(not isinstance(g,Gadget) for g in self.gadgets):
             raise ValueError('部品は配列で指定してください。')
         for g in self.gadgets:
-            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type'):
+            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method'):
                 if not isinstance(getattr(g,key),str): raise ValueError(f'部品の {key} は文字列で指定してください。')
-            for key in ('items','item_commands','item_values'):
+            for key in ('items','item_commands','item_values','headings'):
                 value = getattr(g,key)
                 if not isinstance(value,list) or any(not isinstance(item,str) for item in value):
                     raise ValueError(f'{key} は文字列の配列で指定してください。')
+            if not isinstance(g.rows,list) or any(not isinstance(row,list) or any(not isinstance(cell,str) for cell in row) for row in g.rows):
+                raise ValueError('LIST の行データは文字列の二次元配列で指定してください。')
+            if g.list_mode not in ('SIMPLE','TABLE'):
+                raise ValueError('LIST の表示方式は SIMPLE / TABLE を指定してください。')
+            if g.list_mode == 'TABLE' and g.kind != 'list':
+                raise ValueError('TABLE 表示方式は LIST 用です。')
+            for value in g.headings: literal(value)
+            for row in g.rows:
+                for value in row: literal(value)
+            if g.kind == 'list' and g.list_mode == 'TABLE':
+                if not g.headings or any(len(row)!=len(g.headings) for row in g.rows):
+                    raise ValueError('複数列 LIST は見出しを設定し、各行の列数を見出しと揃えてください。')
             for key in ('x','y','width','height','hgap','vgap','xoffset','yoffset','slider_min','slider_max','slider_step','slider_value'):
                 value = getattr(g,key)
                 if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value):
@@ -340,6 +356,13 @@ class Form:
                 if key == 'default' and self.default_body and g.body and self.default_body != g.body:
                     raise ValueError('DEFAULT の処理は DEFAULT 欄にまとめてください。')
                 callbacks[key] = g.body
+        methods = {self.name.lower(),'default',*callbacks}
+        for g in self.gadgets:
+            if g.kind == 'list' and g.list_mode == 'TABLE':
+                method = g.table_method or f'populate_{g.name}'
+                if not IDENTIFIER.fullmatch(method) or method.lower() in methods:
+                    raise ValueError('複数列 LIST のメソッド名が不正、または他のメソッドと重複しています。')
+                methods.add(method.lower())
 
     def dumps(self):
         self.validate()
@@ -426,7 +449,8 @@ class Form:
                     line += '\n' + literal(display) + ' ' + literal(command, allow_expansion=True)
                 line += '\nEXIT'
             elif g.kind == 'list':
-                line = f'list .{g.name} {position} {label} {g.selection_mode} {width_clause} lines {max(1, round(g.height))}' + callback
+                dimensions = f'HEIGHT {n(g.height)}' if g.list_mode == 'TABLE' else f'lines {max(1, round(g.height))}'
+                line = f'list .{g.name} {position} {label} {g.selection_mode} {width_clause} {dimensions}' + callback
             elif g.kind == 'combo':
                 line = f'{g.combo_keyword} .{g.name} {label} {position} {width_clause}' + callback
             elif g.kind == 'slider':
@@ -469,6 +493,8 @@ class Form:
         if self.after_show_code: lines += [self.after_show_code, '']
         lines.append(f'define method .{self.name}()')
         for g in self.gadgets:
+            if g.kind == 'list' and g.list_mode == 'TABLE':
+                lines.append(f'  !this.{g.table_method or "populate_"+g.name}()')
             if g.kind == 'text' and g.initial:
                 value = n(float(g.initial)) if g.value_type == 'REAL' else literal(g.initial)
                 lines.append(f'  !this.{g.name}.val = {value}')
@@ -477,7 +503,7 @@ class Form:
             if g.kind == 'container' and g.assembly:
                 lines += [f'  !this.{g.name}Control = object {g.control_type}()',
                           f'  !this.{g.name}.Control = !this.{g.name}Control.handle()']
-            if g.kind in ('list','combo') and g.items:
+            if g.kind in ('list','combo') and g.items and not (g.kind == 'list' and g.list_mode == 'TABLE'):
                 lines.append('  !choices = object ARRAY()')
                 for i, item in enumerate(g.items, 1):
                     lines.append(f'  !choices[{i}] = {literal(item)}')
@@ -487,6 +513,15 @@ class Form:
                     for i, value in enumerate(g.item_values,1): lines.append(f'  !values[{i}] = {literal(value)}')
                     lines.append(f'  !this.{g.name}.rtext = !values')
         lines.extend(['endmethod', ''])
+        for g in self.gadgets:
+            if g.kind != 'list' or g.list_mode != 'TABLE': continue
+            lines += [f'define method .{g.table_method or "populate_"+g.name}()', '  !HEAD = ARRAY()']
+            for column, heading in enumerate(g.headings,1): lines.append(f'  !HEAD[{column}] = {literal(heading)}')
+            lines += [f'  !THIS.{g.name}.setheadings(!HEAD)', '  !ROWS = ARRAY()']
+            for row, cells in enumerate(g.rows,1):
+                lines.append(f'  !ROWS[{row}] = ARRAY()')
+                for column, cell in enumerate(cells,1): lines.append(f'  !ROWS[{row}][{column}] = {literal(cell)}')
+            lines += [f'  !THIS.{g.name}.setrows(!ROWS)', 'endmethod', '']
         default_code = self.default_body or next((g.body for g in self.gadgets if g.callback.lower() == 'default' and g.body), '')
         lines += ['DEFINE METHOD .DEFAULT()', default_code or '  -- TODO: add default logic', 'ENDMETHOD', '']
         seen = {'default'}

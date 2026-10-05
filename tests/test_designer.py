@@ -14,6 +14,31 @@ from e3d_designer.app import Window, atomic_write, SX, SY
 
 
 class ModelTests(unittest.TestCase):
+    def test_table_list_arrays_method_and_dimensions(self):
+        table=Gadget(kind='list',name='equipment',list_mode='TABLE',table_method='fillEquipment',
+                     height=5,headings=['Name','Type'],rows=[['P-101','Pump'],['T-201','Tank']])
+        form=Form(gadgets=[table]);pml=Form.loads(form.dumps()).pml()
+        self.assertIn("list .equipment AT X 2 Y 1 'Run' SINGLE WIDTH 14 HEIGHT 5",pml)
+        self.assertIn('!this.fillEquipment()',pml)
+        self.assertIn("define method .fillEquipment()\n  !HEAD = ARRAY()\n  !HEAD[1] = 'Name'\n  !HEAD[2] = 'Type'\n  !THIS.equipment.setheadings(!HEAD)",pml)
+        self.assertIn("!ROWS[1] = ARRAY()\n  !ROWS[1][1] = 'P-101'\n  !ROWS[1][2] = 'Pump'",pml)
+        self.assertIn("!ROWS[2] = ARRAY()\n  !ROWS[2][1] = 'T-201'\n  !ROWS[2][2] = 'Tank'",pml)
+        self.assertIn('!THIS.equipment.setrows(!ROWS)',pml)
+        self.assertLess(pml.index('SHOW !!'),pml.index('define method .fillEquipment()'))
+        self.assertNotIn('.dtext',pml)
+        table.selection_mode='MULTI';self.assertIn("'Run' MULTI",form.pml())
+        table.rows=[];self.assertIn('!ROWS = ARRAY()\n  !THIS.equipment.setrows(!ROWS)',form.pml())
+
+    def test_table_validation_and_method_collision(self):
+        table=Gadget(kind='list',name='equipment',list_mode='TABLE',headings=['A','B'],rows=[['1','2']])
+        form=Form(gadgets=[table])
+        for key,value in [('headings',[]),('headings','A'),('rows',[['one']]),('rows',[['a',1]]),('rows','bad'),('rows',[['a\nb','c']]),('table_method','default'),('table_method','bad name')]:
+            old=getattr(table,key);setattr(table,key,value)
+            with self.subTest(key=key),self.assertRaises(ValueError): form.pml()
+            setattr(table,key,old)
+        form.gadgets.append(Gadget(name='run',callback='populate_equipment'))
+        with self.assertRaises(ValueError): form.pml()
+
     def test_menu_export_and_legacy_roundtrip(self):
         form = Form(menus=[Menu(name='tools',items=[MenuItem('Run','!this.run()'),MenuItem('Show','$p !!value')]),Menu(name='other')])
         pml = Form.loads(form.dumps()).pml()
@@ -439,6 +464,41 @@ class GuiTests(unittest.TestCase):
         self.w.undo();self.assertNotEqual(self.w.form.gadgets[-1].kind,'container')
         self.w.redo();self.assertEqual(self.w.form.gadgets[-1].kind,'container')
         self.assertEqual(len(Form.loads(self.w.form.dumps()).gadgets),7)
+
+    def test_table_edit_columns_rows_save_and_duplicate(self):
+        self.w.add('list');self.w.fields['list_mode'].setCurrentText('TABLE')
+        g=self.w.form.gadgets[0]
+        self.assertEqual(self.w.list_table.columnCount(),2)
+        self.assertEqual(self.w.list_table.rowCount(),2)
+        editor=self.w.list_table.cellWidget(0,1);editor.setFocus();editor.selectAll();QTest.keyClicks(editor,'Type')
+        cell=self.w.list_table.cellWidget(1,1);cell.setFocus();QTest.keyClicks(cell,'Pump')
+        self.assertIs(cell,self.w.list_table.cellWidget(1,1))
+        self.assertEqual((g.headings[1],g.rows[0][1]),('Type','Pump'))
+        with tempfile.TemporaryDirectory() as folder:
+            self.w.path=Path(folder)/'table.json';QTest.keyClick(cell,Qt.Key_S,Qt.ControlModifier);self.app.processEvents()
+            self.assertEqual(Form.loads(self.w.path.read_text()).gadgets[0].rows[0][1],'Pump')
+        self.w.add_table_column();self.w.add_table_row()
+        self.assertEqual((len(g.headings),len(g.rows),len(g.rows[1])),(3,2,3))
+        self.w.list_table.cellWidget(1,2).setFocus();self.w.delete_table_column()
+        self.assertEqual(len(g.headings),2)
+        self.w.list_table.cellWidget(2,0).setFocus();self.w.delete_table_row()
+        self.assertEqual(len(g.rows),1)
+        self.w.undo();self.assertEqual(len(self.w.form.gadgets[0].rows),2)
+        self.w.selected=0;self.w.refresh();self.w.fields['table_method'].setFocus();QTest.keyClicks(self.w.fields['table_method'],'fillTable')
+        self.w.duplicate();self.assertEqual(self.w.form.gadgets[1].table_method,'')
+        copied=self.w.list_table.cellWidget(1,1);copied.setFocus();copied.selectAll();QTest.keyClicks(copied,'Tank')
+        self.assertEqual(self.w.form.gadgets[0].rows[0][1],'Pump')
+        self.assertNotIn('出力できません',self.w.code.toPlainText())
+
+    def test_table_and_simple_modes_keep_separate_data(self):
+        self.w.add('list');self.w.fields['list_mode'].setCurrentText('TABLE')
+        cell=self.w.list_table.cellWidget(1,0);cell.setFocus();QTest.keyClicks(cell,'P-101')
+        self.w.fields['list_mode'].setCurrentText('SIMPLE')
+        self.assertEqual(self.w.form.gadgets[0].items,['Item A','Item B'])
+        self.assertNotIn('setheadings',self.w.code.toPlainText())
+        self.w.fields['list_mode'].setCurrentText('TABLE')
+        self.assertEqual(self.w.list_table.cellWidget(1,0).text(),'P-101')
+        self.assertIn("!ROWS[1][1] = 'P-101'",self.w.code.toPlainText())
 
     def test_real_value_editor_typing_keeps_cursor_and_save(self):
         self.w.add('combo')

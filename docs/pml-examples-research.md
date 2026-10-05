@@ -202,7 +202,7 @@ show !!demoform
 | 表示時初期化 | initCall / firstShownCall | 任意コードは記述可能、自動配線欄なし |
 | イベントごとの分岐 | open callback | 引数付きメソッド生成なし |
 | 表示名・識別値 | OPTION dtext / rtext | PAIRS コマンド方式のみ |
-| リスト | SINGLE / MULTI、SetHeadings、SetRows | 基本の単列リストのみ |
+| リスト | SINGLE / MULTI、SetHeadings、SetRows | 単列と複数列 TABLE に対応 |
 | 文字入力 | FORMAT、NOECHO、setEditable | STRING / REAL の基本入力のみ |
 | 複数行入力 | TEXTPANE と配列 VAL | 未対応 |
 | ラジオ | FRAME 内の RTOGGLE、RGROUP | 未対応 |
@@ -355,7 +355,7 @@ GUI に CONTAINER を追加するときは、配置だけでなく import、名�
 
 ## 更新内容と未実装の区別
 
-2026-10-05 更新: SLIDER、RTOGGLE、VIEW、ALPHA コマンド欄、COMBO、CONTAINER の GUI 編集・概略プレビュー・PML 出力を実装しました。LIST の SINGLE / MULTI と LIST / COMBO の表示名・実値編集にも対応しました。複数列 LIST、VIEW の drawlist 管理、外部 DLL の配布・イベント接続・終了処理は未対応です。E3D 4.0 実機での構文・動作検証は未実施です。詳細は [README](../README.md#追加ガジェット) と [サンプル](../examples/gadgets.pmlfrm) を参照してください。
+2026-10-05 更新: SLIDER、RTOGGLE、VIEW、ALPHA コマンド欄、COMBO、CONTAINER の GUI 編集・概略プレビュー・PML 出力を実装しました。LIST の SINGLE / MULTI と LIST / COMBO の表示名・実値編集にも対応しました。ユーザー提供の !HEAD / !ROWS の例に合わせ、複数列 LIST の表入力と SetHeadings / SetRows 出力にも対応しました。VIEW の drawlist 管理、外部 DLL の配布・イベント接続・終了処理は未対応です。E3D 4.0 実機での構文・動作検証は未実施です。詳細は [README](../README.md#追加ガジェット) と [サンプル](../examples/gadgets.pmlfrm) を参照してください。
 
 ## 15. 座標以外の配置: PATH / ALIGN / 相対参照
 
