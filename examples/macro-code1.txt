@@ -1,8 +1,8 @@
 -- Generated branch skeleton; edit each branch with your E3D logic.
-IF (!!buttonFlag EQ 'A') THEN
+If (!!BUTTONFLAG Eq 'A') Then
   -- Add the operation for this button here.
-  $P 'Button A'
-ELSEIF (!!buttonFlag EQ 'B') THEN
+  $P 'BUTTON A'
+Elseif (!!BUTTONFLAG Eq 'B') Then
   -- Add the operation for this button here.
-  $P 'Button B'
-ENDIF
+  $P 'BUTTON B'
+Endif

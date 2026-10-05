@@ -1,3 +1,4 @@
+from e3d_designer.formatting import canonical_pml
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import tempfile
@@ -16,30 +17,30 @@ from e3d_designer.app import Window, atomic_write, SX, SY
 class ModelTests(unittest.TestCase):
     def test_list_background_precedes_position(self):
         listing=Gadget(kind='list',name='results',label='Results',background='5',height=4)
-        form=Form(gadgets=[listing]);pml=Form.loads(form.dumps()).pml()
+        form=Form(gadgets=[listing]);pml=Form.loads(form.dumps()).pml(normalize=False)
         self.assertIn("list .results BACKGROUND 5 AT X 2 Y 1 'Results' SINGLE WIDTH 14 HEIGHT 4",pml)
         listing.list_mode='TABLE';listing.headings=['Name'];listing.rows=[['Pump']]
-        self.assertIn('list .results BACKGROUND 5 AT X 2 Y 1',form.pml())
+        self.assertIn('list .results BACKGROUND 5 AT X 2 Y 1',form.pml(normalize=False))
         for invalid in ('-1','5.5','5 AT X 10'):
             listing.background=invalid
-            with self.subTest(value=invalid),self.assertRaises(ValueError): form.pml()
+            with self.subTest(value=invalid),self.assertRaises(ValueError): form.pml(normalize=False)
         listing.background=''
-        self.assertNotIn('BACKGROUND',form.pml())
+        self.assertNotIn('BACKGROUND',form.pml(normalize=False))
 
     def test_view_aspect_export_validation_and_legacy_default(self):
         view=Gadget(kind='view',name='model',width=30,height=8,view_aspect='1.5')
-        form=Form(gadgets=[view]);pml=Form.loads(form.dumps()).pml()
+        form=Form(gadgets=[view]);pml=Form.loads(form.dumps()).pml(normalize=False)
         self.assertIn('WIDTH 30 HEIGHT 8 ASPECT 1.5',pml)
         for value in ('0','-1','nan','inf','command',None,1.5):
             view.view_aspect=value
-            with self.subTest(value=value),self.assertRaises(ValueError): form.pml()
+            with self.subTest(value=value),self.assertRaises(ValueError): form.pml(normalize=False)
         view.view_aspect=''
         raw=json.loads(form.dumps());del raw['form']['gadgets'][0]['view_aspect']
-        self.assertNotIn('ASPECT',Form.loads(json.dumps(raw)).pml())
+        self.assertNotIn('ASPECT',Form.loads(json.dumps(raw)).pml(normalize=False))
 
     def test_simple_multiple_list_and_legacy_selection(self):
         listing=Gadget(kind='list',name='results',label='Results',selection_mode='MULTIPLE',width=20,height=4,items=['First','Second'])
-        pml=Form(gadgets=[listing]).pml()
+        pml=Form(gadgets=[listing]).pml(normalize=False)
         self.assertIn("list .results AT X 2 Y 1 'Results' MULTIPLE WIDTH 20 HEIGHT 4",pml)
         self.assertIn("!choices[1] = 'First'",pml)
         self.assertIn("!choices[2] = 'Second'",pml)
@@ -48,12 +49,12 @@ class ModelTests(unittest.TestCase):
         raw=json.loads(Form(gadgets=[listing]).dumps());raw['form']['gadgets'][0]['selection_mode']='MULTI'
         loaded=Form.loads(json.dumps(raw))
         self.assertEqual(loaded.gadgets[0].selection_mode,'MULTIPLE')
-        self.assertIn('MULTIPLE WIDTH 20 HEIGHT 4',loaded.pml())
+        self.assertIn('MULTIPLE WIDTH 20 HEIGHT 4',loaded.pml(normalize=False))
 
     def test_table_list_arrays_method_and_dimensions(self):
         table=Gadget(kind='list',name='equipment',list_mode='TABLE',table_method='fillEquipment',
                      height=5,headings=['Name','Type'],rows=[['P-101','Pump'],['T-201','Tank']])
-        form=Form(gadgets=[table]);pml=Form.loads(form.dumps()).pml()
+        form=Form(gadgets=[table]);pml=Form.loads(form.dumps()).pml(normalize=False)
         self.assertIn("list .equipment AT X 2 Y 1 'Run' SINGLE WIDTH 14 HEIGHT 5",pml)
         self.assertIn('!this.fillEquipment()',pml)
         self.assertIn("define method .fillEquipment()\n  !HEAD = ARRAY()\n  !HEAD[1] = 'Name'\n  !HEAD[2] = 'Type'\n  !THIS.equipment.setheadings(!HEAD)",pml)
@@ -62,22 +63,22 @@ class ModelTests(unittest.TestCase):
         self.assertIn('!THIS.equipment.setrows(!ROWS)',pml)
         self.assertLess(pml.index('SHOW !!'),pml.index('define method .fillEquipment()'))
         self.assertNotIn('.dtext',pml)
-        table.selection_mode='MULTI';self.assertIn("'Run' MULTIPLE",form.pml())
-        table.rows=[];self.assertIn('!ROWS = ARRAY()\n  !THIS.equipment.setrows(!ROWS)',form.pml())
+        table.selection_mode='MULTI';self.assertIn("'Run' MULTIPLE",form.pml(normalize=False))
+        table.rows=[];self.assertIn('!ROWS = ARRAY()\n  !THIS.equipment.setrows(!ROWS)',form.pml(normalize=False))
 
     def test_table_validation_and_method_collision(self):
         table=Gadget(kind='list',name='equipment',list_mode='TABLE',headings=['A','B'],rows=[['1','2']])
         form=Form(gadgets=[table])
         for key,value in [('headings',[]),('headings','A'),('rows',[['one']]),('rows',[['a',1]]),('rows','bad'),('rows',[['a\nb','c']]),('table_method','default'),('table_method','bad name')]:
             old=getattr(table,key);setattr(table,key,value)
-            with self.subTest(key=key),self.assertRaises(ValueError): form.pml()
+            with self.subTest(key=key),self.assertRaises(ValueError): form.pml(normalize=False)
             setattr(table,key,old)
         form.gadgets.append(Gadget(name='run',callback='populate_equipment'))
-        with self.assertRaises(ValueError): form.pml()
+        with self.assertRaises(ValueError): form.pml(normalize=False)
 
     def test_menu_export_and_legacy_roundtrip(self):
         form = Form(menus=[Menu(name='tools',items=[MenuItem('Run','!this.run()'),MenuItem('Show','$p !!value')]),Menu(name='other')])
-        pml = Form.loads(form.dumps()).pml()
+        pml = Form.loads(form.dumps()).pml(normalize=False)
         self.assertIn("  menu .tools\n    add 'Run' '!this.run()'\n    add 'Show' '$p !!value'\n  exit",pml)
         self.assertIn('  menu .other\n  exit',pml)
         raw = json.loads(form.dumps()); del raw['form']['menus']
@@ -87,8 +88,8 @@ class ModelTests(unittest.TestCase):
         for menus in ([Menu(name='bad name')], [Menu(name='tools'),Menu(name='TOOLS')],
                       [Menu(items=[MenuItem('bad\nlabel','run')])],
                       [Menu(items=[MenuItem('Run',123)])]):
-            with self.subTest(menus=menus),self.assertRaises(ValueError): Form(menus=menus).pml()
-        with self.assertRaises(ValueError): Form(menus=[Menu(name='button1')],gadgets=[Gadget()]).pml()
+            with self.subTest(menus=menus),self.assertRaises(ValueError): Form(menus=menus).pml(normalize=False)
+        with self.assertRaises(ValueError): Form(menus=[Menu(name='button1')],gadgets=[Gadget()]).pml(normalize=False)
         raw=json.loads(Form(menus=[Menu(items=[MenuItem()])]).dumps())
         for value in (None,'not an array',[{'name':'menu1','items':[{'label':1,'command':'run'}]}]):
             changed=json.loads(json.dumps(raw));changed['form']['menus']=value
@@ -98,49 +99,49 @@ class ModelTests(unittest.TestCase):
         base=Gadget(name='base',x=2,y=1)
         listing=Gadget(kind='list',name='results',label='Results',x=4,y=5,width=20,height=3,callback='onSelect')
         form=Form(gadgets=[base,listing])
-        self.assertIn("list .results AT X 4 Y 5 'Results' SINGLE WIDTH 20 HEIGHT 3 callback '!this.onSelect()'",form.pml())
+        self.assertIn("list .results AT X 4 Y 5 'Results' SINGLE WIDTH 20 HEIGHT 3 callback '!this.onSelect()'",form.pml(normalize=False))
         listing.layout_mode='RELATIVE';listing.xref='base';listing.yref='base';listing.width_ref='base'
-        self.assertIn("list .results AT XMIN.base YMAX.base+0.5 'Results' SINGLE WIDTH.base HEIGHT 3",form.pml())
+        self.assertIn("list .results AT XMIN.base YMAX.base+0.5 'Results' SINGLE WIDTH.base HEIGHT 3",form.pml(normalize=False))
         listing.layout_mode='AUTO'
-        line=next(line for line in form.pml().splitlines() if 'list .results' in line)
+        line=next(line for line in form.pml(normalize=False).splitlines() if 'list .results' in line)
         self.assertNotIn('AT ',line)
         self.assertIn("'Results' SINGLE WIDTH.base HEIGHT 3",line)
 
     def test_slider_export_open_callback_and_bounds(self):
         slider=Gadget(kind='slider',name='level',slider_min=-10,slider_max=90,slider_step=5,slider_value=30,
                       callback='onLevel',body='  q var !event')
-        f=Form(gadgets=[slider]);pml=Form.loads(f.dumps()).pml()
+        f=Form(gadgets=[slider]);pml=Form.loads(f.dumps()).pml(normalize=False)
         self.assertIn('HORIZONTAL RANGE -10 90 STEP 5 VAL 30',pml)
         self.assertIn("!this.level.callback = '!this.onLevel('",pml)
         self.assertIn('define method .onLevel(!gad is GADGET, !event is STRING)',pml)
         slider.slider_orientation='VERTICAL';slider.height=8
-        self.assertIn('HEIGHT 8',f.pml())
+        self.assertIn('HEIGHT 8',f.pml(normalize=False))
         for field,value in [('slider_min',90),('slider_step',0),('slider_value',100)]:
             old=getattr(slider,field);setattr(slider,field,value)
-            with self.assertRaises(ValueError): f.pml()
+            with self.assertRaises(ValueError): f.pml(normalize=False)
             setattr(slider,field,old)
         f.gadgets.append(Gadget(name='run',callback='onLevel',body=slider.body))
-        with self.assertRaisesRegex(ValueError,'分けて'): f.pml()
+        with self.assertRaisesRegex(ValueError,'分けて'): f.pml(normalize=False)
         f.gadgets.pop();slider.callback='default'
-        with self.assertRaises(ValueError): f.pml()
+        with self.assertRaises(ValueError): f.pml(normalize=False)
 
     def test_radio_group_export_and_parent_validation(self):
         group=Gadget(kind='frame',name='group',width=24,height=6)
         radios=[Gadget(kind='rtoggle',name=name,parent='group',y=i*2+1,on_value=value)
                 for i,(name,value) in enumerate([('pump','PUMP'),('tank','TANK')])]
-        f=Form(gadgets=[group,*radios]);pml=Form.loads(f.dumps()).pml()
+        f=Form(gadgets=[group,*radios]);pml=Form.loads(f.dumps()).pml(normalize=False)
         self.assertIn("RTOGGLE .pump 'Run' AT X 2 Y 1 STATES '' 'PUMP'",pml)
         self.assertLess(pml.index('FRAME .group'),pml.index('RTOGGLE .pump'))
         radios[0].parent=''
-        with self.assertRaisesRegex(ValueError,'FRAME'): f.pml()
+        with self.assertRaisesRegex(ValueError,'FRAME'): f.pml(normalize=False)
         radios[0].parent='group';radios[0].callback='onRadio'
-        with self.assertRaises(ValueError): f.pml()
+        with self.assertRaises(ValueError): f.pml(normalize=False)
 
     def test_list_combo_display_real_values_and_multiselect(self):
         gadgets=[Gadget(kind=kind,name=kind+'1',y=i*5,items=['Pump','Tank'],item_values=['/P-1','/T-1'])
                  for i,kind in enumerate(('list','combo'))]
         gadgets[0].selection_mode='MULTI';gadgets[0].height=3
-        f=Form(gadgets=gadgets);pml=Form.loads(f.dumps()).pml()
+        f=Form(gadgets=gadgets);pml=Form.loads(f.dumps()).pml(normalize=False)
         self.assertIn("list .list1 AT X 2 Y 0 'Run' MULTIPLE",pml)
         self.assertIn('COMBO .combo1',pml)
         self.assertIn("!values[1] = '/P-1'",pml)
@@ -148,15 +149,15 @@ class ModelTests(unittest.TestCase):
             self.assertIn(f'!this.{g.name}.dtext = !choices',pml)
             self.assertIn(f'!this.{g.name}.rtext = !values',pml)
         gadgets[1].combo_keyword='COMBOBOX'
-        self.assertIn('COMBOBOX .combo1',f.pml())
+        self.assertIn('COMBOBOX .combo1',f.pml(normalize=False))
         gadgets[0].item_values=['only one']
-        with self.assertRaisesRegex(ValueError,'行数'): f.pml()
+        with self.assertRaisesRegex(ValueError,'行数'): f.pml(normalize=False)
 
     def test_views_channels_and_container_connection(self):
         model=Gadget(kind='view',name='model',height=5,view_code='LIMITS AUTO\nISOMETRIC 3')
         alpha=Gadget(kind='commandline',name='commands',y=7,height=5,channels='COMMANDS')
         host=Gadget(kind='container',name='grid',y=14,height=5,assembly='uGrid',namespace='Aveva.Gadgets.uGrid',control_type='userGrid')
-        f=Form(gadgets=[model,alpha,host]);pml=Form.loads(f.dumps()).pml()
+        f=Form(gadgets=[model,alpha,host]);pml=Form.loads(f.dumps()).pml(normalize=False)
         self.assertIn('VIEW .model AT X 2 Y 1 VOLUME',pml)
         self.assertIn('LIMITS AUTO\n    ISOMETRIC 3\n  EXIT',pml)
         self.assertIn('VIEW .commands AT X 2 Y 7 ALPHA',pml)
@@ -167,11 +168,11 @@ class ModelTests(unittest.TestCase):
         self.assertIn('CONTAINER .grid AT X 2 Y 14 PMLNETCONTROL',pml)
         self.assertIn('!this.grid.Control = !this.gridControl.handle()',pml)
         host.namespace=''
-        with self.assertRaises(ValueError): f.pml()
+        with self.assertRaises(ValueError): f.pml(normalize=False)
         host.namespace='Aveva.Gadgets.uGrid';host.control_type='userGrid()'
-        with self.assertRaises(ValueError): f.pml()
+        with self.assertRaises(ValueError): f.pml(normalize=False)
         host.control_type='userGrid';f.gadgets.append(Gadget(name='gridControl'))
-        with self.assertRaisesRegex(ValueError,'重複'): f.pml()
+        with self.assertRaisesRegex(ValueError,'重複'): f.pml(normalize=False)
 
     def test_new_gadget_json_types_and_legacy_defaults(self):
         raw=json.loads(Form(gadgets=[Gadget()]).dumps())
@@ -189,12 +190,12 @@ class ModelTests(unittest.TestCase):
                           width=8)
         form = Form(gadgets=[follower,base])
         self.assertEqual(form.geometry(follower), (15,8,8,1))
-        pml = Form.loads(form.dumps()).pml()
+        pml = Form.loads(form.dumps()).pml(normalize=False)
         self.assertIn('AT XMAX.base-SIZE-1 YMAX.base+1',pml)
         self.assertLess(pml.index('BUTTON .base'),pml.index('BUTTON .follower'))
         follower.width_ref='base'
         self.assertEqual(form.geometry(follower), (9,8,14,1))
-        self.assertIn('WIDTH.base',form.pml())
+        self.assertIn('WIDTH.base',form.pml(normalize=False))
         base.width=18
         self.assertEqual(form.geometry(follower), (9,8,18,1))
 
@@ -205,14 +206,14 @@ class ModelTests(unittest.TestCase):
         for alignment,x in [('LEFT',20),('CENTRE',23),('RIGHT',26)]:
             follower.halign=alignment
             self.assertEqual(form.geometry(follower),(x,15,8,2))
-            self.assertIn('HALIGN '+alignment,form.pml())
+            self.assertIn('HALIGN '+alignment,form.pml(normalize=False))
         follower.path='UP'
         self.assertEqual(form.geometry(follower),(26,7,8,2))
         follower.path='RIGHT'; follower.valign='BOTTOM'
         self.assertEqual(form.geometry(follower),(36,12,8,2))
         follower.path='LEFT'; follower.valign='CENTRE'
         self.assertEqual(form.geometry(follower),(10,11,8,2))
-        self.assertIn('PATH LEFT',form.pml())
+        self.assertIn('PATH LEFT',form.pml(normalize=False))
 
     def test_invalid_layout_references_and_export_order(self):
         base=Gadget(name='base')
@@ -221,16 +222,16 @@ class ModelTests(unittest.TestCase):
         form=Form(gadgets=[base,other,follower])
         for reference in ('missing','follower'):
             follower.xref=reference
-            with self.assertRaises(ValueError): form.pml()
+            with self.assertRaises(ValueError): form.pml(normalize=False)
         follower.xref='base';base.width_ref='follower'
-        with self.assertRaises(ValueError): form.pml()
+        with self.assertRaises(ValueError): form.pml(normalize=False)
         base.width_ref=''; follower.layout_mode='AUTO';follower.width_ref='other'
         form.gadgets=[base,follower,other]
-        with self.assertRaisesRegex(ValueError,'直前'): form.pml()
+        with self.assertRaisesRegex(ValueError,'直前'): form.pml(normalize=False)
         form.gadgets=[follower]
-        with self.assertRaises(ValueError): form.pml()
+        with self.assertRaises(ValueError): form.pml(normalize=False)
         form.gadgets=[base,other];other.kind='toggle';other.width_ref='base'
-        with self.assertRaisesRegex(ValueError,'幅参照'): form.pml()
+        with self.assertRaisesRegex(ValueError,'幅参照'): form.pml(normalize=False)
 
     def test_malformed_project_field_types_are_rejected(self):
         base=json.loads(Form(gadgets=[Gadget(callback='run')]).dumps())
@@ -246,7 +247,7 @@ class ModelTests(unittest.TestCase):
                 body="  $p 'clicked'" if k=='button' else '')
                 for i,k in enumerate(('button','paragraph','text','toggle','option','list'))])
         f.gadgets[2].value_type='REAL'; f.gadgets[2].initial='12.5'
-        pml=Form.loads(f.dumps()).pml()
+        pml=Form.loads(f.dumps()).pml(normalize=False)
         self.assertIn("CALL '!this.runAction()'",pml)
         self.assertIn('!this.text1.val = 12.5',pml)
         self.assertIn("OPTION _option1",pml)
@@ -259,36 +260,36 @@ class ModelTests(unittest.TestCase):
 
     def test_variables_before_kill_and_form_definition(self):
         f = Form(variables={'projectName':'Project A', 'mode':'Default'})
-        pml = Form.loads(f.dumps()).pml()
+        pml = Form.loads(f.dumps()).pml(normalize=False)
         self.assertTrue(pml.startswith("VAR !!projectName 'Project A'\nVAR !!mode 'Default'\nkill !!userform\n"))
         self.assertLess(pml.index('kill !!userform'), pml.index('setup form'))
         self.assertIn('setup form !!userform DIALOG DOCK RIGHT',pml)
-        self.assertIn('size 70 22 DIALOG',Form(dock_right=False).pml())
-        with self.assertRaises(ValueError): Form(variables={'userform':'bad'}).pml()
+        self.assertIn('size 70 22 DIALOG',Form(dock_right=False).pml(normalize=False))
+        with self.assertRaises(ValueError): Form(variables={'userform':'bad'}).pml(normalize=False)
 
     def test_line_orientations_and_roundtrip(self):
         for orientation in ('HORIZ', 'VERT'):
             f=Form(gadgets=[Gadget(kind='line',name='separator',label='',x=2,y=3,width=20,height=2,orientation=orientation)])
-            self.assertIn(f"LINE .separator AT X 2 Y 3 '' {orientation} WIDTH 20 HEIGHT 2",Form.loads(f.dumps()).pml())
+            self.assertIn(f"LINE .separator AT X 2 Y 3 '' {orientation} WIDTH 20 HEIGHT 2",Form.loads(f.dumps()).pml(normalize=False))
         f.gadgets[0].orientation='INVALID'
-        with self.assertRaises(ValueError): f.pml()
+        with self.assertRaises(ValueError): f.pml(normalize=False)
 
     def test_paragraph_background_syntax(self):
         f=Form(gadgets=[Gadget(kind='paragraph',name='message',label='Message',x=2,y=3,background='5')])
-        self.assertIn("PARAGRAPH .message AT X 2 Y 3 BACKGROUND 5 TEXT 'Message' WIDTH 14",Form.loads(f.dumps()).pml())
+        self.assertIn("PARAGRAPH .message AT X 2 Y 3 BACKGROUND 5 TEXT 'Message' WIDTH 14",Form.loads(f.dumps()).pml(normalize=False))
         f.gadgets[0].background='5 TEXT hacked'
-        with self.assertRaises(ValueError): f.pml()
+        with self.assertRaises(ValueError): f.pml(normalize=False)
         f.gadgets[0].background=''
-        self.assertNotIn('BACKGROUND',f.pml())
-        self.assertIn("PARAGRAPH .message AT X 2 Y 3 TEXT 'Message' WIDTH 14",f.pml())
+        self.assertNotIn('BACKGROUND',f.pml(normalize=False))
+        self.assertIn("PARAGRAPH .message AT X 2 Y 3 TEXT 'Message' WIDTH 14",f.pml(normalize=False))
 
     def test_tabset_frame_syntax_and_validation(self):
         f=Form(gadgets=[Gadget(kind='frame',frame_style='TABSET',name='tabs',label='TABSET',x=2,y=3,width=40)])
-        self.assertIn("FRAME .tabs TABSET AT X 2 Y 3 'TABSET' WIDTH 40\n  EXIT",Form.loads(f.dumps()).pml())
+        self.assertIn("FRAME .tabs TABSET AT X 2 Y 3 'TABSET' WIDTH 40\n  EXIT",Form.loads(f.dumps()).pml(normalize=False))
         f.gadgets[0].frame_style='INVALID'
-        with self.assertRaises(ValueError): f.pml()
+        with self.assertRaises(ValueError): f.pml(normalize=False)
         f.gadgets[0].frame_style='TABSET'; f.gadgets[0].kind='button'
-        with self.assertRaises(ValueError): f.pml()
+        with self.assertRaises(ValueError): f.pml(normalize=False)
 
     def test_nested_tabset_frames_and_relative_coordinates(self):
         f=Form(gadgets=[
@@ -297,89 +298,89 @@ class ModelTests(unittest.TestCase):
             Gadget(kind='frame',name='page1',label='Page 1',parent='tabs',width=45,height=12),
             Gadget(kind='frame',name='page2',label='Page 2',parent='tabs',width=45,height=12)])
         restored=Form.loads(f.dumps())
-        pml=restored.pml()
+        pml=restored.pml(normalize=False)
         self.assertIn("  FRAME .tabs TABSET AT X 2 Y 3 'TABSET' WIDTH 50\n    FRAME .page1 'Page 1'\n      BUTTON .run AT X 1 Y 1 'Run' WIDTH 14\n    EXIT\n    FRAME .page2 'Page 2'\n    EXIT\n  EXIT\nexit",pml)
         self.assertEqual(restored.offset(restored.gadgets[0]),(4,4)) # page default X=2, Y=1
         restored.gadgets[0].parent='tabs'
-        with self.assertRaises(ValueError): restored.pml()
+        with self.assertRaises(ValueError): restored.pml(normalize=False)
 
     def test_parent_validation_cycles_missing_and_bounds(self):
         for gadgets in ([Gadget(parent='missing')],
             [Gadget(kind='frame',name='a',parent='b'),Gadget(kind='frame',name='b',parent='a')],
             [Gadget(kind='frame',name='f',width=5,height=5),Gadget(name='child',parent='f',width=14)]):
-            with self.assertRaises(ValueError): Form(gadgets=gadgets).pml()
+            with self.assertRaises(ValueError): Form(gadgets=gadgets).pml(normalize=False)
 
     def test_empty_frame_closes_before_form_exit(self):
         f=Form(gadgets=[Gadget(kind='frame',name='group1',label='Settings')])
-        pml=Form.loads(f.dumps()).pml()
+        pml=Form.loads(f.dumps()).pml(normalize=False)
         self.assertIn("  FRAME .group1 'Settings'\n  EXIT\nexit",pml)
         f.gadgets[0].callback='go'
-        with self.assertRaises(ValueError): f.pml()
+        with self.assertRaises(ValueError): f.pml(normalize=False)
 
     def test_default_method_body_and_no_duplicate_definition(self):
         f=Form(default_body="$p 'Default'",gadgets=[Gadget(callback='DEFAULT')])
-        pml=Form.loads(f.dumps()).pml()
+        pml=Form.loads(f.dumps()).pml(normalize=False)
         self.assertIn("DEFINE METHOD .DEFAULT()\n$p 'Default'\nENDMETHOD",pml)
         self.assertEqual(pml.lower().count('define method .default()'),1)
         self.assertLess(pml.index('SHOW !!'),pml.index('define method .userform()'))
         self.assertLess(pml.index('SHOW !!'),pml.index('DEFINE METHOD .DEFAULT()'))
         f.gadgets[0].body='different'
-        with self.assertRaises(ValueError): f.pml()
+        with self.assertRaises(ValueError): f.pml(normalize=False)
 
     def test_show_then_program_before_method_definitions(self):
         f=Form(after_show_code="$p 'Ready'",gadgets=[Gadget(callback='onRun')])
-        pml=Form.loads(f.dumps()).pml()
+        pml=Form.loads(f.dumps()).pml(normalize=False)
         self.assertIn("exit\n\nSHOW !!userform\n\n$p 'Ready'\n\ndefine method .userform()",pml)
         self.assertLess(pml.index('SHOW !!userform'),pml.index('define method .onRun()'))
         self.assertEqual(pml.count('SHOW !!userform'),1)
         f.show_form=False
-        self.assertIn('SHOW !!userform',f.pml())
-        self.assertIn("$p 'Ready'",f.pml())
+        self.assertIn('SHOW !!userform',f.pml(normalize=False))
+        self.assertIn("$p 'Ready'",f.pml(normalize=False))
 
     def test_option_pairs_commands_and_existing_underscore(self):
         for name in ('mode','_mode'):
             f=Form(gadgets=[Gadget(kind='option',name=name,label='Mode',x=2,y=3,items=['First','Second','Third'],item_commands=['FIRST','SECOND',"$p 'third'"])])
-            self.assertIn("OPTION _mode AT X 2 Y 3 'Mode' CALL '$$_mode'\n  VAR LIST _mode PAIRS\n  'First' 'FIRST'\n  'Second' 'SECOND'\n  'Third' |$p 'third'|\n  EXIT",Form.loads(f.dumps()).pml())
-            self.assertNotIn('!this.'+name+'.dtext',f.pml())
+            self.assertIn("OPTION _mode AT X 2 Y 3 'Mode' CALL '$$_mode'\n  VAR LIST _mode PAIRS\n  'First' 'FIRST'\n  'Second' 'SECOND'\n  'Third' |$p 'third'|\n  EXIT",Form.loads(f.dumps()).pml(normalize=False))
+            self.assertNotIn('!this.'+name+'.dtext',f.pml(normalize=False))
         f.gadgets[0].item_commands=['FIRST']
-        with self.assertRaises(ValueError): f.pml()
+        with self.assertRaises(ValueError): f.pml(normalize=False)
         with self.assertRaises(ValueError):
-            Form(gadgets=[Gadget(kind='option',name='mode'),Gadget(kind='option',name='_mode')]).pml()
+            Form(gadgets=[Gadget(kind='option',name='mode'),Gadget(kind='option',name='_mode')]).pml(normalize=False)
 
     def test_button_background_and_call_order(self):
         f=Form(gadgets=[Gadget(kind='button',name='apply',label='Apply',x=2,y=3,width=20,background='5',command='SAVEWORK')])
-        self.assertIn("BUTTON .apply AT X 2 Y 3 BACKGROUND 5 'Apply' CALL 'SAVEWORK' WIDTH 20",Form.loads(f.dumps()).pml())
+        self.assertIn("BUTTON .apply AT X 2 Y 3 BACKGROUND 5 'Apply' CALL 'SAVEWORK' WIDTH 20",Form.loads(f.dumps()).pml(normalize=False))
         f.gadgets[0].background=''; f.gadgets[0].command=''; f.gadgets[0].callback='onApply'
-        self.assertIn("BUTTON .apply AT X 2 Y 3 'Apply' CALL '!this.onApply()' WIDTH 20",f.pml())
-        self.assertIn('define method .onApply()',f.pml())
+        self.assertIn("BUTTON .apply AT X 2 Y 3 'Apply' CALL '!this.onApply()' WIDTH 20",f.pml(normalize=False))
+        self.assertIn('define method .onApply()',f.pml(normalize=False))
         f.gadgets[0].callback=''
-        self.assertIn("BUTTON .apply AT X 2 Y 3 'Apply' WIDTH 20",f.pml())
+        self.assertIn("BUTTON .apply AT X 2 Y 3 'Apply' WIDTH 20",f.pml(normalize=False))
 
     def test_text_call_order_and_types(self):
         for value_type in ('STRING', 'REAL'):
             f=Form(gadgets=[Gadget(kind='text',name='input1',label='Input',x=2,y=3,width=20,value_type=value_type,command='SAVEWORK')])
-            self.assertIn(f"TEXT .input1 AT X 2 Y 3 'Input' CALL 'SAVEWORK' WIDTH 20 IS {value_type}",Form.loads(f.dumps()).pml())
+            self.assertIn(f"TEXT .input1 AT X 2 Y 3 'Input' CALL 'SAVEWORK' WIDTH 20 IS {value_type}",Form.loads(f.dumps()).pml(normalize=False))
         f.gadgets[0].command=''; f.gadgets[0].callback='onInput'
-        self.assertIn("CALL '!this.onInput()' WIDTH 20 IS REAL", f.pml())
-        self.assertIn('define method .onInput()',f.pml())
+        self.assertIn("CALL '!this.onInput()' WIDTH 20 IS REAL", f.pml(normalize=False))
+        self.assertIn('define method .onInput()',f.pml(normalize=False))
         f.gadgets[0].callback=''
-        self.assertIn("'Input' WIDTH 20 IS REAL",f.pml())
-        self.assertNotIn(' CALL ',f.pml())
+        self.assertIn("'Input' WIDTH 20 IS REAL",f.pml(normalize=False))
+        self.assertNotIn(' CALL ',f.pml(normalize=False))
 
     def test_toggle_call_syntax(self):
         f=Form(gadgets=[Gadget(kind='toggle',name='enabled',label='Enabled',x=2,y=7,command="$p 'clicked'")])
-        self.assertIn("TOGGLE .enabled AT X 2 Y 7 'Enabled' CALL |$p 'clicked'|",f.pml())
+        self.assertIn("TOGGLE .enabled AT X 2 Y 7 'Enabled' CALL |$p 'clicked'|",f.pml(normalize=False))
         f.gadgets[0].command=''; f.gadgets[0].callback='toggleAction'
-        self.assertIn("CALL '!this.toggleAction()'",f.pml())
+        self.assertIn("CALL '!this.toggleAction()'",f.pml(normalize=False))
         f.gadgets[0].command='SAVEWORK'
-        with self.assertRaises(ValueError): f.pml()
+        with self.assertRaises(ValueError): f.pml(normalize=False)
 
     def test_invalid_names_geometry_and_numbers(self):
         for g in (Gadget(name='bad-name'),Gadget(x=100),Gadget(x=float('nan')),
                   Gadget(kind='text',value_type='REAL',initial='inf')):
-            with self.assertRaises(ValueError): Form(gadgets=[g]).pml()
+            with self.assertRaises(ValueError): Form(gadgets=[g]).pml(normalize=False)
         with self.assertRaises(ValueError):
-            Form(gadgets=[Gadget(name='Run'),Gadget(name='run')]).pml()
+            Form(gadgets=[Gadget(name='Run'),Gadget(name='run')]).pml(normalize=False)
         with self.assertRaises(ValueError): Form.loads('{"version":2}')
 
     def test_literals_and_callback_conflict(self):
@@ -387,13 +388,13 @@ class ModelTests(unittest.TestCase):
         for value in ('$!this.name', 'a\nb', "'|\""):
             with self.assertRaises(ValueError): literal(value)
         with self.assertRaises(ValueError):
-            Form(gadgets=[Gadget(name='a',callback='go',body='a'),Gadget(name='b',callback='GO',body='b')]).pml()
+            Form(gadgets=[Gadget(name='a',callback='go',body='a'),Gadget(name='b',callback='GO',body='b')]).pml(normalize=False)
 
     def test_encoding_failure_preserves_existing_file(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/'form.pmlfrm'; atomic_write(path,b'old')
             with self.assertRaises(UnicodeEncodeError):
-                atomic_write(path,Form(title='😀').pml().encode('cp932'))
+                atomic_write(path,Form(title='😀').pml(normalize=False).encode('cp932'))
             self.assertEqual(path.read_bytes(),b'old')
 
 
@@ -445,10 +446,10 @@ class GuiTests(unittest.TestCase):
         self.w.add('view');editor=self.w.fields['view_aspect']
         self.assertTrue(editor.isEnabled())
         editor.setFocus();QTest.keyClicks(editor,'1.5')
-        self.assertIn('HEIGHT 5 ASPECT 1.5',self.w.code.toPlainText())
+        self.assertIn(canonical_pml('HEIGHT 5 ASPECT 1.5'),self.w.code.toPlainText())
         self.assertEqual(Form.loads(self.w.form.dumps()).gadgets[0].view_aspect,'1.5')
         editor.selectAll();QTest.keyClick(editor,Qt.Key_Backspace)
-        self.assertNotIn('ASPECT',self.w.code.toPlainText())
+        self.assertNotIn(canonical_pml('ASPECT'),self.w.code.toPlainText())
         self.w.selected=None;self.w.refresh();self.w.add('button')
         self.assertFalse(self.w.fields['view_aspect'].isEnabled())
 
@@ -456,7 +457,7 @@ class GuiTests(unittest.TestCase):
         self.w.add('list');editor=self.w.fields['background']
         self.assertTrue(editor.isEnabled())
         editor.setFocus();QTest.keyClicks(editor,'5')
-        self.assertIn('list .list1 BACKGROUND 5 AT X 0 Y 0',self.w.code.toPlainText())
+        self.assertIn(canonical_pml('list .list1 BACKGROUND 5 AT X 0 Y 0'),self.w.code.toPlainText())
         self.assertEqual(Form.loads(self.w.form.dumps()).gadgets[0].background,'5')
 
     def test_menu_edit_save_preview_and_undo(self):
@@ -487,7 +488,7 @@ class GuiTests(unittest.TestCase):
         actions[1].trigger()
         self.assertEqual([item.label for item in self.w.form.menus[0].items],['B','A'])
         self.assertEqual([action.text() for action in self.w.preview_menus[0].actions()],['B','A'])
-        pml=self.w.form.pml();self.assertLess(pml.index("add 'B'"),pml.index("add 'A'"))
+        pml=self.w.form.pml(normalize=False);self.assertLess(pml.index("add 'B'"),pml.index("add 'A'"))
         self.w.menu_items.cellWidget(1,2).menu().actions()[2].trigger()
         self.assertEqual([item.label for item in self.w.form.menus[0].items],['B','A','A'])
         copied=self.w.menu_items.cellWidget(2,0);copied.setFocus();copied.selectAll();QTest.keyClicks(copied,'Copy')
@@ -551,7 +552,7 @@ class GuiTests(unittest.TestCase):
         for kind in ('slider','combo','view','commandline','container'):
             self.w.selected=None;self.w.refresh();self.w.add(kind)
             self.assertEqual(self.w.form.gadgets[-1].kind,kind)
-            self.assertNotIn('出力できません',self.w.code.toPlainText())
+            self.assertNotIn(canonical_pml('出力できません'),self.w.code.toPlainText())
             self.w.view.viewport().repaint();self.app.processEvents()
         self.w.undo();self.assertNotEqual(self.w.form.gadgets[-1].kind,'container')
         self.w.redo();self.assertEqual(self.w.form.gadgets[-1].kind,'container')
@@ -580,17 +581,17 @@ class GuiTests(unittest.TestCase):
         self.w.duplicate();self.assertEqual(self.w.form.gadgets[1].table_method,'')
         copied=self.w.list_table.cellWidget(1,1);copied.setFocus();copied.selectAll();QTest.keyClicks(copied,'Tank')
         self.assertEqual(self.w.form.gadgets[0].rows[0][1],'Pump')
-        self.assertNotIn('出力できません',self.w.code.toPlainText())
+        self.assertNotIn(canonical_pml('出力できません'),self.w.code.toPlainText())
 
     def test_table_and_simple_modes_keep_separate_data(self):
         self.w.add('list');self.w.fields['list_mode'].setCurrentText('TABLE')
         cell=self.w.list_table.cellWidget(1,0);cell.setFocus();QTest.keyClicks(cell,'P-101')
         self.w.fields['list_mode'].setCurrentText('SIMPLE')
         self.assertEqual(self.w.form.gadgets[0].items,['Item A','Item B'])
-        self.assertNotIn('setheadings',self.w.code.toPlainText())
+        self.assertNotIn(canonical_pml('setheadings'),self.w.code.toPlainText())
         self.w.fields['list_mode'].setCurrentText('TABLE')
         self.assertEqual(self.w.list_table.cellWidget(1,0).text(),'P-101')
-        self.assertIn("!ROWS[1][1] = 'P-101'",self.w.code.toPlainText())
+        self.assertIn(canonical_pml("!ROWS[1][1] = 'P-101'"),self.w.code.toPlainText())
 
     def test_real_value_editor_typing_keeps_cursor_and_save(self):
         self.w.add('combo')
@@ -604,7 +605,7 @@ class GuiTests(unittest.TestCase):
             self.assertEqual(Form.loads(self.w.path.read_text()).gadgets[0].item_values,['/P-1','/T-1'])
         self.w.selected=None;self.w.refresh();self.w.add('view')
         self.w.view_code.setPlainText('LIMITS AUTO')
-        self.assertIn('LIMITS AUTO',self.w.code.toPlainText())
+        self.assertIn(canonical_pml('LIMITS AUTO'),self.w.code.toPlainText())
         self.assertFalse(self.w.item_values.isEnabled())
 
     def test_relative_controls_preview_and_rename(self):
@@ -648,16 +649,16 @@ class GuiTests(unittest.TestCase):
             self.assertEqual(editor.textCursor().position(),len(editor.toPlainText()))
         self.assertEqual(self.w.form.gadgets[0].items,['Item A','Item B','Third'])
         self.assertEqual(self.w.form.gadgets[0].item_commands,['FIRST','SECOND','Third'])
-        self.assertIn("'Third' 'Third'",self.w.form.pml())
+        self.assertIn("'Third' 'Third'",self.w.form.pml(normalize=False))
 
     def test_extra_option_commands_are_not_silently_deleted(self):
         self.w.add('option')
         self.w.choice_commands.setPlainText('FIRST\nSECOND\nTHIRD')
         self.assertEqual(self.w.choice_commands.toPlainText(),'FIRST\nSECOND\nTHIRD')
         self.assertEqual(self.w.form.gadgets[0].item_commands,['FIRST','SECOND','THIRD'])
-        with self.assertRaises(ValueError): self.w.form.pml()
+        with self.assertRaises(ValueError): self.w.form.pml(normalize=False)
         self.w.choices.setPlainText('A\nB\nC')
-        self.assertIn("'C' 'THIRD'",self.w.form.pml())
+        self.assertIn("'C' 'THIRD'",self.w.form.pml(normalize=False))
 
     def test_close_with_selected_item_and_queued_callback_has_no_exception(self):
         errors=[]
@@ -673,7 +674,7 @@ class GuiTests(unittest.TestCase):
         self.w.add('text')
         self.w.fields['name'].setText('inputName'); self.w.update_gadget()
         self.w.fields['initial'].setText('ABC'); self.w.update_gadget()
-        self.assertIn("!this.inputName.val = 'ABC'",self.w.code.toPlainText())
+        self.assertIn(canonical_pml("!this.inputName.val = 'ABC'"),self.w.code.toPlainText())
         self.w.duplicate(); self.assertEqual(len(self.w.form.gadgets),2)
         self.w.undo(); self.assertEqual(len(self.w.form.gadgets),1)
         self.w.redo(); self.assertEqual(len(self.w.form.gadgets),2)
@@ -709,14 +710,14 @@ class GuiTests(unittest.TestCase):
 
     def test_default_body_editor(self):
         self.w.default_body.setPlainText("$p 'Default'")
-        self.assertIn("DEFINE METHOD .DEFAULT()\n$p 'Default'\nENDMETHOD",self.w.code.toPlainText())
+        self.assertIn(canonical_pml("DEFINE METHOD .DEFAULT()\n$p 'Default'\nENDMETHOD"),self.w.code.toPlainText())
         self.assertEqual(Form.loads(self.w.form.dumps()).default_body,"$p 'Default'")
 
     def test_after_show_program_editor(self):
         self.w.after_show.setPlainText("$p 'Ready'")
-        self.assertIn("SHOW !!userform\n\n$p 'Ready'\n\ndefine method .userform()",self.w.code.toPlainText())
+        self.assertIn(canonical_pml("SHOW !!userform\n\n$p 'Ready'\n\ndefine method .userform()"),self.w.code.toPlainText())
         self.assertFalse(hasattr(self.w,'show_form'))
-        self.assertIn('SHOW !!userform', self.w.code.toPlainText())
+        self.assertIn(canonical_pml('SHOW !!userform'), self.w.code.toPlainText())
         loaded=Form.loads(self.w.form.dumps())
         self.assertEqual(loaded.after_show_code,"$p 'Ready'")
         self.assertTrue(loaded.show_form)
@@ -724,7 +725,7 @@ class GuiTests(unittest.TestCase):
     def test_option_pair_commands_edit_and_save(self):
         self.w.add('option')
         self.w.choice_commands.setPlainText('FIRST\nSECOND')
-        self.assertIn("'Item A' 'FIRST'\n  'Item B' 'SECOND'",self.w.code.toPlainText())
+        self.assertIn(canonical_pml("'Item A' 'FIRST'\n  'Item B' 'SECOND'"),self.w.code.toPlainText())
         self.assertEqual(Form.loads(self.w.form.dumps()).gadgets[0].item_commands,['FIRST','SECOND'])
         self.assertFalse(self.w.fields['callback'].isEnabled())
 
@@ -744,13 +745,13 @@ class GuiTests(unittest.TestCase):
         self.w.add('frame')
         self.assertTrue(self.w.fields['frame_style'].isEnabled())
         self.w.fields['frame_style'].setCurrentText('TABSET')
-        self.assertIn("FRAME .frame1 TABSET AT X 0 Y 0 'Group' WIDTH 18",self.w.code.toPlainText())
+        self.assertIn(canonical_pml("FRAME .frame1 TABSET AT X 0 Y 0 'Group' WIDTH 18"),self.w.code.toPlainText())
         self.w.undo()
         self.assertEqual(self.w.form.gadgets[0].frame_style,'FRAME')
 
     def test_frame_palette(self):
         self.w.add('frame')
-        self.assertIn("FRAME .frame1 'Group'\n  EXIT",self.w.code.toPlainText())
+        self.assertIn(canonical_pml("FRAME .frame1 'Group'\n  EXIT"),self.w.code.toPlainText())
         self.assertFalse(self.w.fields['callback'].isEnabled())
 
     def test_button_command_and_background_properties(self):
@@ -759,20 +760,20 @@ class GuiTests(unittest.TestCase):
         self.assertTrue(self.w.fields['background'].isEnabled())
         self.w.fields['command'].setText('SAVEWORK')
         self.w.fields['background'].setText('5'); self.w.update_gadget()
-        self.assertIn("BUTTON .button1 AT X 0 Y 0 BACKGROUND 5 'Run' CALL 'SAVEWORK' WIDTH 18",self.w.code.toPlainText())
+        self.assertIn(canonical_pml("BUTTON .button1 AT X 0 Y 0 BACKGROUND 5 'Run' CALL 'SAVEWORK' WIDTH 18"),self.w.code.toPlainText())
 
     def test_text_command_property(self):
         self.w.add('text')
         self.assertTrue(self.w.fields['command'].isEnabled())
         self.w.fields['command'].setText('SAVEWORK'); self.w.update_gadget()
         self.w.fields['value_type'].setCurrentText('REAL')
-        self.assertIn("TEXT .text1 AT X 0 Y 0 'Name' CALL 'SAVEWORK' WIDTH 18 IS REAL",self.w.code.toPlainText())
+        self.assertIn(canonical_pml("TEXT .text1 AT X 0 Y 0 'Name' CALL 'SAVEWORK' WIDTH 18 IS REAL"),self.w.code.toPlainText())
 
     def test_line_palette_and_direction_edit(self):
         self.w.add('line')
         self.assertFalse(self.w.fields['label'].isEnabled())
         self.w.fields['orientation'].setCurrentText('VERT')
-        self.assertIn("LINE .line1 AT X 0 Y 0 '' VERT WIDTH 18 HEIGHT 1",self.w.code.toPlainText())
+        self.assertIn(canonical_pml("LINE .line1 AT X 0 Y 0 '' VERT WIDTH 18 HEIGHT 1"),self.w.code.toPlainText())
         self.w.undo()
         self.assertEqual(self.w.form.gadgets[0].orientation,'HORIZ')
 
@@ -785,20 +786,20 @@ class GuiTests(unittest.TestCase):
             self.assertEqual(g.kind,kind)
             self.assertEqual(g.orientation if kind == 'line' else g.slider_orientation,direction)
             if direction in ('VERT','VERTICAL'): self.assertGreater(g.height,g.width)
-            self.assertIn(direction,self.w.code.toPlainText())
+            self.assertIn(canonical_pml(direction),self.w.code.toPlainText())
 
     def test_variable_edit_and_invalid_edit_blocks_output(self):
         self.w.variables.setPlainText('projectName=Demo')
-        self.assertIn("VAR !!projectName 'Demo'", self.w.code.toPlainText())
+        self.assertIn(canonical_pml("VAR !!projectName 'Demo'"), self.w.code.toPlainText())
         self.w.variables.setPlainText('invalid syntax')
         self.assertTrue(self.w.variable_error)
         self.w.add('button')
-        self.assertIn('変数欄', self.w.code.toPlainText())
+        self.assertIn(canonical_pml('変数欄'), self.w.code.toPlainText())
         self.w.variables.setPlainText('mode=Default')
         self.assertFalse(self.w.variable_error)
-        self.assertIn("VAR !!mode 'Default'",self.w.code.toPlainText())
+        self.assertIn(canonical_pml("VAR !!mode 'Default'"),self.w.code.toPlainText())
         self.w.docking.setCurrentIndex(1)
-        self.assertIn("size 70 22 DIALOG",self.w.code.toPlainText())
+        self.assertIn(canonical_pml("size 70 22 DIALOG"),self.w.code.toPlainText())
 
     def test_mouse_drag_updates_model_and_undo(self):
         self.w.add('button'); self.app.processEvents()
@@ -811,7 +812,7 @@ class GuiTests(unittest.TestCase):
         QTest.mouseRelease(view.viewport(),Qt.LeftButton,Qt.NoModifier,end)
         self.app.processEvents()
         self.assertEqual((self.w.form.gadgets[0].x,self.w.form.gadgets[0].y),(4,2))
-        self.assertIn('AT X 4 Y 2',self.w.code.toPlainText())
+        self.assertIn(canonical_pml('AT X 4 Y 2'),self.w.code.toPlainText())
         self.w.undo()
         self.assertEqual((self.w.form.gadgets[0].x,self.w.form.gadgets[0].y),(0,0))
 
@@ -834,7 +835,7 @@ class GuiTests(unittest.TestCase):
         self.drag_handle('both',QPoint(30,26))
         self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(25,8))
         self.assertEqual(len(self.w.history),before+1)
-        self.assertIn('WIDTH 25 HEIGHT 8',self.w.code.toPlainText())
+        self.assertIn(canonical_pml('WIDTH 25 HEIGHT 8'),self.w.code.toPlainText())
         self.assertEqual(self.w.fields['width'].value(),25)
         self.w.undo();self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(22,7))
         self.w.redo();self.assertEqual(Form.loads(self.w.form.dumps()).gadgets[0].width,25)
@@ -872,7 +873,7 @@ class GuiTests(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual([g.name for g in self.w.form.gadgets],['first','third','second'])
         self.assertEqual(self.w.form.gadgets[self.w.selected].name,'second')
-        pml=self.w.form.pml();self.assertLess(pml.index('BUTTON .third'),pml.index('BUTTON .second'))
+        pml=self.w.form.pml(normalize=False);self.assertLess(pml.index('BUTTON .third'),pml.index('BUTTON .second'))
         self.assertEqual([g.name for g in Form.loads(self.w.form.dumps()).gadgets],['first','third','second'])
         self.w.undo();self.assertEqual([g.name for g in self.w.form.gadgets],['first','second','third'])
         self.w.redo();self.assertEqual([g.name for g in self.w.form.gadgets],['first','third','second'])
@@ -896,7 +897,7 @@ class GuiTests(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual([g.name for g in self.w.form.gadgets],['group','b','a'])
         self.assertEqual((a.parent,b.parent),('group','group'))
-        self.assertIn('出力できません',self.w.code.toPlainText())
-        self.w.undo();self.assertNotIn('出力できません',self.w.code.toPlainText())
+        self.assertIn(canonical_pml('出力できません'),self.w.code.toPlainText())
+        self.w.undo();self.assertNotIn(canonical_pml('出力できません'),self.w.code.toPlainText())
 
 if __name__=='__main__': unittest.main()

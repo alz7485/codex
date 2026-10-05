@@ -1,3 +1,4 @@
+from e3d_designer.formatting import canonical_pml
 import os
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import tempfile
@@ -18,13 +19,13 @@ def sample():
 
 class MacroTests(unittest.TestCase):
     def test_shared_file_distinct_flags_and_round_trip(self):
-        form=sample();pml=form.pml()
+        form=sample();pml=form.pml(normalize=False)
         self.assertIn("CALL '!this.macro_a()'",pml)
         self.assertIn("!!buttonFlag = 'a'",pml);self.assertIn("!!buttonFlag = 'b'",pml)
         self.assertEqual(pml.count('$M "C:/My Macros/code1.txt"'),2)
         self.assertEqual(pml.count('VAR !!buttonFlag'),1)
-        self.assertEqual(Form.loads(form.dumps()).pml(),pml)
-        template=branch_template(form,'C:/My Macros/code1.txt')
+        self.assertEqual(Form.loads(form.dumps()).pml(normalize=False),pml)
+        template=branch_template(form,'C:/My Macros/code1.txt',normalize=False)
         self.assertIn("IF (!!buttonFlag EQ 'a') THEN",template)
         self.assertIn("ELSEIF (!!buttonFlag EQ 'b') THEN",template)
         self.assertEqual(template.count('ENDIF'),1)
@@ -33,15 +34,15 @@ class MacroTests(unittest.TestCase):
         form=sample();form.default_body='!this.macro_a()'
         updated=rename_many(form,[('variable','buttonFlag','source'),('gadget',0,'apply')],False)
         self.assertEqual(updated.gadgets[0].macro_flag,'source')
-        self.assertIn("!!source = 'a'",updated.pml())
+        self.assertIn("!!source = 'a'",updated.pml(normalize=False))
         self.assertEqual(len(reference_locations(form,'variable','buttonFlag')),2)
         updated=rename_many(form,[('gadget',0,'apply')])
         self.assertEqual(updated.default_body,'!this.macro_apply()')
         copied,index=clone_subtree(Form(),form,0)
         self.assertEqual(copied.variables,{'buttonFlag':''})
-        self.assertIn('define method .macro_'+copied.gadgets[index].name+'()',copied.pml())
+        self.assertIn('define method .macro_'+copied.gadgets[index].name+'()',copied.pml(normalize=False))
         copied,index=clone_subtree(form,form,0)
-        self.assertEqual(len(copied.gadgets),3);self.assertIn("!!buttonFlag = 'a'",copied.pml())
+        self.assertEqual(len(copied.gadgets),3);self.assertIn("!!buttonFlag = 'a'",copied.pml(normalize=False))
 
     def test_invalid_path_flag_mode_and_method_collision(self):
         for attribute,value in (('macro_path',''),('macro_path','x\n$P bad'),('macro_path','x"bad'),('macro_path','x$bad'),('macro_flag','missing'),('callback','run'),('button_role','OK'),('kind','text'),('action_mode','BAD')):
@@ -49,7 +50,7 @@ class MacroTests(unittest.TestCase):
             with self.subTest(attribute=attribute),self.assertRaises(ValueError):form.validate()
         form=sample();form.gadgets.append(Gadget(name='extra',callback='macro_a'))
         with self.assertRaises(ValueError):form.validate()
-        form=sample();form.gadgets[0].macro_flag='';self.assertNotIn("!!buttonFlag = 'a'",form.pml())
+        form=sample();form.gadgets[0].macro_flag='';self.assertNotIn("!!buttonFlag = 'a'",form.pml(normalize=False))
 
 
 class MacroGuiTests(unittest.TestCase):
@@ -63,7 +64,7 @@ class MacroGuiTests(unittest.TestCase):
         self.assertEqual(w.form.variables,{'buttonFlag':''})
         self.assertEqual(w.form.gadgets[0].macro_value,w.form.gadgets[0].name)
         w.fields['macro_path'].setText('C:/code1.txt');w.fields['macro_value'].setText('A');w.update_gadget()
-        self.assertIn("!!buttonFlag = 'A'",w.code.toPlainText())
+        self.assertIn(canonical_pml("!!buttonFlag = 'A'"),w.code.toPlainText())
         self.assertFalse(w.fields['callback'].isEnabled())
         self.assertEqual(w.fields['action_mode'].currentData(),'MACRO')
         self.assertTrue(w.form.gadgets[0].macro_path)
@@ -79,4 +80,4 @@ class MacroGuiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'code1.txt'
             with patch('e3d_designer.app.QFileDialog.getSaveFileName',return_value=(str(path),'')):w.save_macro_template()
-            self.assertIn("ELSEIF (!!buttonFlag EQ 'b') THEN",path.read_text())
+            self.assertIn("Elseif (!!BUTTONFLAG Eq 'B') Then",path.read_text())

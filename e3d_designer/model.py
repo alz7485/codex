@@ -524,7 +524,7 @@ class Form:
                 lines.append(f'  !this.{target}.val = {value}')
         return lines
 
-    def pml(self):
+    def pml(self, normalize=True):
         self.validate()
         n = lambda v: format(v, '.8g')
         lines = [f'VAR !!{name} {literal(value)}' for name, value in self.variables.items()]
@@ -697,4 +697,6 @@ class Form:
                 seen.add(g.callback.lower())
                 signature = '(!gad is GADGET, !event is STRING)' if g.kind == 'slider' else '()'
                 lines += [f'define method .{g.callback}{signature}', g.body or '  -- TODO: add PML logic', 'endmethod', '']
-        return '\n'.join(lines)
+        from .formatting import canonical_pml
+        text='\n'.join(lines)
+        return canonical_pml(text) if normalize else text

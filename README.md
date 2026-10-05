@@ -322,3 +322,20 @@ VIEW の「ASPECT (VIEW)」欄は空欄で省略、0より大きい有限数で�
 ![色分けしたPMLコード](docs/current-ui/colored-pml.png)
 
 PMLファイルと分岐マクロのひな形は、SJIS（Windows拡張の CP932）・CRLF に固定して出力します。文字コードの選択欄はありません。編集用 JSON は UTF-8 のままです。CP932で表せない文字がある場合は出力を止め、既存ファイルを上書きしません。
+
+### コードの大文字・小文字
+
+生成PMLと外部マクロのひな形は、コマンドを先頭1文字だけ大文字、オブジェクト名・変数名・メソッド名・プロパティ名・文字列値を大文字に統一します。手入力の処理も出力時に変換します。コメントはそのまま残し、編集用JSONと入力欄の内容は保持します。名前管理の「PML名」は出力に合わせて大文字で表示します。
+
+```text
+Var !!BUTTONFLAG ''
+Setup Form !!USERFORM Dialog Dock Right
+Button .RUN At X 2 Y 3 'RUN' Call '!THIS.MACRO_RUN()' Width 14
+Show !!USERFORM
+Define Method .MACRO_RUN()
+  !!BUTTONFLAG = 'A'
+  $M "C:/MACROS/CODE1.TXT"
+Endmethod
+```
+
+表示文字・ファイルパス・DLLの型名や名前空間も大文字になります。外部で大文字と小文字を区別する名前・値がある場合は、その外部側との一致を確認してください。E3D実機検証は未実施です。

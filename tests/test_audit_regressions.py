@@ -20,7 +20,7 @@ class CloneRegressionTests(unittest.TestCase):
         self.assertIn('!this.'+gadget.name+'.val',gadget.body)
         self.assertIn('!this.'+gadget.callback+'()',gadget.body)
         self.assertEqual(source.dumps(),before)
-        self.assertIn('define method .'+gadget.callback+'()',draft.pml())
+        self.assertIn('define method .'+gadget.callback+'()',draft.pml(normalize=False))
 
     def test_table_helpers_container_members_and_method_aliases(self):
         source=Form(gadgets=[Gadget(kind='frame',name='group',x=0,y=0,width=60,height=10),
@@ -46,7 +46,7 @@ class CloneRegressionTests(unittest.TestCase):
         draft,_=clone_subtree(source,source,0);first,second,reset,slider=draft.gadgets[-4:]
         self.assertEqual(first.callback,second.callback);self.assertNotEqual(first.callback,'shared')
         self.assertEqual(reset.body,'!this.'+first.name+'.val = TRUE');self.assertNotEqual(reset.callback.lower(),'default')
-        self.assertIn('define method .'+slider.callback+'(!gad is GADGET, !event is STRING)',draft.pml())
+        self.assertIn('define method .'+slider.callback+'(!gad is GADGET, !event is STRING)',draft.pml(normalize=False))
 
     def test_detached_child_keeps_global_coordinates_and_native_sizes(self):
         source=Form(gadgets=[Gadget(kind='frame',name='outer',x=20,y=5,width=30,height=10),
@@ -113,7 +113,7 @@ class AuditGuiRegressionTests(unittest.TestCase):
         self.load(Form(gadgets=[Gadget(kind='paragraph',name='image',display_mode='PIXMAP',width=150,height=50,x=2,y=1)]))
         item=next(item for item in self.w.scene.items() if isinstance(item,Item))
         self.assertEqual((item.boundingRect().width(),item.boundingRect().height()),(150,50))
-        self.assertIn('PIXMAP WIDTH 150 HEIGHT 50',self.w.form.pml())
+        self.assertIn('PIXMAP WIDTH 150 HEIGHT 50',self.w.form.pml(normalize=False))
         self.w.fields['width'].setValue(200);self.assertEqual(self.w.form.gadgets[0].width,200)
         with tempfile.TemporaryDirectory() as folder:
             self.w.path=Path(folder)/'image.json';self.assertTrue(self.w.save())

@@ -1,3 +1,4 @@
+from e3d_designer.formatting import canonical_pml
 import os
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import json
@@ -18,7 +19,7 @@ class ExtraModelTests(unittest.TestCase):
     def test_pixmap_paragraph_button_toggle_and_option(self):
         gadgets=[Gadget(kind=kind,name=kind+'Pic',display_mode='PIXMAP',pixmap_path=r'C:\Images\sample.png') for kind in ('paragraph','button','toggle')]
         gadgets.append(Gadget(kind='option',name='imageChoice',display_mode='PIXMAP',items=[r'/C:\Images\red.gif',r'/C:\Images\yellow.gif'],item_values=['RED','YELLOW'],callback='imageChanged'))
-        form=Form(gadgets=gadgets);pml=Form.loads(form.dumps()).pml()
+        form=Form(gadgets=gadgets);pml=Form.loads(form.dumps()).pml(normalize=False)
         self.assertIn('PARAGRAPH .paragraphPic AT X 2 Y 1 PIXMAP WIDTH 14 HEIGHT 1',pml)
         for name in ('paragraphPic','buttonPic','togglePic'): self.assertIn(f"!this.{name}.AddPixmap('C:\\Images\\sample.png')",pml)
         self.assertIn("OPTION .imageChoice AT X 2 Y 1 'Run' PIXMAP WIDTH 14 HEIGHT 1 callback '!this.imageChanged()'",pml)
@@ -29,11 +30,11 @@ class ExtraModelTests(unittest.TestCase):
 
     def test_textpane_selector_and_legacy_defaults(self):
         form=Form(gadgets=[Gadget(kind='textpane',name='notes',pane_lines=['A    B','  1    2'],height=4),Gadget(kind='selector',name='owners',database='OWNERS',selection_mode='MULTIPLE',height=4)])
-        pml=Form.loads(form.dumps()).pml()
+        pml=Form.loads(form.dumps()).pml(normalize=False)
         self.assertIn("TEXTPANE .notes 'Run' FIXCHARS AT X 2 Y 1 WIDTH 14 HEIGHT 4",pml)
         self.assertIn("!paneLines[2] = '  1    2'",pml);self.assertIn('!this.notes.val = !paneLines',pml)
         self.assertIn("SELECTOR .owners AT X 2 Y 1 'Run' MULTIPLE WIDTH 14 HEIGHT 4 DATABASE OWNERS",pml)
-        form.gadgets[0].fixed_font=False;self.assertNotIn('FIXCHARS',form.pml())
+        form.gadgets[0].fixed_font=False;self.assertNotIn('FIXCHARS',form.pml(normalize=False))
         legacy=json.loads(Form(gadgets=[Gadget()]).dumps())
         for key in ('form_type','initcall','okcall','cancelcall'): legacy['form'].pop(key)
         for key in ('display_mode','pixmap_path','popup_menu','fixed_font','pane_lines','database','button_role'): legacy['form']['gadgets'][0].pop(key)
@@ -41,7 +42,7 @@ class ExtraModelTests(unittest.TestCase):
 
     def test_popup_and_form_callbacks_rename_and_validation(self):
         form=Form(initcall='!!value = !this.results.val',okcall='SAVEWORK',cancelcall="$p 'cancel'",variables={'value':''},menus=[Menu(name='context',popup=True,items=[MenuItem('Query','Q ATT')])],gadgets=[Gadget(kind='list',name='results',popup_menu='context')])
-        pml=form.pml()
+        pml=form.pml(normalize=False)
         self.assertIn('menu .context POPUP',pml);self.assertIn("!this.context.Add('CALLBACK', 'Query', 'Q ATT')",pml)
         self.assertIn('!this.results.SetPopup(!this.context)',pml)
         self.assertIn("!this.okcall = 'SAVEWORK'",pml)
@@ -57,7 +58,7 @@ class ExtraModelTests(unittest.TestCase):
         toolbar=Gadget(kind='frame',name='tools',frame_style='TOOLBAR',width=60,height=4,x=0,y=0)
         first=Gadget(name='first',parent='tools',width=10,x=50)
         second=Gadget(name='second',parent='tools',width=10,x=0)
-        form=Form(form_type='MAIN',gadgets=[toolbar,first,second]);pml=form.pml()
+        form=Form(form_type='MAIN',gadgets=[toolbar,first,second]);pml=form.pml(normalize=False)
         self.assertIn('setup form !!userform MAIN',pml);self.assertIn("FRAME .tools TOOLBAR 'Run'",pml)
         self.assertIn("BUTTON .first  'Run' WIDTH 10",pml)
         self.assertEqual(form.geometry(first)[:2],(1,1));self.assertEqual(form.geometry(second)[:2],(12,1))
@@ -70,7 +71,7 @@ class ExtraModelTests(unittest.TestCase):
     def test_button_roles_and_invalid_new_settings(self):
         for role in ('OK','CANCEL','APPLY','RESET','HELP'):
             form=Form(gadgets=[Gadget(button_role=role)])
-            self.assertIn("'Run' "+role+' WIDTH',form.pml())
+            self.assertIn("'Run' "+role+' WIDTH',form.pml(normalize=False))
         cases=[Gadget(kind='combo',display_mode='PIXMAP'),Gadget(fixed_font='yes'),Gadget(database='BAD'),Gadget(button_role='OK',command='SAVEWORK'),Gadget(kind='paragraph',button_role='OK'),Gadget(pixmap_path='bad\nfile'),Gadget(popup_menu='missing')]
         for gadget in cases:
             with self.subTest(gadget=gadget),self.assertRaises(ValueError): Form(gadgets=[gadget]).validate()
@@ -91,7 +92,7 @@ class ExtraGuiTests(unittest.TestCase):
         self.assertEqual(self.w.menu_name.text(),'menu1')
         self.assertEqual(len(self.w.form.gadgets),0)
         self.w.add_menu_item()
-        self.assertIn('menu .menu1',self.w.form.pml().lower())
+        self.assertIn('menu .menu1',self.w.form.pml(normalize=False).lower())
         self.w.undo();self.w.undo()
         self.assertEqual(self.w.form.menus,[])
 
@@ -108,19 +109,19 @@ class ExtraGuiTests(unittest.TestCase):
 
     def test_image_option_and_textpane_editor(self):
         self.w.palette_buttons['image_option'].click();self.w.choices.setPlainText('/C:/red.gif\n/C:/yellow.gif')
-        self.w.item_values.setPlainText('RED\nYELLOW');self.assertIn('!this.option1.rtext',self.w.code.toPlainText())
+        self.w.item_values.setPlainText('RED\nYELLOW');self.assertIn(canonical_pml('!this.option1.rtext'),self.w.code.toPlainText())
         with patch('e3d_designer.app.QFileDialog.getOpenFileNames',return_value=(['/C:/blue.gif'],'')): self.w.browse_image.click()
         self.assertEqual(self.w.form.gadgets[0].items,['/C:/red.gif','/C:/yellow.gif','/C:/blue.gif'])
         self.assertEqual(self.w.form.gadgets[0].item_values,['RED','YELLOW',''])
         self.w.undo();self.w.choose_row(0)
         self.assertTrue(self.w.choice_commands.isHidden() or not self.w.choice_commands.isVisible())
-        self.w.fields['display_mode'].setCurrentText('TEXT');self.assertIn('VAR LIST _option1',self.w.code.toPlainText())
+        self.w.fields['display_mode'].setCurrentText('TEXT');self.assertIn(canonical_pml('VAR LIST _option1'),self.w.code.toPlainText())
         self.w.undo();self.assertEqual(self.w.form.gadgets[0].item_values,['RED','YELLOW'])
         self.w.selected=None;self.w.add('textpane');self.w.pane_lines.setPlainText('A    B\n  C')
         self.assertEqual(self.w.form.gadgets[-1].pane_lines,['A    B','  C'])
-        self.w.fixed_font.setChecked(False);self.assertNotIn('FIXCHARS',self.w.code.toPlainText())
+        self.w.fixed_font.setChecked(False);self.assertNotIn(canonical_pml('FIXCHARS'),self.w.code.toPlainText())
         self.w.selected=None;self.w.add('selector');self.w.fields['database'].setCurrentText('MEMBERS')
-        self.assertIn('DATABASE MEMBERS',self.w.code.toPlainText())
+        self.assertIn(canonical_pml('DATABASE MEMBERS'),self.w.code.toPlainText())
 
     def test_popup_editor_rename_delete_and_preview(self):
         self.w.add_menu();self.w.add_menu_item();self.w.menu_popup.setChecked(True)
@@ -141,13 +142,13 @@ class ExtraGuiTests(unittest.TestCase):
         self.w.palette_buttons['toolbar'].click();self.assertEqual(self.w.form.gadgets,[])
         self.w.docking.setCurrentIndex(2);self.w.palette_buttons['toolbar'].click()
         self.assertEqual(self.w.form.gadgets[0].frame_style,'TOOLBAR')
-        self.w.add('button');self.assertIn('MAIN',self.w.code.toPlainText())
+        self.w.add('button');self.assertIn(canonical_pml('MAIN'),self.w.code.toPlainText())
         self.assertFalse(self.w.fields['x'].isEnabled())
         before=len(self.w.history);self.w.add('selector');self.assertEqual(len(self.w.history),before)
         self.w.fields['command'].setText('SAVEWORK');self.w.update_gadget()
         self.w.fields['button_role'].setCurrentText('OK');self.assertEqual(self.w.form.gadgets[1].command,'')
         editor=self.w.form_callbacks['okcall'];editor.setFocus();QTest.keyClicks(editor,'SAVEWORK')
-        self.assertEqual(self.w.form.okcall,'SAVEWORK');self.assertIn("!this.okcall = 'SAVEWORK'",self.w.code.toPlainText())
+        self.assertEqual(self.w.form.okcall,'SAVEWORK');self.assertIn(canonical_pml("!this.okcall = 'SAVEWORK'"),self.w.code.toPlainText())
 
     def test_toolbar_image_height_and_full_width_noop(self):
         self.w.docking.setCurrentIndex(2);self.w.palette_buttons['toolbar'].click()
