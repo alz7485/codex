@@ -14,6 +14,19 @@ from e3d_designer.app import Window, atomic_write, SX, SY
 
 
 class ModelTests(unittest.TestCase):
+    def test_simple_multiple_list_and_legacy_selection(self):
+        listing=Gadget(kind='list',name='results',label='Results',selection_mode='MULTIPLE',width=20,height=4,items=['First','Second'])
+        pml=Form(gadgets=[listing]).pml()
+        self.assertIn("list .results AT X 2 Y 1 'Results' MULTIPLE WIDTH 20 HEIGHT 4",pml)
+        self.assertIn("!choices[1] = 'First'",pml)
+        self.assertIn("!choices[2] = 'Second'",pml)
+        self.assertIn('!this.results.dtext = !choices',pml)
+        self.assertNotIn('setheadings',pml)
+        raw=json.loads(Form(gadgets=[listing]).dumps());raw['form']['gadgets'][0]['selection_mode']='MULTI'
+        loaded=Form.loads(json.dumps(raw))
+        self.assertEqual(loaded.gadgets[0].selection_mode,'MULTIPLE')
+        self.assertIn('MULTIPLE WIDTH 20 HEIGHT 4',loaded.pml())
+
     def test_table_list_arrays_method_and_dimensions(self):
         table=Gadget(kind='list',name='equipment',list_mode='TABLE',table_method='fillEquipment',
                      height=5,headings=['Name','Type'],rows=[['P-101','Pump'],['T-201','Tank']])
@@ -26,7 +39,7 @@ class ModelTests(unittest.TestCase):
         self.assertIn('!THIS.equipment.setrows(!ROWS)',pml)
         self.assertLess(pml.index('SHOW !!'),pml.index('define method .fillEquipment()'))
         self.assertNotIn('.dtext',pml)
-        table.selection_mode='MULTI';self.assertIn("'Run' MULTI",form.pml())
+        table.selection_mode='MULTI';self.assertIn("'Run' MULTIPLE",form.pml())
         table.rows=[];self.assertIn('!ROWS = ARRAY()\n  !THIS.equipment.setrows(!ROWS)',form.pml())
 
     def test_table_validation_and_method_collision(self):
@@ -62,13 +75,13 @@ class ModelTests(unittest.TestCase):
         base=Gadget(name='base',x=2,y=1)
         listing=Gadget(kind='list',name='results',label='Results',x=4,y=5,width=20,height=3,callback='onSelect')
         form=Form(gadgets=[base,listing])
-        self.assertIn("list .results AT X 4 Y 5 'Results' SINGLE WIDTH 20 lines 3 callback '!this.onSelect()'",form.pml())
+        self.assertIn("list .results AT X 4 Y 5 'Results' SINGLE WIDTH 20 HEIGHT 3 callback '!this.onSelect()'",form.pml())
         listing.layout_mode='RELATIVE';listing.xref='base';listing.yref='base';listing.width_ref='base'
-        self.assertIn("list .results AT XMIN.base YMAX.base+0.5 'Results' SINGLE WIDTH.base lines 3",form.pml())
+        self.assertIn("list .results AT XMIN.base YMAX.base+0.5 'Results' SINGLE WIDTH.base HEIGHT 3",form.pml())
         listing.layout_mode='AUTO'
         line=next(line for line in form.pml().splitlines() if 'list .results' in line)
         self.assertNotIn('AT ',line)
-        self.assertIn("'Results' SINGLE WIDTH.base lines 3",line)
+        self.assertIn("'Results' SINGLE WIDTH.base HEIGHT 3",line)
 
     def test_slider_export_open_callback_and_bounds(self):
         slider=Gadget(kind='slider',name='level',slider_min=-10,slider_max=90,slider_step=5,slider_value=30,
@@ -105,7 +118,7 @@ class ModelTests(unittest.TestCase):
                  for i,kind in enumerate(('list','combo'))]
         gadgets[0].selection_mode='MULTI';gadgets[0].height=3
         f=Form(gadgets=gadgets);pml=Form.loads(f.dumps()).pml()
-        self.assertIn("list .list1 AT X 2 Y 0 'Run' MULTI",pml)
+        self.assertIn("list .list1 AT X 2 Y 0 'Run' MULTIPLE",pml)
         self.assertIn('COMBO .combo1',pml)
         self.assertIn("!values[1] = '/P-1'",pml)
         for g in gadgets:
@@ -217,7 +230,7 @@ class ModelTests(unittest.TestCase):
         self.assertIn("CALL '$$_option1'",pml)
         self.assertIn("VAR LIST _option1 PAIRS",pml)
         self.assertIn('list .list1',pml)
-        self.assertIn('lines 1',pml)
+        self.assertIn('HEIGHT 1',pml)
         self.assertEqual(pml.count('define method .runAction()'),1)
         self.assertIn("  $p 'clicked'",pml)
 

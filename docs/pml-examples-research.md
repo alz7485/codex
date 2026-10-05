@@ -418,3 +418,5 @@ EXIT
 COMBO の追加確認: [Form Layout and Gadgets の本文](https://github.com/nhdang117/PML.Learning/blob/57d55443a63f2cc7ec897c56ba1ae259f4b43bd1/docs/guide/form-layout-and-gadgets.md) には `combobox .colour tagwidth 6 |Colour| scroll 20 width 10` という定義例もありました。公開例に COMBO と COMBOBOX の両方があり、E3D 4.0 での受理範囲は実機確認とします。
 
 ロード方式の追加確認: [公開された Forms の説明](https://github.com/mikhalchankasm/vscode-pml-aveva-e3d/blob/07971b883c53ae665d3c02c7670c1e8cdaa76343/hide_examples/forms/forms.md) は `.pmlfrm` の初回表示時自動ロードと、昔の `$m` によるフォーム定義マクロの互換方式を区別しています。ユーザーの一体型命令列と定義ファイルの違いを検証すべきという先の判断を補強します。
+
+ユーザー追記: 単列リストの複数選択には `LIST .name '表示名' MULTIPLE WIDTH 値 HEIGHT 値` と、表示名の配列を `.DTEXT` へ代入する方式も使える。エディタは単列・複数列とも SINGLE / MULTIPLE と HEIGHT を出力する。旧設計ファイルの MULTI は読み込み時に MULTIPLE に移行する。AT のある定義では先のユーザー指示どおり表示名の前に置く。

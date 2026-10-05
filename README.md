@@ -89,7 +89,7 @@ exit
 
 BACKGROUND は PARAGRAPH / BUTTON に対応します。空欄なら省略します。PARAGRAPH は省略時に背景色になります。色番号は非負整数として出力し、色の対応や有効範囲は E3D で確認してください。プレビューでは BG 番号を表示します。
 
-LINE は HORIZ / VERT を選択できます。表示文字は空文字に固定します。TEXT は STRING / REAL に対応します。TEXT / TOGGLE / OPTION の幅・高さや PARAGRAPH / BUTTON の高さなど、指定構文に含まれない寸法はプレビュー用です。LIST はユーザー指定の順序で `list .name AT X 値 Y 値 '表示名' SINGLE WIDTH 値 lines 行数` と出力し、コンストラクタ内の `.dtext` を使用します。相対配置でも AT は表示名の前です。AUTO では AT を省略します。
+LINE は HORIZ / VERT を選択できます。表示文字は空文字に固定します。TEXT は STRING / REAL に対応します。TEXT / TOGGLE / OPTION の幅・高さや PARAGRAPH / BUTTON の高さなど、指定構文に含まれない寸法はプレビュー用です。LIST はユーザー指定の順序で `list .name AT X 値 Y 値 '表示名' SINGLE WIDTH 値 HEIGHT 値` と出力し、コンストラクタ内の `.dtext` を使用します。相対配置でも AT は表示名の前です。AUTO では AT を省略します。
 
 OPTION は `_` 付きの名前を出力します。名前入力に `_` を付けても重複付与しません。選択肢のコマンドを空欄にすると空文字を出力します。コマンドの妥当性は E3D 側で確認してください。
 
@@ -152,7 +152,7 @@ rtog・グリッド・PML.NET 部品、既存 PML のインポート、E3D と�
 | --- | --- |
 | SLIDER | HORIZONTAL / VERTICAL、最小値・最大値・STEP・VAL。イベントメソッドは `(!gad is GADGET, !event is STRING)` を持つ open callback です。DEFAULT や通常部品と同じメソッド名は使えません。 |
 | RTOGGLE | 通常 FRAME を選んで追加し、OFF / ON の実値を指定します。同じ FRAME 内をラジオグループとして出力します。選択状態は FRAME 側で管理されます。 |
-| LIST | SINGLE / MULTI の選択方式、単列の表示名 `.dtext`・実値 `.rtext`、複数列の SetHeadings / SetRows。 |
+| LIST | SINGLE / MULTIPLE の選択方式、単列の表示名 `.dtext`・実値 `.rtext`、複数列の SetHeadings / SetRows。 |
 | COMBO | 編集可能な選択欄として定義します。公開例に合わせ、定義キーワードを COMBO / COMBOBOX から選べます。表示名と実値に対応します。 |
 | VIEW | ALPHA / AREA / PLOT / VOLUME、幅・高さ、内部の追加 PML。追加 PML には VIEW の外枠や EXIT を書きません。 |
 | コマンド欄 | VIEW ALPHA として出力し、CHANNEL REQUESTS / COMMANDS を指定できます。 |
@@ -168,7 +168,7 @@ CONTAINER のアセンブリ・名前空間・型をすべて空欄にした場�
 
 LIST を選び、「LIST 表示方式」を `TABLE` にすると表入力欄を表示します。先頭行に見出し、その下に各行のデータを入力します。「+ 列」「+ 行」で増やし、削除する列・行のセルを選んで「列削除」「行削除」で減らします。最後の1列と見出し行は残します。セルを編集中でも保存に反映し、Undo / Redo と複製に対応します。
 
-`SINGLE` / `MULTI` は行の単一選択・複数選択の設定で、列数とは独立です。`SIMPLE` に戻すと単列リストを使い、表データは保持します。TABLE では単列の `.dtext` / `.rtext` を出力せず、見出しと二次元の行配列を使います。
+`SINGLE` / `MULTIPLE` は行の単一選択・複数選択の設定で、列数とは独立です。`SIMPLE` に戻すと単列リストを使い、表データは保持します。TABLE では単列の `.dtext` / `.rtext` を出力せず、見出しと二次元の行配列を使います。
 
 ユーザー提供の例に合わせ、TABLE の定義には `HEIGHT` を出力します。位置の AT は表示名の前、SHOW はすべてのメソッド定義より前です。設定メソッド名は編集可能で、空欄なら `populate_部品名` にします。コンストラクタからこのメソッドを呼びます。
 
@@ -192,3 +192,5 @@ endmethod
 `!ROWS[行番号][列番号]` はどちらも1から始まります。SetRows は調査済みの公開資料を参考にしています。E3D 4.0 実機の構文・表示・選択動作は未検証です。サンプルは `examples/multicolumn.json` / `examples/multicolumn.pmlfrm` です。
 
 ![複数列 LIST の編集画面](docs/ui-multicolumn.png)
+
+単列 LIST の複数選択も、ユーザー提供の `MULTIPLE WIDTH 値 HEIGHT 値` に対応しています。表示名の配列をコンストラクタ内で作り、`!this.部品名.dtext = !choices` として代入します。`!choices` はローカル変数名で固定キーワードではありません。旧設計ファイルの `MULTI` は読み込み時に `MULTIPLE` へ置き換えます。

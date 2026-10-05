@@ -14,7 +14,7 @@ setup form !!equipmenttool DIALOG DOCK RIGHT
   'Vessel' |$p 'Vessel selected'|
   EXIT
   TOGGLE .enabled AT X 2 Y 7 'Enabled'
-  list .results AT X 2 Y 9 'Results' SINGLE WIDTH 40 lines 5
+  list .results AT X 2 Y 9 'Results' SINGLE WIDTH 40 HEIGHT 5
   BUTTON .run AT X 2 Y 16 'Apply' CALL '!this.applySettings()' WIDTH 14
 exit
 

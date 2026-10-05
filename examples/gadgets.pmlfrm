@@ -8,7 +8,7 @@ setup form !!gadgetDemo DIALOG DOCK RIGHT
     RTOGGLE .tank 'Tank' AT X 1 Y 3 STATES '' 'TANK'
   EXIT
   SLIDER .level AT X 28 Y 1 HORIZONTAL RANGE 0 100 STEP 5 VAL 35 WIDTH 28
-  list .equipment AT X 28 Y 4 'Equipment' MULTI WIDTH 28 lines 5
+  list .equipment AT X 28 Y 4 'Equipment' MULTIPLE WIDTH 28 HEIGHT 5
   COMBO .choice 'Choice' AT X 28 Y 10 WIDTH 28
   VIEW .model AT X 2 Y 9 VOLUME
     WIDTH 22 HEIGHT 8

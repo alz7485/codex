@@ -72,6 +72,9 @@ class Gadget:
     headings: list[str] = field(default_factory=list)
     rows: list[list[str]] = field(default_factory=list)
 
+    def __post_init__(self):
+        if self.selection_mode == 'MULTI': self.selection_mode = 'MULTIPLE'
+
 
 @dataclass
 class MenuItem:
@@ -303,7 +306,7 @@ class Form:
                         raise ValueError(f'{g.name}: REAL の初期値は有限数にしてください。') from None
                 else:
                     literal(g.initial)
-            if g.selection_mode not in ('SINGLE','MULTI') or g.combo_keyword not in ('COMBO','COMBOBOX'):
+            if g.selection_mode not in ('SINGLE','MULTIPLE','MULTI') or g.combo_keyword not in ('COMBO','COMBOBOX'):
                 raise ValueError('選択方式・コンボ定義キーワードが不正です。')
             if g.slider_orientation not in ('HORIZONTAL','VERTICAL'):
                 raise ValueError('SLIDER の向きが不正です。')
@@ -449,8 +452,8 @@ class Form:
                     line += '\n' + literal(display) + ' ' + literal(command, allow_expansion=True)
                 line += '\nEXIT'
             elif g.kind == 'list':
-                dimensions = f'HEIGHT {n(g.height)}' if g.list_mode == 'TABLE' else f'lines {max(1, round(g.height))}'
-                line = f'list .{g.name} {position} {label} {g.selection_mode} {width_clause} {dimensions}' + callback
+                selection = 'MULTIPLE' if g.selection_mode == 'MULTI' else g.selection_mode
+                line = f'list .{g.name} {position} {label} {selection} {width_clause} HEIGHT {n(g.height)}' + callback
             elif g.kind == 'combo':
                 line = f'{g.combo_keyword} .{g.name} {label} {position} {width_clause}' + callback
             elif g.kind == 'slider':

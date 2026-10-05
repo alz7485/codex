@@ -58,7 +58,11 @@
         "view_code": "",
         "assembly": "",
         "namespace": "",
-        "control_type": ""
+        "control_type": "",
+        "list_mode": "SIMPLE",
+        "table_method": "",
+        "headings": [],
+        "rows": []
       },
       {
         "kind": "rtoggle",
@@ -108,7 +112,11 @@
         "view_code": "",
         "assembly": "",
         "namespace": "",
-        "control_type": ""
+        "control_type": "",
+        "list_mode": "SIMPLE",
+        "table_method": "",
+        "headings": [],
+        "rows": []
       },
       {
         "kind": "rtoggle",
@@ -158,7 +166,11 @@
         "view_code": "",
         "assembly": "",
         "namespace": "",
-        "control_type": ""
+        "control_type": "",
+        "list_mode": "SIMPLE",
+        "table_method": "",
+        "headings": [],
+        "rows": []
       },
       {
         "kind": "slider",
@@ -208,7 +220,11 @@
         "view_code": "",
         "assembly": "",
         "namespace": "",
-        "control_type": ""
+        "control_type": "",
+        "list_mode": "SIMPLE",
+        "table_method": "",
+        "headings": [],
+        "rows": []
       },
       {
         "kind": "list",
@@ -250,7 +266,7 @@
           "/P-101",
           "/T-201"
         ],
-        "selection_mode": "MULTI",
+        "selection_mode": "MULTIPLE",
         "combo_keyword": "COMBO",
         "slider_orientation": "HORIZONTAL",
         "slider_min": 0,
@@ -264,7 +280,11 @@
         "view_code": "",
         "assembly": "",
         "namespace": "",
-        "control_type": ""
+        "control_type": "",
+        "list_mode": "SIMPLE",
+        "table_method": "",
+        "headings": [],
+        "rows": []
       },
       {
         "kind": "combo",
@@ -320,7 +340,11 @@
         "view_code": "",
         "assembly": "",
         "namespace": "",
-        "control_type": ""
+        "control_type": "",
+        "list_mode": "SIMPLE",
+        "table_method": "",
+        "headings": [],
+        "rows": []
       },
       {
         "kind": "view",
@@ -370,7 +394,11 @@
         "view_code": "LIMITS AUTO\nISOMETRIC 3",
         "assembly": "",
         "namespace": "",
-        "control_type": ""
+        "control_type": "",
+        "list_mode": "SIMPLE",
+        "table_method": "",
+        "headings": [],
+        "rows": []
       },
       {
         "kind": "commandline",
@@ -420,7 +448,11 @@
         "view_code": "",
         "assembly": "",
         "namespace": "",
-        "control_type": ""
+        "control_type": "",
+        "list_mode": "SIMPLE",
+        "table_method": "",
+        "headings": [],
+        "rows": []
       },
       {
         "kind": "container",
@@ -470,9 +502,14 @@
         "view_code": "",
         "assembly": "",
         "namespace": "",
-        "control_type": ""
+        "control_type": "",
+        "list_mode": "SIMPLE",
+        "table_method": "",
+        "headings": [],
+        "rows": []
       }
     ],
-    "variables": {}
+    "variables": {},
+    "menus": []
   }
 }
