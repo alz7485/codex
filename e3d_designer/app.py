@@ -232,7 +232,7 @@ class Item(QGraphicsObject):
             parent = self.form.parent_gadget(g)
             painter.setBrush(Qt.NoBrush)
             if not (parent and parent.frame_style == 'TABSET'):
-                painter.drawRect(r.adjusted(1, 8, -1, -1))
+                painter.drawRect(r.adjusted(1, 1, -1, -1))
             if g.frame_style == 'TABSET':
                 pages = self.form.children(g.name)
                 for i, page in enumerate(pages):
