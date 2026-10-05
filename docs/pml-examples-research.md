@@ -193,7 +193,7 @@ show !!demoform
 
 参照: [Forms](https://github.com/shivangKheradiya/AVEVA_PML/blob/2d3a87205cb80fbc68ca6b0518c9cf58dbd14285/10.%20Forms/README.md#basic-understanding-and-syntax)、[Form Concepts](https://github.com/nhdang117/PML.Learning/blob/57d55443a63f2cc7ec897c56ba1ae259f4b43bd1/docs/guide/forms-concepts-and-callbacks.md)。PMLLIB の探索パス設定とファイル名の一致が前提。
 
-**現エディタの確認事項:** ユーザー指示に合わせ、VAR / kill / フォーム定義 / メソッド / SHOW / 表示後プログラムを1つの `.pmlfrm` に出力している。命令列を実行する用途と PMLLIB のフォームとして自動ロードする用途では条件が異なる可能性がある。一体型を維持しつつ、定義専用 `.pmlfrm` と起動用 `.mac` を別に出す形式を検討する。今回、出力方式は変更していない。
+**現エディタの確認事項:** ユーザー指示に合わせ、VAR / kill / フォーム定義 / SHOW / 表示後プログラム / メソッドを1つの `.pmlfrm` に出力している。命令列を実行する用途と PMLLIB のフォームとして自動ロードする用途では条件が異なる可能性がある。一体型を維持しつつ、定義専用 `.pmlfrm` と起動用 `.mac` を別に出す形式を検討する。2026-10-05 のユーザー訂正に合わせ、SHOW は DEFINE METHOD より前に出力する。LIST の AT も表示名より前に出力する。
 
 ## 8. 拡張候補
 

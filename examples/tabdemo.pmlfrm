@@ -18,11 +18,11 @@ setup form !!tabdemo DIALOG DOCK RIGHT
   EXIT
 exit
 
+SHOW !!tabdemo
+
 define method .tabdemo()
 endmethod
 
 DEFINE METHOD .DEFAULT()
   -- TODO: add default logic
 ENDMETHOD
-
-SHOW !!tabdemo

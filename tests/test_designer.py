@@ -33,6 +33,18 @@ class ModelTests(unittest.TestCase):
             changed=json.loads(json.dumps(raw));changed['form']['menus']=value
             with self.subTest(value=value),self.assertRaises(ValueError): Form.loads(json.dumps(changed))
 
+    def test_list_position_precedes_label_in_each_layout_mode(self):
+        base=Gadget(name='base',x=2,y=1)
+        listing=Gadget(kind='list',name='results',label='Results',x=4,y=5,width=20,height=3,callback='onSelect')
+        form=Form(gadgets=[base,listing])
+        self.assertIn("list .results AT X 4 Y 5 'Results' SINGLE WIDTH 20 lines 3 callback '!this.onSelect()'",form.pml())
+        listing.layout_mode='RELATIVE';listing.xref='base';listing.yref='base';listing.width_ref='base'
+        self.assertIn("list .results AT XMIN.base YMAX.base+0.5 'Results' SINGLE WIDTH.base lines 3",form.pml())
+        listing.layout_mode='AUTO'
+        line=next(line for line in form.pml().splitlines() if 'list .results' in line)
+        self.assertNotIn('AT ',line)
+        self.assertIn("'Results' SINGLE WIDTH.base lines 3",line)
+
     def test_slider_export_open_callback_and_bounds(self):
         slider=Gadget(kind='slider',name='level',slider_min=-10,slider_max=90,slider_step=5,slider_value=30,
                       callback='onLevel',body='  q var !event')
@@ -68,7 +80,7 @@ class ModelTests(unittest.TestCase):
                  for i,kind in enumerate(('list','combo'))]
         gadgets[0].selection_mode='MULTI';gadgets[0].height=3
         f=Form(gadgets=gadgets);pml=Form.loads(f.dumps()).pml()
-        self.assertIn("list .list1 'Run' MULTI",pml)
+        self.assertIn("list .list1 AT X 2 Y 0 'Run' MULTI",pml)
         self.assertIn('COMBO .combo1',pml)
         self.assertIn("!values[1] = '/P-1'",pml)
         for g in gadgets:
@@ -248,15 +260,17 @@ class ModelTests(unittest.TestCase):
         pml=Form.loads(f.dumps()).pml()
         self.assertIn("DEFINE METHOD .DEFAULT()\n$p 'Default'\nENDMETHOD",pml)
         self.assertEqual(pml.lower().count('define method .default()'),1)
-        self.assertLess(pml.index('DEFINE METHOD .DEFAULT()'),pml.index('SHOW !!'))
+        self.assertLess(pml.index('SHOW !!'),pml.index('define method .userform()'))
+        self.assertLess(pml.index('SHOW !!'),pml.index('DEFINE METHOD .DEFAULT()'))
         f.gadgets[0].body='different'
         with self.assertRaises(ValueError): f.pml()
 
-    def test_show_then_program_after_method_definitions(self):
+    def test_show_then_program_before_method_definitions(self):
         f=Form(after_show_code="$p 'Ready'",gadgets=[Gadget(callback='onRun')])
         pml=Form.loads(f.dumps()).pml()
-        self.assertTrue(pml.endswith("SHOW !!userform\n\n$p 'Ready'\n"))
-        self.assertLess(pml.index('define method .onRun()'),pml.index('SHOW !!userform'))
+        self.assertIn("exit\n\nSHOW !!userform\n\n$p 'Ready'\n\ndefine method .userform()",pml)
+        self.assertLess(pml.index('SHOW !!userform'),pml.index('define method .onRun()'))
+        self.assertEqual(pml.count('SHOW !!userform'),1)
         f.show_form=False
         self.assertNotIn('SHOW !!',f.pml())
         self.assertIn("$p 'Ready'",f.pml())
@@ -548,7 +562,7 @@ class GuiTests(unittest.TestCase):
 
     def test_after_show_program_editor(self):
         self.w.after_show.setPlainText("$p 'Ready'")
-        self.assertTrue(self.w.code.toPlainText().endswith("SHOW !!userform\n\n$p 'Ready'\n"))
+        self.assertIn("SHOW !!userform\n\n$p 'Ready'\n\ndefine method .userform()",self.w.code.toPlainText())
         self.w.show_form.setChecked(False)
         self.assertNotIn('SHOW !!userform', self.w.code.toPlainText())
         loaded=Form.loads(self.w.form.dumps())

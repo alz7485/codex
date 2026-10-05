@@ -15,11 +15,11 @@ setup form !!relativeDemo DIALOG DOCK RIGHT
   TEXT .sameWidth AT XMIN.base YMAX.centered+1 'Input' WIDTH.base IS STRING
 exit
 
+SHOW !!relativeDemo
+
 define method .relativeDemo()
 endmethod
 
 DEFINE METHOD .DEFAULT()
   -- TODO: add default logic
 ENDMETHOD
-
-SHOW !!relativeDemo

@@ -426,7 +426,7 @@ class Form:
                     line += '\n' + literal(display) + ' ' + literal(command, allow_expansion=True)
                 line += '\nEXIT'
             elif g.kind == 'list':
-                line = f'list .{g.name} {label} {g.selection_mode} {at} lines {max(1, round(g.height))}' + callback
+                line = f'list .{g.name} {position} {label} {g.selection_mode} {width_clause} lines {max(1, round(g.height))}' + callback
             elif g.kind == 'combo':
                 line = f'{g.combo_keyword} .{g.name} {label} {position} {width_clause}' + callback
             elif g.kind == 'slider':
@@ -464,7 +464,10 @@ class Form:
                 for child in self.ordered_children(g.name): render(child, depth + 1)
                 lines.append('  ' * depth + 'EXIT')
         for g in self.ordered_children(''): render(g, 1)
-        lines.extend(['exit', '', f'define method .{self.name}()'])
+        lines.extend(['exit', ''])
+        if self.show_form: lines += [f'SHOW !!{self.name}', '']
+        if self.after_show_code: lines += [self.after_show_code, '']
+        lines.append(f'define method .{self.name}()')
         for g in self.gadgets:
             if g.kind == 'text' and g.initial:
                 value = n(float(g.initial)) if g.value_type == 'REAL' else literal(g.initial)
@@ -492,6 +495,4 @@ class Form:
                 seen.add(g.callback.lower())
                 signature = '(!gad is GADGET, !event is STRING)' if g.kind == 'slider' else '()'
                 lines += [f'define method .{g.callback}{signature}', g.body or '  -- TODO: add PML logic', 'endmethod', '']
-        if self.show_form: lines += [f'SHOW !!{self.name}', '']
-        if self.after_show_code: lines += [self.after_show_code, '']
         return '\n'.join(lines)

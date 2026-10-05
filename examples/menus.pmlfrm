@@ -10,11 +10,11 @@ setup form !!menuDemo DIALOG DOCK RIGHT
   PARAGRAPH .message AT X 2 Y 2 TEXT 'Menu demo' WIDTH 14
 exit
 
+SHOW !!menuDemo
+
 define method .menuDemo()
 endmethod
 
 DEFINE METHOD .DEFAULT()
   $p |Ready|
 ENDMETHOD
-
-SHOW !!menuDemo

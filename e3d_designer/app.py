@@ -208,7 +208,7 @@ class Window(QMainWindow):
         self.variables.setPlaceholderText('projectName=Project A\nmode=Default')
         self.variables.textChanged.connect(self.update_variables)
         rl.addWidget(self.variables)
-        self.show_form = QCheckBox('末尾で SHOW !!フォーム名 を実行')
+        self.show_form = QCheckBox('メソッド定義の前に SHOW !!フォーム名 を出力')
         self.show_form.toggled.connect(self.update_form); rl.addWidget(self.show_form)
         self.after_show = QPlainTextEdit(); self.after_show.setMaximumHeight(120)
         self.after_show.setPlaceholderText('SHOW の後に出力する任意の PML プログラム')
