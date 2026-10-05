@@ -1,9 +1,10 @@
 import copy
+import json
 import sys
 from shiboken6 import isValid
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QRectF, Signal
+from PySide6.QtCore import Qt, QRectF, Signal, QMimeData
 from PySide6.QtGui import QAction, QColor, QPainter, QPen, QKeySequence, QPainterPath
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QFormLayout, QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
@@ -26,6 +27,7 @@ PALETTE = {
 }
 # Independent character-width and line-height scales; approximate preview only.
 SX, SY = 10, 26
+GADGET_MIME = 'application/x-e3d-designer-gadgets'
 
 
 def preview_geometry(form, gadget):
@@ -308,6 +310,14 @@ class Window(QMainWindow):
         middle = QSplitter(Qt.Vertical)
         self.scene = Scene(self); self.scene.selectionChanged.connect(self.selection_changed)
         self.view = QGraphicsView(self.scene)
+        self.edit_actions = []
+        for widget in (self.view,self.objects):
+            for label,key,handler in (('コピー','Ctrl+C',self.copy_gadget),('貼り付け','Ctrl+V',self.paste_gadget),('切り取り','Ctrl+X',self.cut_gadget),('削除','Del',self.delete)):
+                action = QAction(label,widget)
+                action.setShortcut(QKeySequence(key))
+                action.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+                action.triggered.connect(handler);widget.addAction(action)
+                self.edit_actions.append(action)
         self.view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         preview = QWidget(); preview_layout = QVBoxLayout(preview); preview_layout.setContentsMargins(0,0,0,0)
         self.preview_menu_bar = QMenuBar(); self.preview_menu_bar.setNativeMenuBar(False)
@@ -952,6 +962,74 @@ class Window(QMainWindow):
                 if getattr(g,key).lower() in mapping: setattr(g,key,mapping[getattr(g,key).lower()])
         self.selected = next(i for i,g in enumerate(self.form.gadgets) if g.name == mapping[original.name.lower()])
         self.refresh()
+
+    def copy_gadget(self):
+        if self.selected is None: return False
+        try:
+            self.form.validate()
+            payload = json.dumps({'form':self.form.dumps(),'root':self.selected},ensure_ascii=False)
+        except ValueError as error:
+            self.statusBar().showMessage(f'コピーできません: {error}');return False
+        data = QMimeData();data.setData(GADGET_MIME,payload.encode('utf-8'))
+        QApplication.clipboard().setMimeData(data)
+        self.statusBar().showMessage('選択した部品をコピーしました（子部品を含みます）。')
+        return True
+
+    def cut_gadget(self):
+        if self.copy_gadget(): self.delete()
+
+    def paste_gadget(self):
+        data = QApplication.clipboard().mimeData()
+        if not data or not data.hasFormat(GADGET_MIME): return
+        try:
+            payload = json.loads(bytes(data.data(GADGET_MIME)).decode('utf-8'))
+            source = Form.loads(payload['form']);index = payload['root']
+            if type(index) is not int or not 0 <= index < len(source.gadgets): raise ValueError('コピー元の部品が不正です。')
+            root = source.gadgets[index]
+            subtree = {root.name.lower(),*(name.lower() for name in source.descendants(root.name))}
+            draft = copy.deepcopy(self.form);mapping = {};copies = []
+            used = {g.name.lower() for g in draft.gadgets}|{m.name.lower() for m in draft.menus}
+            for original in source.gadgets:
+                if original.name.lower() not in subtree: continue
+                gadget = copy.deepcopy(original);number = 1
+                while (gadget.kind+str(number)).lower() in used: number += 1
+                gadget.name = gadget.kind+str(number);used.add(gadget.name.lower())
+                mapping[original.name.lower()] = gadget.name
+                if gadget.kind == 'list' and gadget.list_mode == 'TABLE': gadget.table_method = ''
+                copies.append((original,gadget))
+            for original,gadget in copies:
+                for key in ('parent','xref','yref','width_ref'):
+                    value = getattr(gadget,key)
+                    if value.lower() in mapping: setattr(gadget,key,mapping[value.lower()])
+                # Keep external placement links only when their targets exist in this project.
+                existing = {g.name.lower() for g in draft.gadgets}
+                if original.parent and original.parent.lower() not in subtree and original.parent.lower() not in existing:
+                    gadget.parent = ''
+                if gadget.layout_mode == 'AUTO' or any(name.lower() not in existing|{value.lower() for value in mapping.values()} for name in (gadget.xref,gadget.yref,gadget.width_ref) if name):
+                    x,y,width,height = source.geometry(original)
+                    gadget.x,gadget.y,gadget.width,gadget.height = x,y,width,height
+                    gadget.layout_mode = 'ABSOLUTE';gadget.xref = gadget.yref = gadget.width_ref = ''
+                draft.gadgets.append(gadget)
+            from .names import code_slots,read_slot,write_slot,actual_name,reference_pattern
+            substitutions = [(reference_pattern(source,'gadget',actual_name(original)),actual_name(gadget)) for original,gadget in copies]
+            copied_ids = {id(gadget) for _,gadget in copies}|{id(gadget.item_commands) for _,gadget in copies}
+            for _,owner,key in code_slots(draft):
+                if id(owner) not in copied_ids: continue
+                value = read_slot(owner,key)
+                matches = []
+                for pattern,target in substitutions:
+                    for match in pattern.finditer(value):
+                        prefix = match.group(0).rsplit('.',1)[0]
+                        if prefix.lower() != '!this': prefix = '!!'+draft.name
+                        matches.append((match.start(),match.end(),prefix+'.'+target))
+                for start,end,target in sorted(matches,reverse=True): value = value[:start]+target+value[end:]
+                write_slot(owner,key,value)
+            draft.validate()
+        except (ValueError,KeyError,TypeError,UnicodeError) as error:
+            self.statusBar().showMessage(f'貼り付けできません: {error}');return
+        self.checkpoint();self.form = draft
+        self.selected = next(i for i,g in enumerate(draft.gadgets) if g.name == mapping[root.name.lower()])
+        self.refresh();self.statusBar().showMessage('部品を貼り付けました。名前は重複しない名前に変更しました。')
 
     def delete(self):
         if self.selected is None: return

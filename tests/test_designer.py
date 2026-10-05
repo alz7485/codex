@@ -403,6 +403,44 @@ class GuiTests(unittest.TestCase):
     def setUp(self): self.w=Window(); self.w.show(); self.app.processEvents()
     def tearDown(self): self.w.dirty=False; self.w.close(); self.app.processEvents()
 
+    def test_keyboard_copy_paste_cut_delete_and_undo(self):
+        self.w.add('frame');self.w.add('button');self.w.choose_row(0)
+        self.w.objects.setFocus();self.app.processEvents()
+        QTest.keyClick(self.w.objects,Qt.Key_C,Qt.ControlModifier)
+        QTest.keyClick(self.w.objects,Qt.Key_V,Qt.ControlModifier);self.app.processEvents()
+        self.assertEqual(len(self.w.form.gadgets),4)
+        copied = self.w.form.gadgets[self.w.selected]
+        self.assertEqual(len(self.w.form.children(copied.name)),1)
+        QTest.keyClick(self.w.objects,Qt.Key_Delete);self.app.processEvents()
+        self.assertEqual(len(self.w.form.gadgets),2)
+        self.w.undo();self.assertEqual(len(self.w.form.gadgets),4)
+        self.w.choose_row(0);self.w.objects.setFocus();self.app.processEvents()
+        QTest.keyClick(self.w.objects,Qt.Key_X,Qt.ControlModifier);self.app.processEvents()
+        self.assertEqual(len(self.w.form.gadgets),2)
+        QTest.keyClick(self.w.objects,Qt.Key_V,Qt.ControlModifier);self.app.processEvents()
+        self.assertEqual(len(self.w.form.gadgets),4)
+
+    def test_text_shortcuts_do_not_edit_gadgets(self):
+        self.w.add('button');editor=self.w.fields['label']
+        editor.setFocus();editor.setText('ABC');editor.selectAll();self.app.processEvents()
+        QTest.keyClick(editor,Qt.Key_C,Qt.ControlModifier)
+        QTest.keyClick(editor,Qt.Key_Delete)
+        self.assertEqual(len(self.w.form.gadgets),1);self.assertEqual(editor.text(),'')
+        QTest.keyClick(editor,Qt.Key_V,Qt.ControlModifier)
+        self.assertEqual(editor.text(),'ABC');self.assertEqual(len(self.w.form.gadgets),1)
+
+    def test_clipboard_snapshot_references_and_invalid_payload(self):
+        self.w.form=Form(gadgets=[Gadget(kind='frame',name='group',width=30,height=10),Gadget(name='run',parent='group',command='!this.run.val = !!myform.run.val')])
+        self.w.selected=0;self.w.refresh();self.assertTrue(self.w.copy_gadget())
+        self.w.form.gadgets[1].label='Changed'
+        self.w.paste_gadget();self.assertEqual(len(self.w.form.gadgets),4)
+        child=self.w.form.children(self.w.form.gadgets[self.w.selected].name)[0]
+        self.assertNotEqual(child.label,'Changed');self.assertIn('!this.'+child.name+'.val',child.command)
+        from PySide6.QtCore import QMimeData
+        from e3d_designer.app import GADGET_MIME
+        data=QMimeData();data.setData(GADGET_MIME,b'{}');self.app.clipboard().setMimeData(data)
+        before=self.w.form.dumps();self.w.paste_gadget();self.assertEqual(before,self.w.form.dumps())
+
     def test_view_aspect_property_edit_and_roundtrip(self):
         self.w.add('view');editor=self.w.fields['view_aspect']
         self.assertTrue(editor.isEnabled())
