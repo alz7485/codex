@@ -32,11 +32,34 @@ PALETTE = {
 # Independent character-width and line-height scales; approximate preview only.
 SX, SY = CHAR_WIDTH, LINE_HEIGHT
 GADGET_MIME = 'application/x-e3d-designer-gadgets'
+INSPECTOR_STYLE = '''QTabWidget::pane { border: 1px solid #d6dfeb; background: #ffffff; }
+QTabBar::tab { padding: 6px 9px; background: #f2f5f9; color: #46566b; }
+QTabBar::tab:selected { background: #eaf3ff; color: #185fa8; border-bottom: 2px solid #2277cc; }
+QTabBar::tab:disabled { color: #a5afbb; }'''
+
+
+def gadget_title(g):
+    if g.display_mode=='PIXMAP':return '画像選択' if g.kind=='option' else '画像'
+    if g.kind=='frame' and g.frame_style=='TABSET':return 'タブセット'
+    if g.kind=='frame' and g.frame_style=='TOOLBAR':return 'ツールバー'
+    return LABELS[g.kind]
 
 
 def preview_geometry(form, gadget):
     try: return form.geometry(gadget)
     except ValueError: return gadget.x, gadget.y, *display_size(gadget)
+
+
+def free_position(rectangles,width,height,limit_width,limit_height,minimum_y=0,preferred=None):
+    xs=sorted({0,*(x+w+1 for x,y,w,h in rectangles)})
+    ys=sorted({minimum_y,*(max(minimum_y,y+h+.5) for x,y,w,h in rectangles)})
+    positions=([preferred] if preferred is not None else [])+[(x,y) for y in ys for x in xs]
+    # Prefer breathing room, then allow exact fits where borders merely touch.
+    tight_xs=sorted({0,*(x+w for x,y,w,h in rectangles)})
+    tight_ys=sorted({minimum_y,*(max(minimum_y,y+h) for x,y,w,h in rectangles)})
+    positions += [(x,y) for y in tight_ys for x in tight_xs]
+    return next(((x,y) for x,y in positions if x>=0 and y>=minimum_y and x+width<=limit_width and y+height<=limit_height
+                 and all(x+width<=rx or x>=rx+rw or y+height<=ry or y>=ry+rh for rx,ry,rw,rh in rectangles)),None)
 
 
 class PropertyLayout(QGridLayout):
@@ -88,6 +111,7 @@ class PropertyLayout(QGridLayout):
 class PropertyPages:
     """Keep existing property synchronization shared across compact tab pages."""
     def __init__(self,tabs):
+        self.tabs=tabs
         self.pages={};self.owners={};self.current='基本';self.batching=False
         for title in ('基本','配置','内容','動作'):
             page=QWidget();layout=QVBoxLayout(page);content=QWidget()
@@ -102,6 +126,7 @@ class PropertyPages:
     def setRowVisible(self,editor,visible):
         grid=self.owners[editor];grid.batching=self.batching;grid.setRowVisible(editor,visible)
         if not self.batching:self.activate_page(grid)
+        if not self.batching:self.update_tabs()
 
     def setCaption(self,editor,text):self.owners[editor].setCaption(editor,text)
 
@@ -111,6 +136,13 @@ class PropertyPages:
     def reflow(self):
         for grid in self.pages.values():
             grid.batching=False;grid.reflow();self.activate_page(grid)
+        self.update_tabs()
+
+    def update_tabs(self):
+        current=self.tabs.currentIndex()
+        for index,grid in enumerate(self.pages.values()):
+            self.tabs.setTabEnabled(index,any(entry[3] for entry in grid.entries))
+        if not self.tabs.isTabEnabled(current):self.tabs.setCurrentIndex(0)
 
     @staticmethod
     def activate_page(grid):
@@ -422,8 +454,13 @@ class Window(QMainWindow):
             palette_layout.addWidget(b,index//2,index%2); self.palette_buttons[key] = b
         palette_layout.setColumnStretch(0,1); palette_layout.setColumnStretch(1,1)
         ll.addWidget(palette)
+        self.placement_hint=QLabel();self.placement_hint.setWordWrap(True)
+        self.placement_hint.setStyleSheet('color: #185fa8; padding: 4px; background: #eaf3ff;')
+        ll.addWidget(self.placement_hint)
         ll.addWidget(QLabel('部品一覧'))
         self.objects = ObjectList(); self.objects.currentRowChanged.connect(self.choose_row)
+        self.objects.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.objects.setTextElideMode(Qt.ElideRight)
         self.objects.orderCommitted.connect(self.reorder_objects); ll.addWidget(self.objects)
         self.objects.itemDoubleClicked.connect(lambda item:self.request_object_rename(self.form.gadgets[item.data(Qt.UserRole)].name))
         self.objects.setToolTip('ドラッグで部品の順序を変更します（親コンテナは変わりません）。')
@@ -473,6 +510,7 @@ class Window(QMainWindow):
         legend.setWordWrap(True);code_layout.addWidget(legend);code_layout.addWidget(self.code)
         middle.addWidget(code_panel); middle.setSizes([550, 230]); columns.addWidget(middle)
         right = QTabWidget();self.inspector_tabs=right
+        right.setStyleSheet(INSPECTOR_STYLE)
         form_page=QWidget();rl=QVBoxLayout(form_page);right.addTab(form_page,'フォーム')
         self.form_fields = QFormLayout()
         self.fname = QLineEdit(); self.ftitle = QLineEdit()
@@ -503,7 +541,9 @@ class Window(QMainWindow):
         rl.addWidget(lifecycle)
         rl.addStretch()
         part_page=QWidget();rl=QVBoxLayout(part_page);right.insertTab(0,part_page,'部品');right.setCurrentIndex(0)
-        rl.addWidget(QLabel('選択部品のプロパティ'))
+        self.selection_hint=QLabel();self.selection_hint.setWordWrap(True)
+        self.selection_hint.setStyleSheet('color: #46566b; padding: 4px;')
+        rl.addWidget(self.selection_hint)
         self.props = QTabWidget(); self.prop_layout = PropertyPages(self.props)
         self.fields = {}
         pairs = {}
@@ -954,6 +994,9 @@ class Window(QMainWindow):
             for key in ('x','y','layout_mode','xref','yref','path','width_ref'): self.fields[key].setEnabled(False)
 
     def enable_gadget_fields(self, gadget):
+        # Visibility rules below inspect effective widget enablement.
+        # Re-enable page parents before evaluating a different gadget's fields.
+        for index in range(self.props.count()):self.props.setTabEnabled(index,True)
         self.prop_layout.batching = True
         self.fields['selection_mode'].setEnabled(gadget.kind in ('list','selector'))
         self.fields['list_mode'].setEnabled(gadget.kind == 'list')
@@ -973,6 +1016,7 @@ class Window(QMainWindow):
         if gadget.kind in ('toggle','rtoggle'): hint = 'TRUE / FALSE'
         elif gadget.kind in ('option','combo','list'): hint = '選択行番号（1から）。MULTIPLE は 1,3 のように入力'
         self.fields['initial'].setPlaceholderText(hint)
+        self.fields['initial'].setToolTip(hint)
         macro = gadget.kind == 'button' and gadget.action_mode == 'MACRO'
         self.fields['callback'].setEnabled(self.fields['callback'].isEnabled() and not macro)
         self.fields['command'].setEnabled(self.fields['command'].isEnabled() and not macro)
@@ -1017,6 +1061,7 @@ class Window(QMainWindow):
         basis='フレーム基準' if gadget.parent else 'フォーム基準'
         self.prop_layout.setCaption(self.fields['x'],f'X ({basis})')
         self.prop_layout.setCaption(self.fields['y'],f'Y ({basis})')
+        for key in ('x','y'):self.fields[key].setToolTip(f'{basis}の座標。フレーム間のドラッグでは位置を保って座標を換算します。')
         self.browse_image.setText('📁 画像ファイルを追加' if gadget.kind == 'option' else '📁 画像ファイルを選択')
         self.prop_layout.batching = False
         if self.prop_layout.pending: self.prop_layout.reflow()
@@ -1110,9 +1155,25 @@ class Window(QMainWindow):
             item.setVisible(visible); item.update()
         self.scene.blockSignals(False)
         self.form.sync_tabs()
+        visibility={item.data(0):item.isVisible() for item in self.scene.items() if isinstance(item,Item)}
         for index,g in enumerate(self.form.gadgets):
             self.objects.item(index).setHidden(self.form.is_tab_page(g))
+            self.objects.item(index).setForeground(QColor('#24354b' if visibility.get(index,True) else '#98a2b3'))
+            self.objects.item(index).setToolTip(f'.{g.name}'+(f' / 親: .{g.parent}' if g.parent else ' / フォーム直下')+'\nダブルクリックで名前を変更')
         self.sync_tab_editor()
+        self.sync_context_hints()
+
+    def sync_context_hints(self):
+        g=self.form.gadgets[self.selected] if self.selected is not None and self.selected<len(self.form.gadgets) else None
+        if g:
+            parent=self.form.parent_gadget(g)
+            location=f'{parent.label} (.{parent.name})' if parent else 'フォーム直下'
+            self.selection_hint.setText(f'{gadget_title(g)}  .{g.name}\n所属: {location}')
+        else:self.selection_hint.setText('部品を選択してください。\nダブルクリックで名前を変更できます。')
+        target=g if g and g.kind=='frame' else self.form.parent_gadget(g) if g else self.form.named(self.tabset_picker.currentData()) if self.tabset_picker.currentData() else None
+        if target and target.frame_style=='TABSET':
+            target=next((page for page in target.tabs if page.name.lower()==self.active_pages.get(target.name.lower())),None)
+        self.placement_hint.setText('追加先: '+(f'{target.label} (.{target.name})' if target else 'フォーム直下'))
 
     def sync_tab_editor(self):
         tabsets=[g for g in self.form.gadgets if g.kind=='frame' and g.frame_style=='TABSET']
@@ -1302,7 +1363,7 @@ class Window(QMainWindow):
         self.fw.setValue(self.form.width); self.fh.setValue(self.form.height)
         self.objects.clear()
         for index,g in enumerate(self.form.gadgets):
-            self.objects.addItem(f'{LABELS[g.kind]}  .{g.name}' + (f' → {g.parent}' if g.parent else ''))
+            self.objects.addItem(f'{PALETTE[g.kind][0]} {gadget_title(g)}  .{g.name}' + (f' → {g.parent}' if g.parent else ''))
             self.objects.item(index).setData(Qt.UserRole,index)
         self.scene.blockSignals(True); self.scene.clear()
         self.scene.setSceneRect(0, 0, self.form.width * SX, self.form.height * SY)
@@ -1474,16 +1535,23 @@ class Window(QMainWindow):
             available = container.width-occupied
             if available < 1 or container.height < 2:
                 self.statusBar().showMessage('ツールバーに空きがありません。幅・高さを広げてください。');return
-        self.checkpoint()
+        draft=copy.deepcopy(self.form)
+        if container:container=draft.named(container.name)
         if kind=='rtoggle' and container is None:
             container=Gadget(kind='frame',name=self.unique_name('radioGroup'),label='Radio group',
                              x=0,y=min(len(self.form.gadgets)*1.5,max(0,self.form.height-6)),
                              width=min(30,self.form.width),height=min(6,self.form.height))
-            self.form.gadgets.append(container)
+            position=free_position([preview_geometry(draft,child) for child in draft.children('')],container.width,container.height,
+                                   draft.width,draft.height,preferred=(container.x,container.y))
+            if position is None:
+                self.statusBar().showMessage('フォームにラジオグループを配置する空きがありません。フォームを広げてください。');return
+            container.x,container.y=position
+            draft.gadgets.append(container)
         name = self.unique_name(kind)
-        width_limit, height_limit = self.form.geometry(container)[2:] if container else (self.form.width, self.form.height)
+        width_limit, height_limit = draft.geometry(container)[2:] if container else (self.form.width, self.form.height)
         vertical = (kind == 'line' and direction == 'VERT') or (kind == 'slider' and direction == 'VERTICAL')
         height = min(5 if vertical or direction == 'PIXMAP' or kind in ('list', 'frame', 'view', 'commandline', 'container','textpane','selector') else 1, height_limit)
+        if container and container.frame_style=='FRAME':height=min(height,max(1,height_limit-1))
         g = Gadget(kind=kind, name=name, label={'textpane':'Notes','selector':'Owner','button':'Run','paragraph':'Message','text':'Name','toggle':'Enabled','option':'Mode','list':'Results','line':'','frame':'Group','slider':'Level','rtoggle':'Choice','combo':'Choice','view':'Model view','commandline':'Command line','container':'External control'}[kind],
                    width=min((1 if kind == 'line' else 3) if vertical else 18,width_limit), height=height,
                    x=0, y=0 if container else min(len(self.form.gadgets) * 1.5, height_limit-height),
@@ -1491,7 +1559,7 @@ class Window(QMainWindow):
         if kind == 'line' and direction: g.orientation = direction
         if container and container.frame_style=='TABSET':
             g.width=container.width;g.height=container.height;g.x=g.y=0
-            g.label=f'Tab {len(self.form.children(container.name))+1}'
+            g.label=f'Tab {len(draft.children(container.name))+1}'
         if kind == 'slider' and direction: g.slider_orientation = direction
         if direction == 'PIXMAP': g.display_mode = 'PIXMAP'
         if direction == 'TOOLBAR':
@@ -1502,15 +1570,17 @@ class Window(QMainWindow):
         if kind in ('option', 'list', 'combo'): g.items = ['Item A', 'Item B']
         if direction == 'PIXMAP' and kind == 'option': g.items = []
         if direction == 'PIXMAP': g.width *= SX;g.height *= SY
-        if container and container.frame_style=='FRAME':
-            rectangles=[preview_geometry(self.form,child) for child in self.form.children(container.name)]
+        if container is None or container.frame_style=='FRAME':
+            rectangles=[preview_geometry(draft,child) for child in draft.children(container.name if container else '')]
             gw,gh=display_size(g)
-            xs=sorted({0,*(x+w+1 for x,y,w,h in rectangles)})
-            ys=sorted({0,*(y+h+.5 for x,y,w,h in rectangles)})
-            position=next(((x,y) for y in ys for x in xs if x+gw<=width_limit and y+gh<=height_limit
-                           and all(x+gw<=rx or x>=rx+rw or y+gh<=ry or y>=ry+rh for rx,ry,rw,rh in rectangles)),None)
-            if position:g.x,g.y=position
-        self.form.gadgets.append(g); self.selected = len(self.form.gadgets) - 1; self.refresh()
+            position=free_position(rectangles,gw,gh,width_limit,height_limit,minimum_y=1 if container else 0,
+                                   preferred=None if container else (g.x,g.y))
+            if position is None:
+                target=container.label or container.name if container else 'フォーム'
+                self.statusBar().showMessage(f'「{target}」に空きがありません。サイズを広げるか、追加先を変更してください。');return
+            g.x,g.y=position
+        draft.gadgets.append(g)
+        self.checkpoint();self.form=draft;self.selected=len(draft.gadgets)-1;self.refresh()
 
     def unique_name(self, base):
         used = {g.name.lower() for g in self.form.gadgets} | {menu.name.lower() for menu in self.form.menus}; i = 1

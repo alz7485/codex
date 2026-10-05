@@ -353,7 +353,7 @@ class AuditGuiRegressionTests(unittest.TestCase):
         self.load(Form(gadgets=[Gadget(kind='frame',name='group',x=4,y=2,width=30,height=10)]))
         for kind in ('button','slider','rtoggle','rtoggle'):w.add(kind)
         children=w.form.children('group')
-        self.assertEqual([g.y for g in children],[0,1.5,3,4.5])
+        self.assertEqual([g.y for g in children],[1,2.5,4,5.5])
         self.assertEqual([g.parent for g in children],['group']*4)
         w.form.validate()
 
@@ -366,6 +366,49 @@ class AuditGuiRegressionTests(unittest.TestCase):
         g=w.form.named('run')
         self.assertEqual((g.parent,g.x,g.y),('inner',2,2))
         self.assertEqual(w.form.offset(g),(13,6))
+
+    def test_full_frame_addition_preserves_form_and_full_undo_redo_history(self):
+        w=self.w
+        self.load(Form(gadgets=[Gadget(kind='frame',name='group',x=0,y=0,width=18,height=2),
+                               Gadget(name='run',parent='group',x=0,y=1,width=18)]))
+        w.history=[Form(title=f'History {i}') for i in range(100)]
+        w.future=[Form(title='Redo')];w.dirty=False
+        original=w.form.dumps();history=[g.dumps() for g in w.history];future=[g.dumps() for g in w.future]
+        w.add('button')
+        self.assertEqual(w.form.dumps(),original)
+        self.assertEqual([g.dumps() for g in w.history],history)
+        self.assertEqual([g.dumps() for g in w.future],future)
+        self.assertFalse(w.dirty)
+        self.assertIn('空きがありません',w.statusBar().currentMessage())
+
+    def test_context_hints_and_empty_property_tab_switch(self):
+        w=self.w;w.add('list');w.props.setCurrentIndex(2)
+        self.assertTrue(w.props.isTabEnabled(2))
+        w.add('button')
+        self.assertFalse(w.props.isTabEnabled(2));self.assertEqual(w.props.currentIndex(),0)
+        self.assertIn('.'+w.form.gadgets[-1].name,w.selection_hint.text())
+        self.assertIn('フォーム直下',w.placement_hint.text())
+        w.choose_row(-1);self.assertIn('部品を選択',w.selection_hint.text())
+        w.add('rtoggle');group=w.form.gadgets[-2];radio=w.form.gadgets[-1]
+        self.assertGreaterEqual(radio.y,1)
+        self.assertIn(group.name,w.placement_hint.text())
+        self.assertIn(group.name,w.selection_hint.text())
+
+    def test_full_form_addition_does_not_overlap_existing_object(self):
+        w=self.w
+        self.load(Form(width=18,height=1,gadgets=[Gadget(name='run',x=0,y=0,width=18)]))
+        w.choose_row(-1);original=w.form.dumps();history=len(w.history)
+        w.add('button')
+        self.assertEqual(w.form.dumps(),original);self.assertEqual(len(w.history),history)
+        self.assertIn('空きがありません',w.statusBar().currentMessage())
+
+    def test_exact_fit_is_available_when_borders_touch_without_overlap(self):
+        w=self.w
+        self.load(Form(width=36,height=1,gadgets=[Gadget(name='run',x=0,y=0,width=18)]))
+        w.choose_row(-1);w.add('button')
+        self.assertEqual(len(w.form.gadgets),2)
+        self.assertEqual((w.form.gadgets[-1].x,w.form.gadgets[-1].y),(18,0))
+        w.form.validate()
 
 
 if __name__ == '__main__':unittest.main()
