@@ -454,11 +454,11 @@ class Form:
                 if not IDENTIFIER.fullmatch(g.callback) or g.callback.lower() == self.name.lower():
                     raise ValueError('メソッド名が不正、またはコンストラクタと重複しています。')
                 key = g.callback.lower()
-                signature = 'OPEN' if g.kind == 'slider' else 'NORMAL'
+                signature = 'OPEN' if g.kind in ('slider','combo') else 'NORMAL'
                 if key in callback_signatures and callback_signatures[key] != signature:
-                    raise ValueError('SLIDER のイベントメソッド名は他の部品と分けてください。')
+                    raise ValueError('SLIDER / COMBO のイベントメソッド名は引数なしの部品と分けてください。')
                 if signature == 'OPEN' and key == 'default':
-                    raise ValueError('SLIDER のイベントメソッドには DEFAULT 以外を指定してください。')
+                    raise ValueError('SLIDER / COMBO のイベントメソッドには DEFAULT 以外を指定してください。')
                 callback_signatures[key] = signature
                 if key in callbacks and callbacks[key] != g.body:
                     raise ValueError('同じメソッド名には同じ処理を指定してください。')
@@ -662,7 +662,7 @@ class Form:
                 background = f'BACKGROUND {int(g.background)} ' if g.background else ''
                 line = f'list .{g.name} {background}{position} {label} {selection} {width_clause} HEIGHT {n(g.height)}' + callback
             elif g.kind == 'combo':
-                line = f'{g.combo_keyword} .{g.name} {label} {position} {width_clause}' + callback
+                line = f'{g.combo_keyword} .{g.name} {label} {position} {width_clause}'
             elif g.kind == 'textpane':
                 line = f'TEXTPANE .{g.name} {label}'+(' FIXCHARS' if g.fixed_font else '')+f' {position} {width_clause} HEIGHT {n(g.height)}'
             elif g.kind == 'selector':
@@ -722,7 +722,7 @@ class Form:
             if g.popup_menu: lines.append(f'  !this.{g.name}.SetPopup(!this.{g.popup_menu})')
             if g.kind == 'list' and g.list_mode == 'TABLE':
                 lines.append(f'  !this.{g.table_method or "populate_"+g.name}()')
-            if g.kind == 'slider' and active_callback(g):
+            if g.kind in ('slider','combo') and active_callback(g):
                 lines.append(f"  !this.{g.name}.callback = '!this.{g.callback}('")
             if g.kind == 'container' and g.assembly:
                 lines += [f'  !this.{g.name}Control = object {g.control_type}()',
@@ -759,7 +759,7 @@ class Form:
         for g in self.gadgets:
             if active_callback(g) and g.callback.lower() not in seen:
                 seen.add(g.callback.lower())
-                signature = '(!gad is GADGET, !event is STRING)' if g.kind == 'slider' else '()'
+                signature = '(!gad is GADGET, !event is STRING)' if g.kind in ('slider','combo') else '()'
                 lines += [f'define method .{g.callback}{signature}', user_code(g.body), 'endmethod', '']
         from .formatting import canonical_pml
         text='\n'.join(lines)

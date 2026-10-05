@@ -319,6 +319,8 @@ FRAME がグループの選択を管理します。通常の独立した TOGGLE 
 
 ## 13. 追加確認: COMBO（コンボボックス）
 
+コールバック修正（2026-10-05）: 上記公開FormsのOption Gadgetには `!this.op2.callback = |!this.setOpt(|` と `define method .setOpt(!gad is gadget, !event is STRING)` の組があります。COMBOの宣言行へCALLBACKを付ける方式から、コンストラクタでopen callbackを設定する方式に変更しました。COMBOBOX選択時も同じ方式で生成します。E3D 4.0実機での受理確認は未実施です。
+
 ユーザー情報と [Forms の Option Gadget](https://github.com/shivangKheradiya/AVEVA_PML/blob/2d3a87205cb80fbc68ca6b0518c9cf58dbd14285/10.%20Forms/README.md#option-gadget) を照合しました。
 
 ```pml

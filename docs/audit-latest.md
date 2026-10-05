@@ -1,3 +1,11 @@
+# COMBOコールバック修正（2026-10-05）
+
+- COMBO / COMBOBOX宣言行のCALLBACKを削除し、コンストラクタ内に `.callback = '!this.Method('` を設定。呼び出し先は `(!gad is GADGET, !event is STRING)` の引数で生成します。
+- 公開FormsのOption Gadgetの実例に合わせました。空の処理は設定・定義とも省略。引数なしの部品との同名メソッドやDEFAULTは、引数の不一致を防ぐため拒否します。
+- 全212件のテストが成功。両キーワードの生成位置・引数・実値配列・空処理・不正な共有名を確認。E3D実機は未検証。
+
+---
+
 # キャンバス上のフォーム編集（2026-10-05）
 
 [現在の画面](current-ui/form-canvas.png)

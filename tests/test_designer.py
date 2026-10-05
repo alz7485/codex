@@ -107,6 +107,22 @@ class ModelTests(unittest.TestCase):
         self.assertNotIn('AT ',line)
         self.assertIn("'Results' SINGLE WIDTH.base HEIGHT 3",line)
 
+    def test_combo_callback_is_assigned_in_constructor_with_matching_arguments(self):
+        for keyword in ('COMBO','COMBOBOX'):
+            form=Form(gadgets=[Gadget(kind='combo',name='Choice',combo_keyword=keyword,callback='OnChoice',body="if !event.eq('SELECT') then\n  q var !gad\nendif",items=['Item'],item_values=['Value'])])
+            code=Form.loads(form.dumps()).pml(normalize=False)
+            declaration=next(line for line in code.splitlines() if line.strip().startswith(keyword+' '))
+            self.assertNotIn('callback',declaration.lower());self.assertNotIn(' CALL ',declaration)
+            self.assertIn("!this.Choice.callback = '!this.OnChoice('",code)
+            self.assertIn('define method .OnChoice(!gad is GADGET, !event is STRING)',code)
+            self.assertIn('!this.Choice.rtext = !values',code)
+            form.gadgets[0].body='-- Empty';code=form.pml(normalize=False)
+            self.assertNotIn('.callback =',code);self.assertNotIn('define method .OnChoice',code)
+        form.gadgets[0].callback='DEFAULT'
+        with self.assertRaises(ValueError):form.validate()
+        form.gadgets[0].callback='Shared';form.gadgets.append(Gadget(name='Run',callback='Shared',body='-- Empty'))
+        with self.assertRaises(ValueError):form.validate()
+
     def test_slider_export_open_callback_and_bounds(self):
         slider=Gadget(kind='slider',name='level',slider_min=-10,slider_max=90,slider_step=5,slider_value=30,
                       callback='onLevel',body='  q var !event')
