@@ -7,6 +7,7 @@ from .model import IDENTIFIER
 def code_slots(form):
     yield 'DEFAULT', form, 'default_body'
     yield '表示後のプログラム', form, 'after_show_code'
+    for event in ('initcall','okcall','cancelcall'): yield event.upper(),form,event
     for g in form.gadgets:
         for key in ('command','body','view_code'):
             yield f'{g.name}: {key}', g, key
@@ -27,7 +28,7 @@ def write_slot(owner, key, value):
 
 
 def actual_name(g):
-    return '_'+g.name.lstrip('_') if g.kind == 'option' else g.name
+    return '_'+g.name.lstrip('_') if g.kind == 'option' and g.display_mode == 'TEXT' else g.name
 
 
 def reference_pattern(form, kind, name):
@@ -47,6 +48,9 @@ def reference_locations(form, kind, name):
         for g in form.gadgets:
             for key in ('parent','xref','yref','width_ref'):
                 if getattr(g,key).lower() == stored.lower(): locations.append((f'{g.name}: {key}',1))
+    if kind == 'menu':
+        for g in form.gadgets:
+            if g.popup_menu.lower() == name.lower(): locations.append((f'{g.name}: popup_menu',1))
     return locations
 
 
@@ -65,7 +69,10 @@ def rename(form, kind, key, new_name, update_code=True):
             raise ValueError('変数名が重複しています。')
         result.variables = {new_name if name==old else name:value for name,value in result.variables.items()}
     elif kind == 'form': result.name = new_name
-    elif kind == 'menu': result.menus[key].name = new_name
+    elif kind == 'menu':
+        result.menus[key].name = new_name
+        for g in result.gadgets:
+            if g.popup_menu.lower() == old.lower(): g.popup_menu = new_name
     else:
         result.gadgets[key].name = new_name
         for g in result.gadgets:

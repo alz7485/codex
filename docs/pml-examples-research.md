@@ -353,6 +353,24 @@ container .containerGrid PMLNetControl anchor left+top+bottom width 30 height 10
 
 GUI に CONTAINER を追加するときは、配置だけでなく import、名前空間、型、インスタンス作成、Control の handle 接続、イベントハンドラ、必要 DLL と製品版の互換性を扱う必要があります。特に PDMS 時代の名前空間を E3D 4.0 のものとして固定しません。
 
+## 画像と追加機能の実装
+
+2026-10-05 更新: PARAGRAPH / BUTTON / TOGGLE の単一 PIXMAP、画像 OPTION の DTEXT / RTEXT、TEXTPANE の配列 VAL と FIXCHARS、DATABASE SELECTOR、MAIN の FRAME TOOLBAR、フォーム INITCALL / OKCALL / CANCELCALL、BUTTON の制御属性、POPUP メニューと SetPopup を実装しました。設計 JSON は既存バージョン 1 の未指定項目に既定値を補い、保存・読み込み、Undo / Redo、名前管理、キー操作でも新しい設定を保持します。
+
+今回、次の固定コミットの公開資料をネットから再取得し、構文例を確認しました。
+
+- [AVEVA_PML Forms](https://github.com/shivangKheradiya/AVEVA_PML/blob/2d3a87205cb80fbc68ca6b0518c9cf58dbd14285/10.%20Forms/README.md): PARAGRAPH の PIXMAP / AddPixmap、画像 OPTION の DTEXT ファイル配列と RTEXT、フォームイベント、TEXTPANE、メニューの Add と LIST の SetPopup。
+- [Form layout and gadgets](https://github.com/nhdang117/PML.Learning/blob/57d55443a63f2cc7ec897c56ba1ae259f4b43bd1/docs/guide/form-layout-and-gadgets.md): SELECTOR DATABASE OWNERS、TEXTPANE の配列 VAL と FIXCHARS。
+- [Gadget reference](https://github.com/nhdang117/PML.Learning/blob/57d55443a63f2cc7ec897c56ba1ae259f4b43bd1/docs/reference/gadget-reference.md): DATABASE OWNERS / MEMBERS / AUTO、PIXMAP 対応ガジェットとイベント。
+- [Building forms](https://github.com/nhdang117/PML.Learning/blob/57d55443a63f2cc7ec897c56ba1ae259f4b43bd1/docs/guide/building-forms.md): INITCALL / OKCALL / CANCELCALL、MENU POPUP、メニューの Add('CALLBACK', ...)、SetPopup、MAIN の FRAME TOOLBAR と対応部品。
+- [Button methods and control attributes](https://github.com/mikhalchankasm/vscode-pml-aveva-e3d/blob/07971b883c53ae665d3c02c7670c1e8cdaa76343/hide_examples/Button%20Gadget/Button%20Gadget%20Methods.md): AddPixmap とボタンの制御属性。AVEVA 文書へのリンクを含む参考資料で、E3D 4.0 の実機検証結果ではありません。
+
+画像 OPTION は従来の文字 PAIRS OPTION と異なり `.名前` を使用します。公開例の画像パスには `/C:\...` の形式がありますが、エディタは入力パスに接頭辞を足さずそのまま出力します。E3D 側の画像探索・利用可能な形式・ピクセル寸法は実機で確認が必要です。サンプル PNG はこのプロジェクトで新規に作成しました。
+
+AUTOCALL、TOGGLE の状態別複数画像、RGROUP、TOOLBAR の既存アプリへの自動登録、外部グリッドの列・イベント設定、既存 PML のインポートは今回も未実装です。SELECTOR のデータ取得とコールバックの実行、VIEW の drawlist 管理、外部 DLL はプレビューで実行しません。
+
+この節より前の「未対応」表記は調査当時の状況です。現状の利用手順は [README](../README.md#画像複数行入力db-選択ツールバー)、サンプルは [extra-features.pmlfrm](../examples/extra-features.pmlfrm) と [toolbar.pmlfrm](../examples/toolbar.pmlfrm) です。
+
 ## 更新内容と未実装の区別
 
 2026-10-05 更新: SLIDER、RTOGGLE、VIEW、ALPHA コマンド欄、COMBO、CONTAINER の GUI 編集・概略プレビュー・PML 出力を実装しました。LIST の SINGLE / MULTI と LIST / COMBO の表示名・実値編集にも対応しました。ユーザー提供の !HEAD / !ROWS の例に合わせ、複数列 LIST の表入力と SetHeadings / SetRows 出力にも対応しました。VIEW の drawlist 管理、外部 DLL の配布・イベント接続・終了処理は未対応です。E3D 4.0 実機での構文・動作検証は未実施です。詳細は [README](../README.md#追加ガジェット) と [サンプル](../examples/gadgets.pmlfrm) を参照してください。

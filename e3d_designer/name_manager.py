@@ -66,7 +66,7 @@ class NameManager(QDialog):
             if kind=='form': name=self.draft.name;token='!!'+name;parent='';label='FORM'
             elif kind=='menu': name=self.draft.menus[key].name;token='.'+name;parent=self.draft.name;label='MENU'
             else:
-                g=self.draft.gadgets[key];name=g.name;token=('.' if g.kind!='option' else '')+actual_name(g)
+                g=self.draft.gadgets[key];name=g.name;token=('' if g.kind=='option' and g.display_mode=='TEXT' else '.')+actual_name(g)
                 parent=g.parent or self.draft.name;label=g.kind.upper()
             for column,value in enumerate((label,name,token,parent,self.locations(kind,actual_name(self.draft.gadgets[key]) if kind=='gadget' else name))):
                 self.objects.setItem(row,column,self.item(value))

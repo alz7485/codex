@@ -5,7 +5,7 @@ from shiboken6 import isValid
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QRectF, Signal, QMimeData
-from PySide6.QtGui import QAction, QColor, QPainter, QPen, QKeySequence, QPainterPath
+from PySide6.QtGui import QAction, QColor, QPainter, QPen, QKeySequence, QPainterPath, QPixmap, QFont
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QFormLayout, QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QGridLayout)
 from .model import Form, Gadget, Menu, MenuItem, KINDS
 
-LABELS = {'button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
+LABELS = {'textpane':'複数行テキスト (TEXTPANE)','selector':'DB セレクタ (SELECTOR)','button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
           'toggle': 'チェックボックス', 'option': 'ドロップダウン', 'list': 'リスト', 'line': '線 (LINE)', 'frame': '枠 (FRAME)', 'slider':'スライダー', 'rtoggle':'ラジオボタン', 'combo':'コンボボックス', 'view':'ビュー', 'commandline':'コマンド欄 (ALPHA)', 'container':'外部部品 (CONTAINER)'}
 PALETTE = {
     'button': ('🖱️','ボタン'), 'paragraph': ('🏷️','ラベル'),
@@ -24,6 +24,7 @@ PALETTE = {
     'slider': ('🎚️','スライダー'), 'rtoggle': ('🔘','ラジオ'),
     'combo': ('📝','コンボ'), 'view': ('👁️','ビュー'),
     'commandline': ('⌨️','コマンド'), 'container': ('🧩','コンテナ'),
+    'textpane': ('📄','複数行入力'),'selector': ('🗃️','DB セレクタ'),
 }
 # Independent character-width and line-height scales; approximate preview only.
 SX, SY = 10, 26
@@ -40,6 +41,7 @@ class PropertyLayout(QGridLayout):
     def __init__(self,parent):
         super().__init__(parent)
         self.entries = [];self.setContentsMargins(0,0,0,0)
+        self.batching = False;self.pending = False
         self.setHorizontalSpacing(10);self.setVerticalSpacing(6)
         self.setColumnStretch(0,1);self.setColumnStretch(1,1)
 
@@ -55,9 +57,17 @@ class PropertyLayout(QGridLayout):
     def setRowVisible(self,editor,visible):
         entry = next(entry for entry in self.entries if entry[0] is editor)
         if entry[3] == visible: return
-        entry[3] = visible;self.reflow()
+        entry[3] = visible
+        if self.batching: self.pending = True
+        else: self.reflow()
+
+    def setCaption(self,editor,text):
+        entry = next(entry for entry in self.entries if entry[0] is editor)
+        caption = entry[1].findChild(QLabel)
+        if caption is not None and caption.text() != text: caption.setText(text)
 
     def reflow(self):
+        self.pending = False
         while self.count(): self.takeAt(0)
         visible = [entry for entry in self.entries if entry[3]]
         for _,cell,_,show in self.entries: cell.setVisible(show)
@@ -88,9 +98,12 @@ class Item(QGraphicsObject):
         self.gadget, self.form = gadget, form
         self._resize = None
         self._sync_geometry = False
+        image_path = gadget.pixmap_path if gadget.kind != 'option' else (gadget.items[0] if gadget.items else '')
+        self.pixmap = QPixmap(image_path) if gadget.display_mode == 'PIXMAP' and image_path else QPixmap()
         self.setAcceptHoverEvents(True)
         self.setFlags(QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
-        if gadget.layout_mode == 'ABSOLUTE': self.setFlag(QGraphicsItem.ItemIsMovable)
+        parent = form.parent_gadget(gadget)
+        if gadget.layout_mode == 'ABSOLUTE' and not (parent and parent.frame_style == 'TOOLBAR'): self.setFlag(QGraphicsItem.ItemIsMovable)
         ox, oy = preview_offset(form, gadget)
         x, y, self._width, self._height = preview_geometry(form, gadget)
         self.setPos((x + ox) * SX, (y + oy) * SY)
@@ -194,6 +207,16 @@ class Item(QGraphicsObject):
             painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), 3, 3)
         painter.setPen(QColor('#182b40'))
         text = g.label
+        if g.display_mode == 'PIXMAP':
+            if not self.pixmap.isNull():
+                fitted = self.pixmap.size().scaled(r.size().toSize(),Qt.KeepAspectRatio)
+                target = QRectF((r.width()-fitted.width())/2,(r.height()-fitted.height())/2,fitted.width(),fitted.height())
+                painter.drawPixmap(target,self.pixmap,QRectF(self.pixmap.rect()));text = ''
+            else: text = '🖼 PIXMAP\n'+(g.pixmap_path if g.kind != 'option' else (g.items[0] if g.items else '画像未設定'))
+        if g.kind == 'textpane':
+            if g.fixed_font: painter.setFont(QFont('monospace',10))
+            text = '\n'.join(g.pane_lines) or g.label
+        if g.kind == 'selector': text = g.label+'\nDATABASE '+g.database+'\n(E3D で取得)'
         if g.kind == 'frame':
             parent = self.form.parent_gadget(g)
             if self.form.children(g.name) and g.frame_style == 'TABSET': text = ''
@@ -201,7 +224,7 @@ class Item(QGraphicsObject):
         if g.kind == 'paragraph' and g.background: text += f' [BG {g.background}]'
         if g.kind == 'text': text += '  [' + g.initial + ']'
         if g.kind == 'toggle': text = '☐ ' + text
-        if g.kind in ('option','combo'): text += '  ▾'
+        if g.kind in ('option','combo') and g.display_mode != 'PIXMAP': text += '  ▾'
         if g.kind == 'rtoggle': text = '○ '+text
         if g.kind == 'slider': text = ''
         if g.kind in ('view','commandline'):
@@ -221,7 +244,7 @@ class Item(QGraphicsObject):
                         painter.drawText(cell.adjusted(4,1,-4,-1),Qt.AlignLeft|Qt.AlignVCenter,value)
                 painter.restore(); text = ''
             else: text = '\n'.join(g.items) or g.label
-        painter.drawText(r.adjusted(7, 2, -7, -2), Qt.AlignLeft | (Qt.AlignTop if g.kind == 'frame' else Qt.AlignVCenter), text)
+        painter.drawText(r.adjusted(7, 2, -7, -2), Qt.AlignLeft | (Qt.AlignTop if g.kind in ('frame','textpane','selector') else Qt.AlignVCenter), text)
         if self.isSelected():
             painter.setPen(QPen(QColor('#2277cc'), 2, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
@@ -331,6 +354,7 @@ class Window(QMainWindow):
             elif kind == 'slider':
                 entries += [('slider_horiz',kind,'HORIZONTAL','🎚️','横スライダー'),('slider_vert',kind,'VERTICAL','🎚️','縦スライダー')]
             else: entries.append((kind,kind,None,*PALETTE[kind]))
+        entries += [('image','paragraph','PIXMAP','🖼️','画像'),('image_option','option','PIXMAP','🖼️','画像選択'),('toolbar','frame','TOOLBAR','🛠️','ツールバー')]
         for index,(key,kind,direction,icon,label) in enumerate(entries):
             b = QPushButton(f'{icon} {label}'); b.setFixedHeight(28)
             b.setStyleSheet('font-size: 12px; padding: 2px 4px;')
@@ -347,6 +371,8 @@ class Window(QMainWindow):
         middle = QSplitter(Qt.Vertical)
         self.scene = Scene(self); self.scene.selectionChanged.connect(self.selection_changed)
         self.view = QGraphicsView(self.scene)
+        self.view.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.view.customContextMenuRequested.connect(self.preview_popup)
         self.edit_actions = []
         for widget in (self.view,self.objects):
             for label,key,handler in (('コピー','Ctrl+C',self.copy_gadget),('貼り付け','Ctrl+V',self.paste_gadget),('切り取り','Ctrl+X',self.cut_gadget),('削除','Del',self.delete)):
@@ -369,7 +395,7 @@ class Window(QMainWindow):
         self.fw, self.fh = self.number(1, 300), self.number(1, 300)
         for label, w in [('フォーム名', self.fname), ('タイトル', self.ftitle), ('幅 (PML)', self.fw), ('高さ (PML)', self.fh)]:
             self.form_fields.addRow(label, w); self.connect_field(w, self.update_form)
-        self.docking = QComboBox(); self.docking.addItems(['右ドッキング', '通常ダイアログ'])
+        self.docking = QComboBox(); self.docking.addItems(['右ドッキング', '通常ダイアログ','MAIN フォーム'])
         self.docking.currentIndexChanged.connect(self.update_form)
         self.form_fields.addRow('表示形式', self.docking)
         rl.addLayout(self.form_fields)
@@ -388,6 +414,13 @@ class Window(QMainWindow):
         self.default_body.setPlaceholderText('DEFINE METHOD .DEFAULT() の中に出力する PML')
         self.default_body.textChanged.connect(self.update_default_body)
         rl.addWidget(QLabel('DEFAULT メソッドの処理')); rl.addWidget(self.default_body)
+        lifecycle = QGroupBox('フォームのコールバック');lifecycle_layout = QFormLayout(lifecycle)
+        self.form_callbacks = {}
+        for event in ('initcall','okcall','cancelcall'):
+            editor = QLineEdit();editor.setPlaceholderText('!THIS.メソッド名() または PML コマンド')
+            self.form_callbacks[event] = editor;lifecycle_layout.addRow(event.upper(),editor)
+            editor.textEdited.connect(lambda text,e=event:self.update_form_callback(e,text))
+        rl.addWidget(lifecycle)
         rl.addWidget(QLabel('選択部品のプロパティ'))
         self.props = QWidget(); self.prop_layout = PropertyLayout(self.props)
         self.fields = {}
@@ -396,28 +429,37 @@ class Window(QMainWindow):
                 ('orientation','background'),('parent','frame_style'),('layout_mode','path'),
                 ('halign','valign'),('hgap','vgap'),('xref','yref'),('xedge','yedge'),('xanchor','width_ref'),
                 ('xoffset','yoffset'),('selection_mode','list_mode'),('slider_min','slider_max'),
-                ('slider_step','slider_value'),('off_value','on_value'),('view_type','view_aspect')):
+                ('slider_step','slider_value'),('off_value','on_value'),('view_type','view_aspect'),('display_mode','button_role')):
             pairs[first] = pairs[second] = first
         for key, label in [('name', '部品名'), ('label', '表示文字'), ('x', 'X'), ('y', 'Y'), ('width', '幅'), ('height', '高さ / 行数'), ('value_type', '入力型'), ('initial', '初期値'), ('callback', 'メソッド名'), ('command', 'CALL コマンド'), ('background', 'BACKGROUND (空欄＝背景色)'), ('orientation', 'LINE の向き'), ('frame_style', 'FRAME 形式'), ('parent', '親コンテナ'), ('layout_mode', '配置方式'), ('path', '配置方向'), ('halign', '水平整列'), ('valign', '垂直整列'), ('hgap', '横間隔'), ('vgap', '縦間隔'), ('xref', 'X 基準部品'), ('xedge', 'X 基準辺'), ('xanchor', '自部品の X 辺'), ('xoffset', 'X オフセット'), ('yref', 'Y 基準部品'), ('yedge', 'Y 基準辺'), ('yoffset', 'Y オフセット'), ('width_ref', '幅を揃える部品'),
                 ('selection_mode','LIST 選択方式'), ('list_mode','LIST 表示方式'), ('table_method','表の設定メソッド名'), ('combo_keyword','COMBO 定義キーワード'),
                 ('slider_orientation','SLIDER の向き'), ('slider_min','最小値'), ('slider_max','最大値'), ('slider_step','刻み'), ('slider_value','スライダー初期値'),
                 ('off_value','ラジオ OFF 実値'), ('on_value','ラジオ ON 実値'),
                 ('view_type','VIEW 形式'), ('view_aspect','ASPECT (VIEW)'), ('channels','ALPHA チャンネル'),
-                ('assembly','CONTAINER アセンブリ'), ('namespace','名前空間'), ('control_type','コントロール型')]:
+                ('assembly','CONTAINER アセンブリ'), ('namespace','名前空間'), ('control_type','コントロール型'),
+                ('display_mode','文字 / 画像'),('pixmap_path','画像ファイル (E3D 側のパス)'),('popup_menu','ポップアップメニュー'),
+                ('database','DATABASE'),('button_role','ボタン属性')]:
             if key in ('slider_min','slider_max','slider_step','slider_value'):
                 w = self.number(-1e9, 1e9)
             elif key in ('x','y','width','height','hgap','vgap','xoffset','yoffset'):
                 w = self.number(-300 if key in ('xoffset','yoffset') else 0 if key in ('x','y','hgap','vgap') else 1, 300)
-            elif key in ('parent','xref','yref','width_ref'):
+            elif key in ('parent','xref','yref','width_ref','popup_menu'):
                 w = QComboBox(); w.addItem('(フォーム直下)', '')
-            elif key in ('value_type','orientation','frame_style','layout_mode','path','halign','valign','xedge','yedge','xanchor','selection_mode','combo_keyword','slider_orientation','view_type','channels','list_mode'):
+            elif key in ('value_type','orientation','frame_style','layout_mode','path','halign','valign','xedge','yedge','xanchor','selection_mode','combo_keyword','slider_orientation','view_type','channels','list_mode','display_mode','database','button_role'):
                 w = QComboBox()
-                w.addItems({'value_type': ['STRING', 'REAL'], 'orientation': ['HORIZ', 'VERT'], 'frame_style': ['FRAME','TABSET'], 'layout_mode': ['ABSOLUTE','AUTO','RELATIVE'], 'path': ['DOWN','RIGHT','UP','LEFT'], 'halign': ['LEFT','CENTRE','RIGHT'], 'valign': ['TOP','CENTRE','BOTTOM'], 'xedge': ['XMIN','XMAX'], 'yedge': ['YMIN','YMAX'], 'xanchor': ['LEFT','RIGHT'], 'list_mode':['SIMPLE','TABLE'], 'selection_mode':['SINGLE','MULTIPLE'], 'combo_keyword':['COMBO','COMBOBOX'], 'slider_orientation':['HORIZONTAL','VERTICAL'], 'view_type':['ALPHA','AREA','PLOT','VOLUME'], 'channels':['NONE','REQUESTS','COMMANDS','BOTH']}[key])
+                w.addItems({'display_mode':['TEXT','PIXMAP'],'database':['OWNERS','MEMBERS','AUTO'],'button_role':['NORMAL','OK','APPLY','CANCEL','RESET','HELP'],'value_type': ['STRING', 'REAL'], 'orientation': ['HORIZ', 'VERT'], 'frame_style': ['FRAME','TABSET','TOOLBAR'], 'layout_mode': ['ABSOLUTE','AUTO','RELATIVE'], 'path': ['DOWN','RIGHT','UP','LEFT'], 'halign': ['LEFT','CENTRE','RIGHT'], 'valign': ['TOP','CENTRE','BOTTOM'], 'xedge': ['XMIN','XMAX'], 'yedge': ['YMIN','YMAX'], 'xanchor': ['LEFT','RIGHT'], 'list_mode':['SIMPLE','TABLE'], 'selection_mode':['SINGLE','MULTIPLE'], 'combo_keyword':['COMBO','COMBOBOX'], 'slider_orientation':['HORIZONTAL','VERTICAL'], 'view_type':['ALPHA','AREA','PLOT','VOLUME'], 'channels':['NONE','REQUESTS','COMMANDS','BOTH']}[key])
             else: w = QLineEdit()
             if isinstance(w,QComboBox):
                 w.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
                 w.setMinimumContentsLength(8)
             self.fields[key] = w; self.prop_layout.addRow(label, w,pairs.get(key)); self.connect_field(w, self.update_gadget)
+        self.browse_image = QPushButton('📁 画像ファイルを選択');self.browse_image.clicked.connect(self.choose_image)
+        self.prop_layout.addRow(self.browse_image)
+        self.fixed_font = QCheckBox('FIXCHARS：等幅フォント');self.fixed_font.toggled.connect(self.update_gadget)
+        self.prop_layout.addRow(self.fixed_font)
+        self.pane_lines = QPlainTextEdit();self.pane_lines.setMaximumHeight(130)
+        self.pane_lines.setPlaceholderText('TEXTPANE の初期内容（1行ずつ配列で出力）')
+        self.pane_lines.textChanged.connect(self.update_gadget);self.prop_layout.addRow('複数行入力の初期内容',self.pane_lines)
         self.choices = QPlainTextEdit(); self.choices.setMaximumHeight(100)
         self.prop_layout.addRow('選択肢 (1行1項目)', self.choices)
         self.choices.textChanged.connect(self.update_gadget)
@@ -467,6 +509,8 @@ class Window(QMainWindow):
         menu_name_layout = QFormLayout(); self.menu_name = QLineEdit()
         self.menu_name.textEdited.connect(self.update_menu_name)
         menu_name_layout.addRow('メニュー名',self.menu_name); menu_layout.addLayout(menu_name_layout)
+        self.menu_popup = QCheckBox('POPUP：部品の右クリックメニューとして使う')
+        self.menu_popup.toggled.connect(self.update_menu_popup);menu_layout.addWidget(self.menu_popup)
         self.menu_items = QTableWidget(0,3); self.menu_items.setHorizontalHeaderLabels(['表示名','コマンド','操作'])
         self.menu_items.horizontalHeader().setSectionResizeMode(0,QHeaderView.Stretch)
         self.menu_items.horizontalHeader().setSectionResizeMode(1,QHeaderView.Stretch)
@@ -514,16 +558,52 @@ class Window(QMainWindow):
             return self.form.menus[self.selected_menu]
         return None
 
+    def update_form_callback(self,event,text):
+        if self.loading: return
+        self.checkpoint();setattr(self.form,event,text);self.refresh(rebuild=False)
+
+    def update_menu_popup(self,checked):
+        menu = self.current_menu()
+        if self.loading or menu is None: return
+        self.checkpoint();menu.popup = checked;self.refresh(rebuild=False)
+
+    def choose_image(self):
+        if self.selected is None: return
+        gadget = self.form.gadgets[self.selected]
+        if gadget.kind == 'option':
+            filenames,_ = QFileDialog.getOpenFileNames(self,'画像の選択肢を追加','','画像 (*.png *.gif *.bmp *.jpg *.jpeg);;すべて (*)')
+            if not filenames: return
+            self.checkpoint();gadget.items.extend(filenames)
+            if gadget.item_values: gadget.item_values.extend(['']*len(filenames))
+            self.refresh();return
+        filename,_ = QFileDialog.getOpenFileName(self,'画像を選択','','画像 (*.png *.gif *.bmp *.jpg *.jpeg);;すべて (*)')
+        if not filename: return
+        self.checkpoint();gadget = self.form.gadgets[self.selected]
+        gadget.pixmap_path = filename;self.refresh()
+
+    def preview_popup(self,position):
+        item = self.view.itemAt(position)
+        if not isinstance(item,Item) or not item.gadget.popup_menu: return
+        source = next((menu for menu in self.form.menus if menu.popup and menu.name.lower() == item.gadget.popup_menu.lower()),None)
+        if source is None: return
+        popup = QMenu(self.view)
+        for entry in source.items:
+            action = popup.addAction(entry.label)
+            action.triggered.connect(lambda checked=False,command=entry.command:self.statusBar().showMessage('E3D で実行するコマンド: '+command))
+        popup.setAttribute(Qt.WA_DeleteOnClose)
+        popup.popup(self.view.viewport().mapToGlobal(position))
+
     def refresh_menus(self, rebuild=True):
         self.preview_menu_bar.clear()
         for menu in self.preview_menus: menu.deleteLater()
         self.preview_menus = []
         for menu in self.form.menus:
+            if menu.popup: continue
             preview = QMenu(menu.name,self.preview_menu_bar)
             self.preview_menus.append(preview)
             self.preview_menu_bar.addMenu(preview)
             for item in menu.items: preview.addAction(item.label)
-        self.preview_menu_bar.setVisible(bool(self.form.menus))
+        self.preview_menu_bar.setVisible(any(not menu.popup for menu in self.form.menus))
         if self.current_menu() is None:
             self.selected_menu = 0 if self.form.menus else None
         self.menu_list.clear()
@@ -534,6 +614,7 @@ class Window(QMainWindow):
         self.menu_actions['left'].setEnabled(menu is not None and self.selected_menu > 0)
         self.menu_actions['right'].setEnabled(menu is not None and self.selected_menu < len(self.form.menus)-1)
         self.menu_name.setEnabled(menu is not None); self.menu_items.setEnabled(menu is not None)
+        self.menu_popup.setEnabled(menu is not None);self.menu_popup.setChecked(menu.popup if menu else False)
         self.menu_add_item.setEnabled(menu is not None)
         name = menu.name if menu else ''
         if self.menu_name.text() != name: self.menu_name.setText(name)
@@ -573,7 +654,9 @@ class Window(QMainWindow):
 
     def delete_menu(self):
         if self.current_menu() is None: return
-        self.checkpoint(); self.form.menus.pop(self.selected_menu)
+        self.checkpoint();menu = self.form.menus.pop(self.selected_menu)
+        for gadget in self.form.gadgets:
+            if gadget.popup_menu.lower() == menu.name.lower(): gadget.popup_menu = ''
         self.refresh()
 
     def duplicate_menu(self):
@@ -595,7 +678,10 @@ class Window(QMainWindow):
     def update_menu_name(self, text):
         menu = self.current_menu()
         if self.loading or menu is None: return
-        self.checkpoint(); menu.name = text; self.refresh(rebuild=False)
+        self.checkpoint();old_name = menu.name;menu.name = text
+        for gadget in self.form.gadgets:
+            if gadget.popup_menu.lower() == old_name.lower(): gadget.popup_menu = text
+        self.refresh(rebuild=False)
 
     def add_menu_item(self):
         menu = self.current_menu()
@@ -652,6 +738,7 @@ class Window(QMainWindow):
         self.checkpoint()
         self.form.show_form = self.show_form.isChecked()
         self.form.dock_right = self.docking.currentIndex() == 0
+        self.form.form_type = 'MAIN' if self.docking.currentIndex() == 2 else 'DIALOG'
         self.form.name, self.form.title = self.fname.text(), self.ftitle.text()
         self.form.width, self.form.height = self.fw.value(), self.fh.value()
         self.refresh()
@@ -672,17 +759,28 @@ class Window(QMainWindow):
             value = getattr(gadget,key)
             if value and widget.findData(value) < 0: widget.addItem(value,value)
             widget.setCurrentIndex(max(0,widget.findData(value)))
+        widget = self.fields['popup_menu'];widget.clear();widget.addItem('(未指定)','')
+        for menu in self.form.menus:
+            if menu.popup: widget.addItem(menu.name,menu.name)
+        if gadget.popup_menu and widget.findData(gadget.popup_menu) < 0: widget.addItem(gadget.popup_menu,gadget.popup_menu)
+        widget.setCurrentIndex(max(0,widget.findData(gadget.popup_menu)))
 
     def enable_layout_fields(self, gadget):
         mode = gadget.layout_mode
+        self.fields['layout_mode'].setEnabled(True)
         for key in ('x','y'): self.fields[key].setEnabled(mode == 'ABSOLUTE')
         for key in ('path','halign','valign','hgap','vgap'): self.fields[key].setEnabled(mode == 'AUTO')
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): self.fields[key].setEnabled(mode == 'RELATIVE')
         self.fields['width_ref'].setEnabled(gadget.kind not in ('toggle','option','rtoggle'))
         self.fields['width'].setEnabled(not gadget.width_ref)
+        parent = self.form.parent_gadget(gadget)
+        if parent and parent.frame_style == 'TOOLBAR':
+            for key in ('x','y','layout_mode','xref','yref','path','width_ref'): self.fields[key].setEnabled(False)
 
     def enable_gadget_fields(self, gadget):
-        for key in ('selection_mode','list_mode'): self.fields[key].setEnabled(gadget.kind == 'list')
+        self.prop_layout.batching = True
+        self.fields['selection_mode'].setEnabled(gadget.kind in ('list','selector'))
+        self.fields['list_mode'].setEnabled(gadget.kind == 'list')
         self.fields['table_method'].setEnabled(gadget.kind == 'list' and gadget.list_mode == 'TABLE')
         self.fields['combo_keyword'].setEnabled(gadget.kind == 'combo')
         for key in ('slider_orientation','slider_min','slider_max','slider_step','slider_value'):
@@ -692,8 +790,8 @@ class Window(QMainWindow):
         self.fields['view_aspect'].setEnabled(gadget.kind in ('view','commandline'))
         self.fields['channels'].setEnabled(gadget.kind == 'commandline' or (gadget.kind == 'view' and gadget.view_type == 'ALPHA'))
         for key in ('assembly','namespace','control_type'): self.fields[key].setEnabled(gadget.kind == 'container')
-        self.fields['callback'].setEnabled(gadget.kind in ('button','text','toggle','list','combo','slider'))
-        self.item_values.setEnabled(gadget.kind in ('list','combo'))
+        self.fields['callback'].setEnabled((gadget.kind in ('button','text','toggle','list','combo','slider','selector') or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP')) and gadget.button_role not in ('OK','CANCEL','HELP'))
+        self.item_values.setEnabled(gadget.kind in ('list','combo') or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP'))
         self.view_code.setEnabled(gadget.kind in ('view','commandline'))
         relevant = {
             'value_type':gadget.kind == 'text', 'initial':gadget.kind == 'text',
@@ -701,24 +799,44 @@ class Window(QMainWindow):
             'command':gadget.kind in ('button','text','toggle'),
             'background':gadget.kind in ('button','paragraph','list'), 'orientation':gadget.kind == 'line',
             'frame_style':gadget.kind == 'frame',
+            'display_mode':gadget.kind in ('paragraph','button','toggle','option'),
+            'pixmap_path':gadget.kind in ('paragraph','button','toggle') and gadget.display_mode == 'PIXMAP',
+            'popup_menu':gadget.kind in ('view','commandline','list','button','toggle','text','combo','slider'),
+            'database':gadget.kind == 'selector', 'button_role':gadget.kind == 'button',
             'width_ref':gadget.kind not in ('toggle','option','rtoggle'),
         }
+        relevant['callback'] = self.fields['callback'].isEnabled()
+        relevant['command'] = gadget.kind in ('button','text','toggle') and gadget.button_role not in ('OK','CANCEL','HELP')
         for key in ('path','halign','valign','hgap','vgap'): relevant[key] = gadget.layout_mode == 'AUTO'
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): relevant[key] = gadget.layout_mode == 'RELATIVE'
         for key in ('selection_mode','list_mode','table_method','combo_keyword','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','view_aspect','channels','assembly','namespace','control_type'):
             relevant[key] = self.fields[key].isEnabled()
         for key,visible in relevant.items(): self.prop_layout.setRowVisible(self.fields[key],visible)
         for editor,visible in ((self.choices,gadget.kind in ('option','combo') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
-                               (self.choice_commands,gadget.kind == 'option'),
-                               (self.item_values,gadget.kind == 'combo' or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
+                               (self.choice_commands,gadget.kind == 'option' and gadget.display_mode == 'TEXT'),
+                               (self.item_values,gadget.kind == 'combo' or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
                                (self.view_code,gadget.kind in ('view','commandline')),
-                               (self.body,bool(gadget.callback)), (self.container_hint,gadget.kind == 'container')):
+                               (self.body,bool(gadget.callback)), (self.container_hint,gadget.kind == 'container'),
+                               (self.browse_image,relevant['pixmap_path'] or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP')),(self.fixed_font,gadget.kind == 'textpane'),(self.pane_lines,gadget.kind == 'textpane')):
             self.prop_layout.setRowVisible(editor,visible)
+        self.fields['pixmap_path'].setEnabled(relevant['pixmap_path'])
+        self.fields['display_mode'].setEnabled(relevant['display_mode'])
+        self.fields['database'].setEnabled(relevant['database']);self.fields['button_role'].setEnabled(relevant['button_role'])
+        self.fields['command'].setEnabled(relevant['command'])
+        self.choices.setPlaceholderText('画像のファイルパスを1行1件で指定' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢の表示文字を1行1件で指定')
+        self.prop_layout.setCaption(self.choices,'画像ファイル (1行1画像)' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢 (1行1項目)')
+        self.prop_layout.setCaption(self.item_values,'RTEXT 実値 (1行1項目)')
+        self.browse_image.setText('📁 画像ファイルを追加' if gadget.kind == 'option' else '📁 画像ファイルを選択')
+        self.prop_layout.batching = False
+        if self.prop_layout.pending: self.prop_layout.reflow()
 
     def sync_extra_editors(self, gadget, rebuild=True):
         if rebuild:
             for editor, value in ((self.item_values,'\n'.join(gadget.item_values)), (self.view_code,gadget.view_code)):
                 if editor.toPlainText() != value: editor.setPlainText(value)
+            if self.pane_lines.toPlainText() != '\n'.join(gadget.pane_lines): self.pane_lines.setPlainText('\n'.join(gadget.pane_lines))
+        self.fixed_font.setChecked(gadget.fixed_font)
+        self.pane_lines.setFont(QFont('monospace',10) if gadget.fixed_font else QApplication.font())
         self.enable_gadget_fields(gadget)
         self.sync_list_table(gadget,rebuild)
 
@@ -810,9 +928,16 @@ class Window(QMainWindow):
         self.checkpoint(); g = self.form.gadgets[self.selected]
         old_mode = g.list_mode
         old_name = g.name
+        old_role = g.button_role
+        old_display = g.display_mode
         for key, w in self.fields.items():
-            value = w.currentData() if key in ('parent','xref','yref','width_ref') else w.value() if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
+            value = w.currentData() if key in ('parent','xref','yref','width_ref','popup_menu') else w.value() if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
             setattr(g, key, value)
+        if g.button_role != old_role and g.button_role in ('OK','CANCEL','HELP'):
+            g.callback = '';g.command = ''
+        if g.kind == 'option' and old_display == 'PIXMAP' and g.display_mode == 'TEXT':
+            g.callback = '';g.item_values = []
+            self.item_values.blockSignals(True);self.item_values.clear();self.item_values.blockSignals(False)
         table_changed = old_mode != g.list_mode
         if g.kind == 'list' and g.list_mode == 'TABLE' and not g.headings:
             g.headings = ['見出し1','見出し2']; g.rows = [['','']]
@@ -829,6 +954,8 @@ class Window(QMainWindow):
         values = self.item_values.toPlainText()
         g.item_values = values.split('\n') if values else []
         g.view_code = self.view_code.toPlainText()
+        pane_text = self.pane_lines.toPlainText();g.pane_lines = pane_text.split('\n') if pane_text else []
+        g.fixed_font = self.fixed_font.isChecked()
         choices = self.choices.toPlainText()
         g.items = choices.split('\n') if choices else []; g.body = self.body.toPlainText()
         if g.kind == 'option':
@@ -848,7 +975,9 @@ class Window(QMainWindow):
         self.show_form.setChecked(self.form.show_form)
         if self.after_show.toPlainText() != self.form.after_show_code: self.after_show.setPlainText(self.form.after_show_code)
         self.fname.setText(self.form.name); self.ftitle.setText(self.form.title)
-        self.docking.setCurrentIndex(0 if self.form.dock_right else 1)
+        self.docking.setCurrentIndex(2 if self.form.form_type == 'MAIN' else 0 if self.form.dock_right else 1)
+        for event,editor in self.form_callbacks.items():
+            if editor.text() != getattr(self.form,event): editor.setText(getattr(self.form,event))
         self.fw.setValue(self.form.width); self.fh.setValue(self.form.height)
         self.objects.clear()
         for index,g in enumerate(self.form.gadgets):
@@ -869,7 +998,7 @@ class Window(QMainWindow):
             self.populate_parents(g)
             self.enable_layout_fields(g)
             for key, w in self.fields.items():
-                if key in ('parent','xref','yref','width_ref'): continue
+                if key in ('parent','xref','yref','width_ref','popup_menu'): continue
                 value = getattr(g, key)
                 if isinstance(w, QDoubleSpinBox): w.setValue(value)
                 elif isinstance(w, QComboBox): w.setCurrentText(value)
@@ -944,7 +1073,7 @@ class Window(QMainWindow):
             self.populate_parents(g)
             self.enable_layout_fields(g)
             for key, w in self.fields.items():
-                if key in ('parent','xref','yref','width_ref'): continue
+                if key in ('parent','xref','yref','width_ref','popup_menu'): continue
                 v = getattr(g, key)
                 if isinstance(w, QDoubleSpinBox): w.setValue(v)
                 elif isinstance(w, QComboBox): w.setCurrentText(v)
@@ -971,22 +1100,43 @@ class Window(QMainWindow):
     def add(self, kind, direction=None):
         container = self.form.gadgets[self.selected] if self.selected is not None else None
         if container and container.kind != 'frame': container = self.form.parent_gadget(container)
+        if direction == 'TOOLBAR':
+            if self.form.form_type != 'MAIN':
+                self.statusBar().showMessage('表示形式を MAIN フォームに変更してからツールバーを追加してください。');return
+            container = None
+        if container and container.frame_style == 'TOOLBAR' and kind not in ('button','toggle','option','text','combo','slider'):
+            self.statusBar().showMessage('ツールバーにはボタン・チェック・OPTION・入力・COMBO・SLIDER を追加できます。');return
+        if self.form.form_type == 'MAIN' and not container and direction != 'TOOLBAR' and kind not in ('button','toggle','option','text','combo','slider'):
+            self.statusBar().showMessage('MAIN フォームではツールバー対応部品を追加してください。');return
         if container and container.frame_style == 'TABSET' and kind != 'frame':
             self.statusBar().showMessage('TABSET 内に FRAME を追加し、その FRAME 内に部品を作成してください。'); return
         if kind == 'rtoggle' and (not container or container.frame_style != 'FRAME'):
             self.statusBar().showMessage('ラジオボタンは通常 FRAME を選択して追加してください。'); return
+        available = None
+        if container and container.frame_style == 'TOOLBAR':
+            occupied = 1+sum(child.width+1 for child in self.form.children(container.name))
+            available = container.width-occupied
+            if available < 1 or container.height < 2:
+                self.statusBar().showMessage('ツールバーに空きがありません。幅・高さを広げてください。');return
         self.checkpoint()
         name = self.unique_name(kind)
         width_limit, height_limit = (container.width, container.height) if container else (self.form.width, self.form.height)
         vertical = (kind == 'line' and direction == 'VERT') or (kind == 'slider' and direction == 'VERTICAL')
-        height = min(5 if vertical or kind in ('list', 'frame', 'view', 'commandline', 'container') else 1, height_limit)
-        g = Gadget(kind=kind, name=name, label={'button':'Run','paragraph':'Message','text':'Name','toggle':'Enabled','option':'Mode','list':'Results','line':'','frame':'Group','slider':'Level','rtoggle':'Choice','combo':'Choice','view':'Model view','commandline':'Command line','container':'External control'}[kind],
+        height = min(5 if vertical or direction == 'PIXMAP' or kind in ('list', 'frame', 'view', 'commandline', 'container','textpane','selector') else 1, height_limit)
+        g = Gadget(kind=kind, name=name, label={'textpane':'Notes','selector':'Owner','button':'Run','paragraph':'Message','text':'Name','toggle':'Enabled','option':'Mode','list':'Results','line':'','frame':'Group','slider':'Level','rtoggle':'Choice','combo':'Choice','view':'Model view','commandline':'Command line','container':'External control'}[kind],
                    width=min((1 if kind == 'line' else 3) if vertical else 18,width_limit), height=height,
                    x=0, y=0 if container else min(len(self.form.gadgets) * 1.5, height_limit-height),
                    parent=container.name if container else '')
         if kind == 'line' and direction: g.orientation = direction
         if kind == 'slider' and direction: g.slider_orientation = direction
+        if direction == 'PIXMAP': g.display_mode = 'PIXMAP'
+        if direction == 'TOOLBAR':
+            g.frame_style = 'TOOLBAR';g.width = self.form.width;g.height = min(4,self.form.height);g.x = 0;g.y = 0
+        if container and container.frame_style == 'TOOLBAR':
+            g.width = min(g.width,available)
+            g.height = min(g.height,container.height-1)
         if kind in ('option', 'list', 'combo'): g.items = ['Item A', 'Item B']
+        if direction == 'PIXMAP' and kind == 'option': g.items = []
         self.form.gadgets.append(g); self.selected = len(self.form.gadgets) - 1; self.refresh()
 
     def unique_name(self, base):

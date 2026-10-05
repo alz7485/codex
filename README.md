@@ -121,7 +121,7 @@ ENDMETHOD
 
 プレビューの横幅・行高さは概略値で、フォント・DPI・tagwidth による描画までは再現しません。フォームサイズは 1〜300、部品は500個までです。表示文字列の `$` 展開は拒否し、CALL / PAIRS コマンド内では許可します。処理コードや表示後プログラムはそのまま出力し、PML 構文チェック・実行は行いません。安全な引用符を選べない文字列は出力を拒否します。
 
-rtog・グリッド・PML.NET 部品、既存 PML のインポート、E3D との直接連携は未実装です。第三者ソースの転載は行っていません。調査元と互換性の注意点は [docs/research.md](docs/research.md) を参照してください。
+RGROUP、外部グリッドの詳細設定、既存 PML のインポート、E3D との直接連携は未実装です。RTOGGLE と CONTAINER の定義・設定には対応しています。第三者ソースの転載は行っていません。調査元と互換性の注意点は [docs/research.md](docs/research.md) を参照してください。
 
 ## 監査後の修正
 
@@ -145,6 +145,37 @@ rtog・グリッド・PML.NET 部品、既存 PML のインポート、E3D と�
 相対配置の保存例は `examples/relative.json` / `examples/relative.pmlfrm` です。プレビューの寸法は概算で、通常 FRAME の自動寸法や E3D の文字幅によって実際の配置は変わります。出力構文は公開資料を参考にしていますが E3D 4.0 実機では未検証です。
 
 ## 追加ガジェット
+
+### 画像・複数行入力・DB 選択・ツールバー
+
+`examples/extra-features.json` は画像表示、画像 OPTION、TEXTPANE、SELECTOR、ポップアップメニュー、OK / CANCEL ボタンのサンプルです。サンプル画像も `examples/assets/` に同梱しています。
+
+| 追加機能 | 操作と出力 |
+| --- | --- |
+| 画像 PARAGRAPH | 「🖼️ 画像」で追加。「画像ファイルを選択」またはパス入力で設定。`PIXMAP` 宣言とコンストラクタの `.AddPixmap()` を出力 |
+| 画像 BUTTON / TOGGLE | 部品の「文字 / 画像」を `PIXMAP` に変更し、画像を指定。単一画像の `.AddPixmap()` を出力 |
+| 画像 OPTION | 「🖼️ 画像選択」で追加。「画像ファイルを追加」は複数選択可能。画像パスを1行1件、RTEXT 実値を同じ行順で入力。`.名前` で宣言し、画像配列を `.DTEXT`、実値配列を `.RTEXT` に設定 |
+| TEXTPANE | 「📄 複数行入力」で追加。初期内容を行ごとの配列として `.VAL` に設定。「FIXCHARS」で等幅フォントを選択 |
+| DATABASE SELECTOR | 「🗃️ DB セレクタ」で追加。`DATABASE OWNERS / MEMBERS / AUTO` と `SINGLE / MULTIPLE` を設定 |
+| TOOLBAR | 「表示形式」を `MAIN フォーム` に変更し、「🛠️ ツールバー」で追加。FRAME TOOLBAR 内に対応部品を配置 |
+
+文字 OPTION の従来の `OPTION _名前` / `VAR LIST ... PAIRS` は維持しています。画像 OPTION はコマンドの PAIRS と異なる方式です。PIXMAP から TEXT に戻すと画像用 RTEXT とメソッド名を解除します。Undo で戻せます。文字 OPTION と画像 OPTION の名前表記の違いは名前管理にも反映しています。
+
+画像はローカルファイルをプレビューで縦横比を保って表示し、画像 OPTION は先頭の画像を表示します。ファイルを読めない場合はパスの説明を表示します。画像は設計 JSON に埋め込まず、PML へパスをそのまま出力します。E3D から読み込めるパスに変更し、画像ファイルも配置してください。PIXMAP の WIDTH / HEIGHT はネイティブ側では画像の寸法を扱うため、文字部品と同じ縮尺のプレビューには一致しません。画像の選択動作と DB の内容は E3D 本体で確認してください。
+
+TOOLBAR の保存例は `examples/toolbar.json` / `examples/toolbar.pmlfrm` です。ボタン・チェック・OPTION・TEXT・COMBO・SLIDER に対応し、部品一覧の順に横並びになります。TOOLBAR 内の AT 座標は出力せず、座標ドラッグ・相対配置・AUTO・幅参照は使用しません。ツールバーの位置・寸法はプレビュー用です。MAIN は E3D アプリケーションのメインフォーム向けで、既存アプリへの登録や `!!appTbarCntrl` の設定は用途に合わせて追加してください。サンプルでは SHOW を無効にしています。
+
+### フォームのコールバックとポップアップ
+
+「フォームのコールバック」で `INITCALL`、`OKCALL`、`CANCELCALL` に実行する PML コマンドまたはメソッド呼び出しを指定します。コンストラクタの `!THIS.INITCALL = ...` などとして出力します。メソッドの定義は自動生成しないため、呼び出すメソッドは部品の処理コードや任意の PML プログラムに用意してください。INITCALL は表示時、OKCALL は OK / APPLY、CANCELCALL は CANCEL / 閉じる際の処理です。AUTOCALL は構文・動作を今回の参照資料で確認できず、設定には含めていません。
+
+BUTTON の「ボタン属性」で `NORMAL / OK / APPLY / CANCEL / RESET / HELP` を選択できます。OK / CANCEL / HELP に切り替えると部品自身の CALL とメソッド名を解除します。OK / CANCEL の処理はフォーム側に指定してください。HELP は E3D のヘルプ動作です。変更は Undo で戻せます。
+
+メニュー編集で「POPUP」をチェックし、対象部品の「ポップアップメニュー」で選びます。VIEW、ALPHA、LIST、BUTTON、TOGGLE、TEXT、COMBO、SLIDER に設定でき、`.SetPopup(!THIS.メニュー名)` を出力します。プレビューでは対象部品を右クリックすると項目を表示し、選択時にコマンドをステータスバーへ表示します。E3D コマンドは実行しません。メニュー名変更時に割り当てを更新し、メニュー削除時は割り当てを解除します。名前管理の参照一覧にも表示します。
+
+これらは公開資料に基づく実装で、E3D 4.0 実機では未検証です。調査根拠は [追加機能の調査記録](docs/pml-examples-research.md#画像と追加機能の実装) を参照してください。
+
+![画像 OPTION と追加ガジェット](docs/ui-extra-features.png)
 
 `examples/gadgets.json` を開くと、追加部品をまとめて確認できます。PML のサンプルは `examples/gadgets.pmlfrm` です。右側には部品に関係するプロパティを表示します。
 

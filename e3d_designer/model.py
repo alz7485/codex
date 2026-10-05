@@ -3,7 +3,7 @@ import json
 import math
 import re
 
-KINDS = ('button', 'paragraph', 'text', 'toggle', 'option', 'list', 'line', 'frame', 'slider', 'rtoggle', 'combo', 'view', 'commandline', 'container')
+KINDS = ('button', 'paragraph', 'text', 'toggle', 'option', 'list', 'line', 'frame', 'slider', 'rtoggle', 'combo', 'view', 'commandline', 'container', 'textpane', 'selector')
 IDENTIFIER = re.compile(r'[A-Za-z][A-Za-z0-9_]*\Z')
 
 
@@ -72,6 +72,13 @@ class Gadget:
     table_method: str = ''
     headings: list[str] = field(default_factory=list)
     rows: list[list[str]] = field(default_factory=list)
+    display_mode: str = 'TEXT'
+    pixmap_path: str = ''
+    popup_menu: str = ''
+    fixed_font: bool = True
+    pane_lines: list[str] = field(default_factory=list)
+    database: str = 'OWNERS'
+    button_role: str = 'NORMAL'
 
     def __post_init__(self):
         if self.selection_mode == 'MULTI': self.selection_mode = 'MULTIPLE'
@@ -87,6 +94,7 @@ class MenuItem:
 class Menu:
     name: str = 'menu1'
     items: list[MenuItem] = field(default_factory=list)
+    popup: bool = False
 
 
 @dataclass
@@ -102,6 +110,10 @@ class Form:
     gadgets: list[Gadget] = field(default_factory=list)
     variables: dict[str, str] = field(default_factory=dict)
     menus: list[Menu] = field(default_factory=list)
+    form_type: str = 'DIALOG'
+    initcall: str = ''
+    okcall: str = ''
+    cancelcall: str = ''
 
     def parent_gadget(self, gadget):
         return next((g for g in self.gadgets if g.name.lower() == gadget.parent.lower()), None) if gadget.parent else None
@@ -154,6 +166,11 @@ class Form:
         width = dependencies[gadget.width_ref.lower()][2] if gadget.width_ref else gadget.width
         height = gadget.height
         x, y = gadget.x, gadget.y
+        parent = self.parent_gadget(gadget)
+        if parent and parent.frame_style == 'TOOLBAR':
+            siblings = self.children(parent.name)
+            index = next(i for i,g in enumerate(siblings) if g is gadget)
+            return 1+sum(g.width+1 for g in siblings[:index]),1,width,height
         if gadget.layout_mode == 'RELATIVE':
             xr, yr = dependencies[gadget.xref.lower()], dependencies[gadget.yref.lower()]
             x = xr[0] + (xr[2] if gadget.xedge == 'XMAX' else 0) + gadget.xoffset
@@ -195,6 +212,7 @@ class Form:
         if not isinstance(self.menus,list) or any(not isinstance(menu,Menu) for menu in self.menus):
             raise ValueError('メニューは配列で指定してください。')
         for menu in self.menus:
+            if not isinstance(menu.popup,bool): raise ValueError('メニューの POPUP は真偽値で指定してください。')
             if not isinstance(menu.name,str) or not IDENTIFIER.fullmatch(menu.name):
                 raise ValueError('メニュー名は英字で始まる英数字・_ にしてください。')
             if menu.name.lower() in names:
@@ -207,16 +225,16 @@ class Form:
                     raise ValueError('メニュー項目の表示名・コマンドは文字列で指定してください。')
                 literal(item.label)
                 literal(item.command,allow_expansion=True)
-        for key in ('name', 'title', 'after_show_code', 'default_body'):
+        for key in ('name', 'title', 'after_show_code', 'default_body','form_type','initcall','okcall','cancelcall'):
             if not isinstance(getattr(self, key), str): raise ValueError(f'{key} は文字列で指定してください。')
         if not isinstance(self.variables, dict) or any(not isinstance(k,str) or not isinstance(v,str) for k,v in self.variables.items()):
             raise ValueError('変数は名前と初期値の文字列を指定してください。')
         if not isinstance(self.gadgets, list) or any(not isinstance(g,Gadget) for g in self.gadgets):
             raise ValueError('部品は配列で指定してください。')
         for g in self.gadgets:
-            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method'):
+            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method','display_mode','pixmap_path','popup_menu','database','button_role'):
                 if not isinstance(getattr(g,key),str): raise ValueError(f'部品の {key} は文字列で指定してください。')
-            for key in ('items','item_commands','item_values','headings'):
+            for key in ('items','item_commands','item_values','headings','pane_lines'):
                 value = getattr(g,key)
                 if not isinstance(value,list) or any(not isinstance(item,str) for item in value):
                     raise ValueError(f'{key} は文字列の配列で指定してください。')
@@ -238,6 +256,9 @@ class Form:
                     raise ValueError('座標とサイズには有限数を指定してください。')
         if not IDENTIFIER.fullmatch(self.name):
             raise ValueError('フォーム名は英字で始まる英数字・_ にしてください。')
+        if self.form_type not in ('DIALOG','MAIN'): raise ValueError('フォーム形式は DIALOG / MAIN を指定してください。')
+        for event in ('initcall','okcall','cancelcall'):
+            literal(getattr(self,event),allow_expansion=True)
         if not isinstance(self.show_form, bool) or not isinstance(self.after_show_code, str):
             raise ValueError('表示後プログラムの形式が不正です。')
         if not isinstance(self.dock_right, bool): raise ValueError('ドッキング設定が不正です。')
@@ -263,6 +284,15 @@ class Form:
                 raise ValueError('TOGGLE / OPTION / RTOGGLE の幅参照は未対応です。')
             self.layout_dependencies(g)
             parent = self.parent_gadget(g)
+            if g.frame_style == 'TOOLBAR' and (g.kind != 'frame' or self.form_type != 'MAIN' or parent):
+                raise ValueError('TOOLBAR は MAIN フォーム直下の FRAME として作成してください。')
+            toolbar_kinds = ('button','toggle','option','text','combo','slider')
+            if parent and parent.frame_style == 'TOOLBAR' and g.kind not in toolbar_kinds:
+                raise ValueError('TOOLBAR に追加できる部品は BUTTON / TOGGLE / OPTION / TEXT / COMBO / SLIDER です。')
+            if parent and parent.frame_style == 'TOOLBAR' and (g.layout_mode != 'ABSOLUTE' or g.width_ref):
+                raise ValueError('TOOLBAR 内は部品一覧の順で配置します。相対配置・自動配置・幅参照は解除してください。')
+            if self.form_type == 'MAIN' and not parent and not (g.kind == 'frame' and g.frame_style == 'TOOLBAR') and g.kind not in toolbar_kinds:
+                raise ValueError('MAIN フォームには TOOLBAR またはツールバー対応部品を配置してください。')
             if g.parent and (parent is None or parent.kind != 'frame'):
                 raise ValueError(f'{g.name}: 親は存在する FRAME / TABSET を指定してください。')
             if parent and parent.frame_style == 'TABSET' and (g.kind != 'frame' or g.frame_style != 'FRAME'):
@@ -273,7 +303,7 @@ class Form:
                 seen.add(ancestor.name.lower()); ancestor = self.parent_gadget(ancestor)
             if g.kind not in KINDS or not (re.fullmatch(r'_?[A-Za-z][A-Za-z0-9_]*',g.name) if g.kind == 'option' else IDENTIFIER.fullmatch(g.name)):
                 raise ValueError('部品の種類または名前が不正です。')
-            effective_name = ('_' + g.name.lstrip('_') if g.kind == 'option' else g.name).lower()
+            effective_name = ('_' + g.name.lstrip('_') if g.kind == 'option' and g.display_mode == 'TEXT' else g.name).lower()
             if effective_name in names:
                 raise ValueError(f'部品名が重複しています: {g.name}')
             names.add(effective_name)
@@ -288,8 +318,8 @@ class Form:
             if g.background:
                 if g.kind not in ('paragraph', 'button', 'list') or not re.fullmatch(r'[0-9]+', g.background):
                     raise ValueError('BACKGROUND は PARAGRAPH / BUTTON / LIST の非負整数カラー番号を指定してください。')
-            if g.frame_style not in ('FRAME', 'TABSET'):
-                raise ValueError('FRAME 形式は FRAME / TABSET を指定してください。')
+            if g.frame_style not in ('FRAME', 'TABSET','TOOLBAR'):
+                raise ValueError('FRAME 形式は FRAME / TABSET / TOOLBAR を指定してください。')
             if g.frame_style == 'TABSET' and g.kind != 'frame':
                 raise ValueError('TABSET は FRAME の形式です。')
             if g.orientation not in ('HORIZ', 'VERT'):
@@ -297,6 +327,20 @@ class Form:
             if g.kind == 'line' and g.label:
                 raise ValueError('LINE の表示文字は空欄にしてください。')
             literal(g.label)
+            if not isinstance(g.fixed_font,bool): raise ValueError('等幅フォント設定は真偽値で指定してください。')
+            if g.display_mode not in ('TEXT','PIXMAP'): raise ValueError('表示方式は TEXT / PIXMAP を指定してください。')
+            if g.display_mode == 'PIXMAP':
+                if g.kind not in ('paragraph','button','toggle','option'): raise ValueError('PIXMAP は PARAGRAPH / BUTTON / TOGGLE / OPTION 用です。')
+                if g.kind == 'option' and not IDENTIFIER.fullmatch(g.name): raise ValueError('画像 OPTION の部品名は英字で始めてください。')
+            literal(g.pixmap_path)
+            for value in g.pane_lines: literal(value)
+            if g.database not in ('OWNERS','MEMBERS','AUTO'): raise ValueError('DATABASE は OWNERS / MEMBERS / AUTO を指定してください。')
+            if g.button_role not in ('NORMAL','OK','APPLY','CANCEL','RESET','HELP'): raise ValueError('ボタン属性が不正です。')
+            if g.button_role != 'NORMAL' and g.kind != 'button': raise ValueError('ボタン属性は BUTTON 用です。')
+            if g.button_role in ('OK','CANCEL','HELP') and (g.callback or g.command): raise ValueError('OK / CANCEL / HELP ボタンの処理はフォームのコールバックに設定してください。')
+            if g.popup_menu:
+                if g.kind not in ('view','commandline','list','button','toggle','text','combo','slider'): raise ValueError('この部品のポップアップ設定は未対応です。')
+                if not any(menu.popup and menu.name.lower() == g.popup_menu.lower() for menu in self.menus): raise ValueError('ポップアップ先には POPUP メニューを指定してください。')
             if g.value_type not in ('STRING', 'REAL'):
                 raise ValueError('テキスト型は STRING / REAL を指定してください。')
             if g.kind == 'text' and g.initial:
@@ -343,9 +387,9 @@ class Form:
             for item in g.items: literal(item)
             for item in g.item_values: literal(item)
             if g.item_values:
-                if g.kind not in ('list','combo') or len(g.item_values) != len(g.items):
-                    raise ValueError('LIST / COMBO の表示名と実値の行数を揃えてください。')
-            if g.kind == 'option':
+                if (g.kind not in ('list','combo') and not (g.kind == 'option' and g.display_mode == 'PIXMAP')) or len(g.item_values) != len(g.items):
+                    raise ValueError('LIST / COMBO / 画像 OPTION の表示項目と実値の行数を揃えてください。')
+            if g.kind == 'option' and g.display_mode == 'TEXT':
                 if g.item_commands and len(g.item_commands) != len(g.items):
                     raise ValueError('OPTION の選択肢とコマンドの行数を揃えてください。')
                 for command in g.item_commands: literal(command, allow_expansion=True)
@@ -354,7 +398,7 @@ class Form:
                 literal(g.command, allow_expansion=True)
                 if g.callback: raise ValueError('メソッド名と CALL コマンドはどちらか一方だけ指定してください。')
             if g.callback:
-                if g.kind in ('paragraph', 'line', 'frame', 'option', 'rtoggle', 'view', 'commandline', 'container'):
+                if g.kind in ('paragraph', 'line', 'frame', 'rtoggle', 'view', 'commandline', 'container','textpane') or (g.kind == 'option' and g.display_mode != 'PIXMAP'):
                     raise ValueError('ラベル・LINE・FRAME・OPTION にはメソッド型コールバックを指定できません。')
                 if not IDENTIFIER.fullmatch(g.callback) or g.callback.lower() == self.name.lower():
                     raise ValueError('メソッド名が不正、またはコンストラクタと重複しています。')
@@ -407,13 +451,14 @@ class Form:
         lines = [f'VAR !!{name} {literal(value)}' for name, value in self.variables.items()]
         lines += [f'kill !!{self.name}', '-- Generated by E3D PML Form Designer',
                  '-- Target: E3D 4.0 (runtime compatibility not yet verified)',
-                 (f'setup form !!{self.name} DIALOG DOCK RIGHT' if self.dock_right
+                 (f'setup form !!{self.name} MAIN' if self.form_type == 'MAIN' else f'setup form !!{self.name} DIALOG DOCK RIGHT' if self.dock_right
                   else f'setup form !!{self.name} size {n(self.width)} {n(self.height)} DIALOG'),
                  f'  title {literal(self.title)}']
         for menu in self.menus:
-            lines.append(f'  menu .{menu.name}')
-            for item in menu.items:
-                lines.append(f'    add {literal(item.label)} {literal(item.command,allow_expansion=True)}')
+            lines.append(f'  menu .{menu.name}'+(' POPUP' if menu.popup else ''))
+            if not menu.popup:
+                for item in menu.items:
+                    lines.append(f'    add {literal(item.label)} {literal(item.command,allow_expansion=True)}')
             lines.append('  exit')
         for g in self.gadgets:
             if g.kind == 'container' and g.assembly:
@@ -436,8 +481,12 @@ class Form:
             at = (f'at x{n(g.x)} y{n(g.y)}' if g.layout_mode == 'ABSOLUTE' else position) + ' ' + width_clause
             callback = f" callback '!this.{g.callback}()'" if g.callback else ''
             label = literal(g.label)
+            parent = self.parent_gadget(g)
+            if parent and parent.frame_style == 'TOOLBAR': position = ''
             if g.kind == 'frame':
-                if g.frame_style == 'TABSET':
+                if g.frame_style == 'TOOLBAR':
+                    line = f'FRAME .{g.name} TOOLBAR {label}'
+                elif g.frame_style == 'TABSET':
                     line = f'FRAME .{g.name} TABSET {position} {label} {width_clause}'
                 else:
                     line = f'FRAME .{g.name} {label}'
@@ -448,26 +497,33 @@ class Form:
             elif g.kind == 'paragraph':
                 line = f'PARAGRAPH .{g.name} {position}'
                 if g.background: line += f' BACKGROUND {int(g.background)}'
-                line += f' TEXT {label} {width_clause}'
+                line += (f' PIXMAP {width_clause} HEIGHT {n(g.height)}' if g.display_mode == 'PIXMAP' else f' TEXT {label} {width_clause}')
             elif g.kind == 'text':
                 line = f'TEXT .{g.name} {position} {label}'
                 command = g.command or (f'!this.{g.callback}()' if g.callback else '')
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
                 line += f' {width_clause} IS {g.value_type}'
             elif g.kind == 'option':
-                object_name = '_' + g.name.lstrip('_')
-                line = f"OPTION {object_name} {position} {label} CALL '$${object_name}'"
-                line += f'\nVAR LIST {object_name} PAIRS'
-                commands = g.item_commands or [''] * len(g.items)
-                for display, command in zip(g.items, commands):
-                    line += '\n' + literal(display) + ' ' + literal(command, allow_expansion=True)
-                line += '\nEXIT'
+                if g.display_mode == 'PIXMAP':
+                    line = f'OPTION .{g.name} {position} {label} PIXMAP {width_clause} HEIGHT {n(g.height)}'+callback
+                else:
+                    object_name = '_' + g.name.lstrip('_')
+                    line = f"OPTION {object_name} {position} {label} CALL '$${object_name}'"
+                    line += f'\nVAR LIST {object_name} PAIRS'
+                    commands = g.item_commands or [''] * len(g.items)
+                    for display, command in zip(g.items, commands):
+                        line += '\n' + literal(display) + ' ' + literal(command, allow_expansion=True)
+                    line += '\nEXIT'
             elif g.kind == 'list':
                 selection = 'MULTIPLE' if g.selection_mode == 'MULTI' else g.selection_mode
                 background = f'BACKGROUND {int(g.background)} ' if g.background else ''
                 line = f'list .{g.name} {background}{position} {label} {selection} {width_clause} HEIGHT {n(g.height)}' + callback
             elif g.kind == 'combo':
                 line = f'{g.combo_keyword} .{g.name} {label} {position} {width_clause}' + callback
+            elif g.kind == 'textpane':
+                line = f'TEXTPANE .{g.name} {label}'+(' FIXCHARS' if g.fixed_font else '')+f' {position} {width_clause} HEIGHT {n(g.height)}'
+            elif g.kind == 'selector':
+                line = f'SELECTOR .{g.name} {position} {label} {g.selection_mode} {width_clause} HEIGHT {n(g.height)} DATABASE {g.database}'+callback
             elif g.kind == 'slider':
                 line = (f'SLIDER .{g.name} {position} {g.slider_orientation} RANGE {n(g.slider_min)} {n(g.slider_max)} '
                         f'STEP {n(g.slider_step)} VAL {n(g.slider_value)} {width_clause}')
@@ -489,12 +545,14 @@ class Form:
             elif g.kind == 'button':
                 line = f'BUTTON .{g.name} {position}'
                 if g.background: line += f' BACKGROUND {int(g.background)}'
-                line += f' {label}'
+                line += ' PIXMAP' if g.display_mode == 'PIXMAP' else f' {label}'
+                if g.button_role != 'NORMAL': line += ' '+g.button_role
                 command = g.command or (f'!this.{g.callback}()' if g.callback else '')
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
                 line += f' {width_clause}'
+                if g.display_mode == 'PIXMAP': line += f' HEIGHT {n(g.height)}'
             elif g.kind == 'toggle':
-                line = f'TOGGLE .{g.name} {position} {label}'
+                line = f'TOGGLE .{g.name} {position}'+(f' PIXMAP {width_clause} HEIGHT {n(g.height)}' if g.display_mode == 'PIXMAP' else f' {label}')
                 command = g.command or (f'!this.{g.callback}()' if g.callback else '')
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
             else:
@@ -508,7 +566,21 @@ class Form:
         if self.show_form: lines += [f'SHOW !!{self.name}', '']
         if self.after_show_code: lines += [self.after_show_code, '']
         lines.append(f'define method .{self.name}()')
+        for menu in self.menus:
+            if menu.popup:
+                for item in menu.items:
+                    lines.append(f"  !this.{menu.name}.Add('CALLBACK', {literal(item.label)}, {literal(item.command,allow_expansion=True)})")
+        for event in ('initcall','okcall','cancelcall'):
+            value = getattr(self,event)
+            if value: lines.append(f'  !this.{event} = {literal(value,allow_expansion=True)}')
         for g in self.gadgets:
+            if g.display_mode == 'PIXMAP' and g.kind != 'option' and g.pixmap_path:
+                lines.append(f'  !this.{g.name}.AddPixmap({literal(g.pixmap_path)})')
+            if g.popup_menu: lines.append(f'  !this.{g.name}.SetPopup(!this.{g.popup_menu})')
+            if g.kind == 'textpane':
+                lines.append('  !paneLines = ARRAY()')
+                for i,value in enumerate(g.pane_lines,1): lines.append(f'  !paneLines[{i}] = {literal(value)}')
+                lines.append(f'  !this.{g.name}.val = !paneLines')
             if g.kind == 'list' and g.list_mode == 'TABLE':
                 lines.append(f'  !this.{g.table_method or "populate_"+g.name}()')
             if g.kind == 'text' and g.initial:
@@ -519,7 +591,7 @@ class Form:
             if g.kind == 'container' and g.assembly:
                 lines += [f'  !this.{g.name}Control = object {g.control_type}()',
                           f'  !this.{g.name}.Control = !this.{g.name}Control.handle()']
-            if g.kind in ('list','combo') and g.items and not (g.kind == 'list' and g.list_mode == 'TABLE'):
+            if (g.kind in ('list','combo') or (g.kind == 'option' and g.display_mode == 'PIXMAP')) and g.items and not (g.kind == 'list' and g.list_mode == 'TABLE'):
                 lines.append('  !choices = object ARRAY()')
                 for i, item in enumerate(g.items, 1):
                     lines.append(f'  !choices[{i}] = {literal(item)}')
