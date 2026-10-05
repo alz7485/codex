@@ -109,7 +109,7 @@ DEFINE METHOD .DEFAULT()
 ENDMETHOD
 ```
 
-フォーム定義の `exit` の後、すべての `DEFINE METHOD` より前に `SHOW !!equipmenttool` を出力します。「表示後のプログラム」は SHOW の直後、メソッド定義より前に追加します。DEFAULT は定義しただけでは自動呼び出ししません。呼び出す場合は表示後プログラムに `!!equipmenttool.DEFAULT()` と記述してください。サンプル `examples/equipmenttool.json` はその設定を含みます。SHOW の出力はチェックボックスで無効にできます。
+フォーム定義の `exit` の後、すべての `DEFINE METHOD` より前に `SHOW !!equipmenttool` を出力します。「表示後のプログラム」は SHOW の直後、メソッド定義より前に追加します。SHOW は常にメソッド定義より前に出力します。初期値がある場合は DEFAULT の先頭へ設定コードを生成し、コンストラクタの最後で `!this.DEFAULT()` を呼び出します。手入力の DEFAULT 処理は自動設定の後に出力するため、同じ値を指定した場合は手入力が優先されます。旧サンプルの表示後プログラムにある明示的な DEFAULT 呼び出しは残るため、必要に応じて削除してください。
 
 ## 検証と制約
 
@@ -165,7 +165,7 @@ RGROUP、外部グリッドの詳細設定、既存 PML のインポート、E3D
 
 PIXMAP のプロパティは「幅 (px)」「高さ (px)」です。150×50を指定するとプレビューの枠も150×50ピクセルになり、PMLにも `WIDTH 150 HEIGHT 50` を出力します。座標は従来のフォーム単位で、範囲チェックには画像のピクセル寸法を換算して使用します。ハンドルでもピクセル単位でサイズを変更できます。文字と画像を切り替える際はプレビューの大きさを保つよう寸法を換算します。既存JSONのPIXMAPの数値はそのままピクセル値として読み込み、出力値を勝手に拡大しません。E3D のフォント・DPI による座標の違い、画像の選択動作と DB の内容は実機で確認してください。
 
-TOOLBAR の保存例は `examples/toolbar.json` / `examples/toolbar.pmlfrm` です。ボタン・チェック・OPTION・TEXT・COMBO・SLIDER に対応し、部品一覧の順に横並びになります。TOOLBAR 内の AT 座標は出力せず、座標ドラッグ・相対配置・AUTO・幅参照は使用しません。ツールバーの位置・寸法はプレビュー用です。MAIN は E3D アプリケーションのメインフォーム向けで、既存アプリへの登録や `!!appTbarCntrl` の設定は用途に合わせて追加してください。サンプルでは SHOW を無効にしています。
+TOOLBAR の保存例は `examples/toolbar.json` / `examples/toolbar.pmlfrm` です。ボタン・チェック・OPTION・TEXT・COMBO・SLIDER に対応し、部品一覧の順に横並びになります。TOOLBAR 内の AT 座標は出力せず、座標ドラッグ・相対配置・AUTO・幅参照は使用しません。ツールバーの位置・寸法はプレビュー用です。MAIN は E3D アプリケーションのメインフォーム向けで、既存アプリへの登録や `!!appTbarCntrl` の設定は用途に合わせて追加してください。現在は MAIN を含め SHOW を常に出力します。既存JSONの `show_form` は互換性のため読み込みますが、出力の抑制には使いません。
 
 ### フォームのコールバックとポップアップ
 
@@ -272,3 +272,16 @@ VIEW の「ASPECT (VIEW)」欄は空欄で省略、0より大きい有限数で�
 フォームの「表示形式」で右・左・上・下ドッキングを選べます。それぞれ `DIALOG DOCK RIGHT / LEFT / TOP / BOTTOM` を出力します。通常ダイアログと MAIN も引き続き選べます。既存JSONの右ドッキング設定はそのまま読み込めます。
 
 `DOCK FILL` は親コンテナ内を埋める部品の指定として資料にあります（FRAME / CONTAINER）。フォームの `DIALOG DOCK FILL` としては確認できていないため、フォームの方向候補には含めていません。部品の `DOCK FILL` は現在未実装です。
+
+
+### 部品の初期値
+
+選択部品の「初期値」は DEFAULT メソッドへ自動出力します。空欄なら設定しません。生成した行は手入力欄へ書き戻さないので、変更・リネーム・繰り返し出力で古い行や重複が残りません。
+
+- TEXT：STRING は文字列、REAL は有限数。文字 PARAGRAPH も初期文字列を指定できます。
+- TOGGLE / RTOGGLE：`TRUE` / `FALSE`。RTOGGLE は親 FRAME の選択番号を設定し、同じ親で TRUE は1つまでです。
+- OPTION / COMBO / SINGLE LIST：選択番号（1から）。MULTIPLE LIST：`1,3` のように複数の行番号。選択肢・表の行数の範囲内で指定します。
+- SLIDER：既存の「スライダー初期値」を DEFAULT にも出力します。
+- TEXTPANE：既存の「複数行入力の初期内容」を DEFAULT に配列として出力します。
+
+選択肢や表データを準備してから DEFAULT を呼び出します。表示後プログラム・DEFAULT の追加処理・部品のメソッド処理の入力欄は右側の下へ移し、高さを小さくしました。初期値のサンプルは `examples/initial-defaults.json` / `examples/initial-defaults.pmlfrm` です。E3D 実機での互換性は引き続き未検証です。

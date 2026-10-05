@@ -333,7 +333,7 @@ class ModelTests(unittest.TestCase):
         self.assertLess(pml.index('SHOW !!userform'),pml.index('define method .onRun()'))
         self.assertEqual(pml.count('SHOW !!userform'),1)
         f.show_form=False
-        self.assertNotIn('SHOW !!',f.pml())
+        self.assertIn('SHOW !!userform',f.pml())
         self.assertIn("$p 'Ready'",f.pml())
 
     def test_option_pairs_commands_and_existing_underscore(self):
@@ -715,11 +715,11 @@ class GuiTests(unittest.TestCase):
     def test_after_show_program_editor(self):
         self.w.after_show.setPlainText("$p 'Ready'")
         self.assertIn("SHOW !!userform\n\n$p 'Ready'\n\ndefine method .userform()",self.w.code.toPlainText())
-        self.w.show_form.setChecked(False)
-        self.assertNotIn('SHOW !!userform', self.w.code.toPlainText())
+        self.assertFalse(hasattr(self.w,'show_form'))
+        self.assertIn('SHOW !!userform', self.w.code.toPlainText())
         loaded=Form.loads(self.w.form.dumps())
         self.assertEqual(loaded.after_show_code,"$p 'Ready'")
-        self.assertFalse(loaded.show_form)
+        self.assertTrue(loaded.show_form)
 
     def test_option_pair_commands_edit_and_save(self):
         self.w.add('option')

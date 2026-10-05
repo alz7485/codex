@@ -414,16 +414,12 @@ class Window(QMainWindow):
         self.variables.setPlaceholderText('projectName=Project A\nmode=Default')
         self.variables.textChanged.connect(self.update_variables)
         rl.addWidget(self.variables)
-        self.show_form = QCheckBox('メソッド定義の前に SHOW !!フォーム名 を出力')
-        self.show_form.toggled.connect(self.update_form); rl.addWidget(self.show_form)
-        self.after_show = QPlainTextEdit(); self.after_show.setMaximumHeight(120)
+        self.after_show = QPlainTextEdit(); self.after_show.setFixedHeight(64)
         self.after_show.setPlaceholderText('SHOW の後に出力する任意の PML プログラム')
         self.after_show.textChanged.connect(self.update_after_show)
-        rl.addWidget(QLabel('表示後のプログラム')); rl.addWidget(self.after_show)
-        self.default_body = QPlainTextEdit(); self.default_body.setMaximumHeight(120)
+        self.default_body = QPlainTextEdit(); self.default_body.setFixedHeight(64)
         self.default_body.setPlaceholderText('DEFINE METHOD .DEFAULT() の中に出力する PML')
         self.default_body.textChanged.connect(self.update_default_body)
-        rl.addWidget(QLabel('DEFAULT メソッドの処理')); rl.addWidget(self.default_body)
         lifecycle = QGroupBox('フォームのコールバック');lifecycle_layout = QFormLayout(lifecycle)
         self.form_callbacks = {}
         for event in ('initcall','okcall','cancelcall'):
@@ -499,7 +495,7 @@ class Window(QMainWindow):
         self.container_hint = QLabel('外部 DLL が必要です。未設定時は DEFAULT で Control を接続してください。')
         self.container_hint.setWordWrap(True); self.prop_layout.addRow(self.container_hint)
         self.body = QPlainTextEdit(); self.body.setPlaceholderText('メソッド内の PML コード。自動実行はしません。')
-        self.body.setMinimumHeight(110); self.prop_layout.addRow('処理コード', self.body)
+        self.body.setFixedHeight(64); self.prop_layout.addRow('処理コード', self.body)
         self.body.textChanged.connect(self.update_gadget)
         rl.addWidget(self.props)
         self.menu_group = QGroupBox('メニューバー'); menu_layout = QVBoxLayout(self.menu_group)
@@ -535,6 +531,9 @@ class Window(QMainWindow):
         self.encoding = QComboBox(); self.encoding.addItems(['utf-8', 'cp932'])
         rl.addWidget(QLabel('PML 出力文字コード')); rl.addWidget(self.encoding)
         rl.addWidget(QLabel('text / toggle / option の高さは E3D 側で決まります。\n選択肢は OPTION / LIST / COMBO 用です。\n処理コードの構文は E3D で確認してください。'))
+        rl.addWidget(QLabel('表示後のプログラム')); rl.addWidget(self.after_show)
+        rl.addWidget(QLabel('DEFAULT メソッドの追加処理（初期値は自動出力）')); rl.addWidget(self.default_body)
+        rl.addWidget(QLabel('選択部品のメソッド処理')); rl.addWidget(self.body)
         rl.addStretch()
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(right); scroll.setMinimumWidth(320)
         self.property_scroll = scroll
@@ -757,7 +756,7 @@ class Window(QMainWindow):
     def update_form(self):
         if self.loading: return
         self.checkpoint()
-        self.form.show_form = self.show_form.isChecked()
+        self.form.show_form = True
         self.form.dock_side = ('RIGHT','NONE','NONE','LEFT','TOP','BOTTOM')[self.docking.currentIndex()]
         self.form.dock_right = self.form.dock_side == 'RIGHT'
         self.form.form_type = 'MAIN' if self.docking.currentIndex() == 2 else 'DIALOG'
@@ -820,8 +819,12 @@ class Window(QMainWindow):
         self.fields['callback'].setEnabled((gadget.kind in ('button','text','toggle','list','combo','slider','selector') or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP')) and gadget.button_role not in ('OK','CANCEL','HELP'))
         self.item_values.setEnabled(gadget.kind in ('list','combo') or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP'))
         self.view_code.setEnabled(gadget.kind in ('view','commandline'))
+        hint = '空欄＝設定しない。DEFAULT に自動出力'
+        if gadget.kind in ('toggle','rtoggle'): hint = 'TRUE / FALSE'
+        elif gadget.kind in ('option','combo','list'): hint = '選択行番号（1から）。MULTIPLE は 1,3 のように入力'
+        self.fields['initial'].setPlaceholderText(hint)
         relevant = {
-            'value_type':gadget.kind == 'text', 'initial':gadget.kind == 'text',
+            'value_type':gadget.kind == 'text', 'initial':gadget.kind in ('text','paragraph','toggle','rtoggle','option','combo','list') and not (gadget.kind == 'paragraph' and gadget.display_mode == 'PIXMAP'),
             'callback':gadget.kind in ('button','text','toggle','list','combo','slider'),
             'command':gadget.kind in ('button','text','toggle'),
             'background':gadget.kind in ('button','paragraph','list'), 'orientation':gadget.kind == 'line',
@@ -843,7 +846,7 @@ class Window(QMainWindow):
                                (self.choice_commands,gadget.kind == 'option' and gadget.display_mode == 'TEXT'),
                                (self.item_values,gadget.kind == 'combo' or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
                                (self.view_code,gadget.kind in ('view','commandline')),
-                               (self.body,bool(gadget.callback)), (self.container_hint,gadget.kind == 'container'),
+ (self.container_hint,gadget.kind == 'container'),
                                (self.browse_image,relevant['pixmap_path'] or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP')),(self.fixed_font,gadget.kind == 'textpane'),(self.pane_lines,gadget.kind == 'textpane')):
             self.prop_layout.setRowVisible(editor,visible)
         self.fields['pixmap_path'].setEnabled(relevant['pixmap_path'])
@@ -1010,7 +1013,6 @@ class Window(QMainWindow):
         if not self.variable_error and self.variables.toPlainText() != variable_text:
             self.variables.setPlainText(variable_text)
         if self.default_body.toPlainText() != self.form.default_body: self.default_body.setPlainText(self.form.default_body)
-        self.show_form.setChecked(self.form.show_form)
         if self.after_show.toPlainText() != self.form.after_show_code: self.after_show.setPlainText(self.form.after_show_code)
         self.fname.setText(self.form.name); self.ftitle.setText(self.form.title)
         self.docking.setCurrentIndex(2 if self.form.form_type == 'MAIN' else {'RIGHT':0,'NONE':1,'LEFT':3,'TOP':4,'BOTTOM':5}[self.form.docking_side()])
@@ -1047,11 +1049,11 @@ class Window(QMainWindow):
             self.choice_commands.setEnabled(g.kind == 'option')
             if self.body.toPlainText() != g.body: self.body.setPlainText(g.body)
             self.props.setEnabled(True)
-            self.fields['value_type'].setEnabled(g.kind == 'text'); self.fields['initial'].setEnabled(g.kind == 'text')
+            self.fields['value_type'].setEnabled(g.kind == 'text'); self.fields['initial'].setEnabled(g.kind in ('text','paragraph','toggle','rtoggle','option','combo','list') and not (g.kind == 'paragraph' and g.display_mode == 'PIXMAP'))
             self.choices.setEnabled(g.kind in ('option', 'list', 'combo'))
             self.fields['label'].setEnabled(g.kind != 'line'); self.fields['orientation'].setEnabled(g.kind == 'line'); self.fields['frame_style'].setEnabled(g.kind == 'frame'); self.fields['callback'].setEnabled(g.kind not in ('paragraph', 'line', 'frame', 'option')); self.fields['command'].setEnabled(g.kind in ('toggle', 'text', 'button')); self.fields['background'].setEnabled(g.kind in ('paragraph', 'button', 'list')); self.body.setEnabled(bool(g.callback))
             self.sync_extra_editors(g, rebuild)
-        else: self.selected = None; self.props.setEnabled(False)
+        else: self.selected = None; self.props.setEnabled(False); self.body.setEnabled(False)
         self.loading = False
         try:
             if self.variable_error: raise ValueError('変数欄の 名前=初期値 の形式を修正してください。')
@@ -1118,7 +1120,7 @@ class Window(QMainWindow):
                 else: w.setText(v)
             self.choices.setPlainText('\n'.join(g.items)); self.body.setPlainText(g.body)
             self.choice_commands.setPlainText('\n'.join(g.item_commands)); self.choice_commands.setEnabled(g.kind == 'option')
-            self.fields['value_type'].setEnabled(g.kind == 'text'); self.fields['initial'].setEnabled(g.kind == 'text')
+            self.fields['value_type'].setEnabled(g.kind == 'text'); self.fields['initial'].setEnabled(g.kind in ('text','paragraph','toggle','rtoggle','option','combo','list') and not (g.kind == 'paragraph' and g.display_mode == 'PIXMAP'))
             self.choices.setEnabled(g.kind in ('option', 'list', 'combo'))
             self.fields['label'].setEnabled(g.kind != 'line'); self.fields['orientation'].setEnabled(g.kind == 'line'); self.fields['frame_style'].setEnabled(g.kind == 'frame'); self.fields['callback'].setEnabled(g.kind not in ('paragraph', 'line', 'frame', 'option')); self.fields['command'].setEnabled(g.kind in ('toggle', 'text', 'button')); self.fields['background'].setEnabled(g.kind in ('paragraph', 'button', 'list')); self.body.setEnabled(bool(g.callback))
             self.sync_extra_editors(g)

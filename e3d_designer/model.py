@@ -437,6 +437,7 @@ class Form:
                 if not IDENTIFIER.fullmatch(method) or method.lower() in methods:
                     raise ValueError('複数列 LIST のメソッド名が不正、または他のメソッドと重複しています。')
                 methods.add(method.lower())
+        self.initial_lines()
 
     def dumps(self):
         self.validate()
@@ -460,6 +461,49 @@ class Form:
             return result
         except (KeyError, TypeError, AttributeError) as e:
             raise ValueError('設計ファイルの形式が不正です。') from e
+
+    def initial_lines(self):
+        """Validated initial values emitted only in DEFAULT, after choices are ready."""
+        lines=[];radio_groups=set()
+        for g in self.gadgets:
+            target='_'+g.name.lstrip('_') if g.kind == 'option' and g.display_mode == 'TEXT' else g.name
+            if g.kind == 'slider':
+                lines.append(f'  !this.{g.name}.val = {format(g.slider_value,".8g")}')
+            elif g.kind == 'textpane':
+                lines.append('  !paneLines = ARRAY()')
+                for i,value in enumerate(g.pane_lines,1):lines.append(f'  !paneLines[{i}] = {literal(value)}')
+                lines.append(f'  !this.{g.name}.val = !paneLines')
+            elif g.initial and g.kind in ('text','paragraph','toggle','rtoggle','option','combo','list'):
+                if g.kind == 'paragraph' and g.display_mode == 'PIXMAP':continue
+                if g.kind in ('toggle','rtoggle'):
+                    value=g.initial.upper()
+                    if value not in ('TRUE','FALSE'):raise ValueError(f'{g.name}: 初期値は TRUE / FALSE にしてください。')
+                    if g.kind == 'rtoggle':
+                        parent=self.parent_gadget(g)
+                        if parent.name.lower() not in radio_groups:
+                            lines.append(f'  !this.{parent.name}.val = 0');radio_groups.add(parent.name.lower())
+                        if value == 'TRUE':
+                            siblings=[item for item in self.ordered_children(g.parent) if item.kind == 'rtoggle']
+                            if sum(item.initial.upper() == 'TRUE' for item in siblings)>1:raise ValueError(f'{parent.name}: ラジオの初期選択は1つにしてください。')
+                            lines.append(f'  !this.{parent.name}.val = {siblings.index(g)+1}')
+                        continue
+                elif g.kind in ('option','combo','list'):
+                    multiple=g.kind == 'list' and g.selection_mode == 'MULTIPLE'
+                    parts=g.initial.split(',')
+                    if not all(re.fullmatch(r'[0-9]+',part.strip()) for part in parts) or (not multiple and len(parts)!=1):
+                        raise ValueError(f'{g.name}: 初期選択は行番号を指定してください。')
+                    indices=[int(part.strip()) for part in parts]
+                    length=len(g.rows) if g.kind == 'list' and g.list_mode == 'TABLE' else len(g.items)
+                    if any(index<1 or index>length for index in indices) or len(set(indices))!=len(indices):
+                        raise ValueError(f'{g.name}: 初期選択の行番号が範囲外または重複しています。')
+                    if multiple:
+                        lines.append('  !initialSelection = ARRAY()')
+                        for i,index in enumerate(indices,1):lines.append(f'  !initialSelection[{i}] = {index}')
+                        value='!initialSelection'
+                    else:value=str(indices[0])
+                else:value=format(float(g.initial),'.8g') if g.kind == 'text' and g.value_type == 'REAL' else literal(g.initial)
+                lines.append(f'  !this.{target}.val = {value}')
+        return lines
 
     def pml(self):
         self.validate()
@@ -579,7 +623,7 @@ class Form:
                 lines.append('  ' * depth + 'EXIT')
         for g in self.ordered_children(''): render(g, 1)
         lines.extend(['exit', ''])
-        if self.show_form: lines += [f'SHOW !!{self.name}', '']
+        lines += [f'SHOW !!{self.name}', '']
         if self.after_show_code: lines += [self.after_show_code, '']
         lines.append(f'define method .{self.name}()')
         for menu in self.menus:
@@ -593,15 +637,8 @@ class Form:
             if g.display_mode == 'PIXMAP' and g.kind != 'option' and g.pixmap_path:
                 lines.append(f'  !this.{g.name}.AddPixmap({literal(g.pixmap_path)})')
             if g.popup_menu: lines.append(f'  !this.{g.name}.SetPopup(!this.{g.popup_menu})')
-            if g.kind == 'textpane':
-                lines.append('  !paneLines = ARRAY()')
-                for i,value in enumerate(g.pane_lines,1): lines.append(f'  !paneLines[{i}] = {literal(value)}')
-                lines.append(f'  !this.{g.name}.val = !paneLines')
             if g.kind == 'list' and g.list_mode == 'TABLE':
                 lines.append(f'  !this.{g.table_method or "populate_"+g.name}()')
-            if g.kind == 'text' and g.initial:
-                value = n(float(g.initial)) if g.value_type == 'REAL' else literal(g.initial)
-                lines.append(f'  !this.{g.name}.val = {value}')
             if g.kind == 'slider' and g.callback:
                 lines.append(f"  !this.{g.name}.callback = '!this.{g.callback}('")
             if g.kind == 'container' and g.assembly:
@@ -616,6 +653,8 @@ class Form:
                     lines.append('  !values = object ARRAY()')
                     for i, value in enumerate(g.item_values,1): lines.append(f'  !values[{i}] = {literal(value)}')
                     lines.append(f'  !this.{g.name}.rtext = !values')
+        initial_lines = self.initial_lines()
+        if initial_lines: lines.append('  !this.DEFAULT()')
         lines.extend(['endmethod', ''])
         for g in self.gadgets:
             if g.kind != 'list' or g.list_mode != 'TABLE': continue
@@ -627,7 +666,7 @@ class Form:
                 for column, cell in enumerate(cells,1): lines.append(f'  !ROWS[{row}][{column}] = {literal(cell)}')
             lines += [f'  !THIS.{g.name}.setrows(!ROWS)', 'endmethod', '']
         default_code = self.default_body or next((g.body for g in self.gadgets if g.callback.lower() == 'default' and g.body), '')
-        lines += ['DEFINE METHOD .DEFAULT()', default_code or '  -- TODO: add default logic', 'ENDMETHOD', '']
+        lines += ['DEFINE METHOD .DEFAULT()', *initial_lines, *([default_code] if default_code else ([] if initial_lines else ['  -- TODO: add default logic'])), 'ENDMETHOD', '']
         seen = {'default'}
         for g in self.gadgets:
             if g.callback and g.callback.lower() not in seen:

@@ -12,3 +12,9 @@
 ![エディタ全体](editor.png)
 
 ![配置サンプル](equipmenttool-preview.png)
+
+初期値をプロパティから設定した例です。初期設定コードは DEFAULT メソッドへ自動生成します。
+
+![初期値の設定](initial-defaults.png)
+
+[編集用JSON](../../examples/initial-defaults.json) / [生成PML](../../examples/initial-defaults.pmlfrm)
