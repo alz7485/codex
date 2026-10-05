@@ -6,7 +6,7 @@ import sys
 from unittest.mock import patch
 import unittest
 from pathlib import Path
-from PySide6.QtCore import Qt, QPoint, QEvent, QCoreApplication, QTimer
+from PySide6.QtCore import Qt, QPoint, QEvent, QCoreApplication, QTimer, QModelIndex
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from e3d_designer.model import Form, Gadget, Menu, MenuItem, literal
@@ -651,5 +651,89 @@ class GuiTests(unittest.TestCase):
         self.assertIn('AT X 4 Y 2',self.w.code.toPlainText())
         self.w.undo()
         self.assertEqual((self.w.form.gadgets[0].x,self.w.form.gadgets[0].y),(0,0))
+
+    def drag_handle(self, handle, delta):
+        self.app.processEvents()
+        item=next(item for item in self.w.scene.items() if item.data(0)==self.w.selected)
+        start=self.w.view.mapFromScene(item.mapToScene(item.handles()[handle].center()))
+        end=start+delta;view=self.w.view.viewport()
+        QTest.mousePress(view,Qt.LeftButton,Qt.NoModifier,start);self.app.processEvents()
+        QTest.mouseMove(view,end,30);QTest.mouseRelease(view,Qt.LeftButton,Qt.NoModifier,end)
+        self.app.processEvents()
+
+    def test_handles_resize_dimensions_and_undo(self):
+        self.w.add('view')
+        self.drag_handle('width',QPoint(40,0))
+        self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(22,5))
+        self.drag_handle('height',QPoint(0,52))
+        self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(22,7))
+        before=len(self.w.history)
+        self.drag_handle('both',QPoint(30,26))
+        self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(25,8))
+        self.assertEqual(len(self.w.history),before+1)
+        self.assertIn('WIDTH 25 HEIGHT 8',self.w.code.toPlainText())
+        self.assertEqual(self.w.fields['width'].value(),25)
+        self.w.undo();self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(22,7))
+        self.w.redo();self.assertEqual(Form.loads(self.w.form.dumps()).gadgets[0].width,25)
+
+    def test_resize_constraints_children_relative_and_width_reference(self):
+        group=Gadget(kind='frame',name='group',width=24,height=10)
+        child=Gadget(name='child',parent='group',x=2,y=2,width=18)
+        follower=Gadget(name='follow',layout_mode='RELATIVE',xref='group',yref='group',xedge='XMAX',xoffset=1)
+        self.w.form=Form(gadgets=[group,child,follower]);self.w.selected=0;self.w.refresh()
+        self.drag_handle('width',QPoint(-80,0))
+        self.assertEqual(group.width,24)
+        self.drag_handle('width',QPoint(30,0))
+        self.assertEqual(group.width,27)
+        follow=next(item for item in self.w.scene.items() if item.data(0)==2)
+        self.assertAlmostEqual(follow.pos().x(),(group.x+27+1)*SX)
+        self.w.selected=2;follower.width_ref='group';self.w.refresh()
+        follow=next(item for item in self.w.scene.items() if item.data(0)==2)
+        self.assertEqual(set(follow.handles()),{'height'})
+        self.drag_handle('height',QPoint(0,26))
+        self.assertEqual(follower.height,2)
+        self.assertEqual(self.w.form.geometry(follower)[2],27)
+
+    def test_resize_no_change_or_outside_bounds_leaves_history_unchanged(self):
+        self.w.add('button');before=len(self.w.history);self.w.dirty=False
+        self.drag_handle('both',QPoint(0,0))
+        self.assertEqual(len(self.w.history),before);self.assertFalse(self.w.dirty)
+        self.drag_handle('width',QPoint(600,0))
+        self.assertEqual(self.w.form.gadgets[0].width,18)
+        self.assertEqual(len(self.w.history),before)
+
+    def test_native_list_move_preserves_selection_save_and_undo(self):
+        self.w.form=Form(gadgets=[Gadget(name='first'),Gadget(name='second',y=4),Gadget(name='third',y=7)])
+        self.w.selected=1;self.w.refresh()
+        self.assertTrue(self.w.objects.model().moveRows(QModelIndex(),1,1,QModelIndex(),3))
+        self.app.processEvents()
+        self.assertEqual([g.name for g in self.w.form.gadgets],['first','third','second'])
+        self.assertEqual(self.w.form.gadgets[self.w.selected].name,'second')
+        pml=self.w.form.pml();self.assertLess(pml.index('BUTTON .third'),pml.index('BUTTON .second'))
+        self.assertEqual([g.name for g in Form.loads(self.w.form.dumps()).gadgets],['first','third','second'])
+        self.w.undo();self.assertEqual([g.name for g in self.w.form.gadgets],['first','second','third'])
+        self.w.redo();self.assertEqual([g.name for g in self.w.form.gadgets],['first','third','second'])
+
+    def test_list_mouse_selection_keeps_item_alive_for_drag(self):
+        self.w.form=Form(gadgets=[Gadget(name='first'),Gadget(name='second',y=4)])
+        self.w.refresh();item=self.w.objects.item(1)
+        position=self.w.objects.visualItemRect(item).center()
+        QTest.mousePress(self.w.objects.viewport(),Qt.LeftButton,Qt.NoModifier,position)
+        self.assertIs(self.w.objects.item(1),item)
+        self.assertEqual(self.w.selected,1)
+        QTest.mouseRelease(self.w.objects.viewport(),Qt.LeftButton,Qt.NoModifier,position)
+        self.assertEqual(self.w.fields['name'].text(),'second')
+
+    def test_list_move_preserves_parents_and_reports_invalid_auto_order(self):
+        group=Gadget(kind='frame',name='group',width=30,height=10)
+        a=Gadget(name='a',parent='group')
+        b=Gadget(name='b',parent='group',layout_mode='AUTO')
+        self.w.form=Form(gadgets=[group,a,b]);self.w.selected=2;self.w.refresh()
+        self.assertTrue(self.w.objects.model().moveRows(QModelIndex(),2,1,QModelIndex(),1))
+        self.app.processEvents()
+        self.assertEqual([g.name for g in self.w.form.gadgets],['group','b','a'])
+        self.assertEqual((a.parent,b.parent),('group','group'))
+        self.assertIn('出力できません',self.w.code.toPlainText())
+        self.w.undo();self.assertNotIn('出力できません',self.w.code.toPlainText())
 
 if __name__=='__main__': unittest.main()

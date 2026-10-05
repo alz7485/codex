@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QFormLayout, QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
-    QScrollArea, QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView)
+    QScrollArea, QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView)
 from .model import Form, Gadget, Menu, MenuItem, KINDS
 
 LABELS = {'button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
@@ -30,11 +30,16 @@ def preview_offset(form, gadget):
 
 class Item(QGraphicsObject):
     moved = Signal()
+    resizing = Signal()
+    resized = Signal(object)
     pageChosen = Signal(str)
 
     def __init__(self, gadget, form):
         super().__init__()
         self.gadget, self.form = gadget, form
+        self._resize = None
+        self._sync_geometry = False
+        self.setAcceptHoverEvents(True)
         self.setFlags(QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
         if gadget.layout_mode == 'ABSOLUTE': self.setFlag(QGraphicsItem.ItemIsMovable)
         ox, oy = preview_offset(form, gadget)
@@ -53,12 +58,52 @@ class Item(QGraphicsObject):
 
     def mousePressEvent(self, event):
         g = self.gadget
+        handle = self.handle_at(event.pos())
+        if event.button() == Qt.LeftButton and handle:
+            self._resize = (handle,event.scenePos(),g.width,g.height,copy.deepcopy(self.form))
+            event.accept(); return
         if g.kind == 'frame' and g.frame_style == 'TABSET' and 0 <= event.pos().y() < 26:
             pages = self.form.children(g.name)
             if pages:
                 index = min(len(pages)-1, max(0,int(event.pos().x() / (self._width * SX / len(pages)))))
                 self.pageChosen.emit(pages[index].name); event.accept(); return
         super().mousePressEvent(event)
+
+    def handles(self):
+        if not self.isSelected(): return {}
+        r = self.boundingRect(); size = 8
+        result = {'height':QRectF(r.center().x()-size/2,r.bottom()-size,size,size)}
+        if not self.gadget.width_ref:
+            result['width'] = QRectF(r.right()-size,r.center().y()-size/2,size,size)
+            result['both'] = QRectF(r.right()-size,r.bottom()-size,size,size)
+        return result
+
+    def handle_at(self, point):
+        return next((name for name,rect in reversed(list(self.handles().items())) if rect.contains(point)),None)
+
+    def hoverMoveEvent(self, event):
+        handle = self.handle_at(event.pos())
+        self.setCursor({'width':Qt.SizeHorCursor,'height':Qt.SizeVerCursor,'both':Qt.SizeFDiagCursor}.get(handle,Qt.ArrowCursor))
+        super().hoverMoveEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._resize is None:
+            super().mouseMoveEvent(event); return
+        handle, origin, width, height, _ = self._resize
+        delta = event.scenePos()-origin; g = self.gadget
+        old_width, old_height = g.width,g.height
+        if handle in ('width','both'): g.width = max(1,round((width+delta.x()/SX)*2)/2)
+        if handle in ('height','both'): g.height = max(1,round((height+delta.y()/SY)*2)/2)
+        try:
+            for candidate in self.form.gadgets:
+                x,y,w,h = self.form.geometry(candidate)
+                parent = self.form.parent_gadget(candidate)
+                pw,ph = (self.form.geometry(parent)[2],parent.height) if parent else (self.form.width,self.form.height)
+                if x < -.001 or y < -.001 or x+w > pw+.001 or y+h > ph+.001:
+                    raise ValueError('部品を親の領域内に収めてください。')
+        except ValueError:
+            g.width,g.height = old_width,old_height
+        self.resizing.emit(); event.accept()
 
     def paint(self, painter, option, widget=None):
         r, g = self.boundingRect(), self.gadget
@@ -120,9 +165,11 @@ class Item(QGraphicsObject):
             painter.setPen(QPen(QColor('#2277cc'), 2, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
             painter.drawRect(r.adjusted(1, 1, -1, -1))
+            painter.setPen(QPen(QColor('#2277cc'),1)); painter.setBrush(QColor('#ffffff'))
+            for handle in self.handles().values(): painter.drawRect(handle)
 
     def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemPositionChange and self.scene():
+        if change == QGraphicsItem.ItemPositionChange and self.scene() and not self._sync_geometry:
             g = self.gadget
             ox, oy = preview_offset(self.form, g); parent = self.form.parent_gadget(g)
             width, height = (preview_geometry(self.form,parent)[2], parent.height) if parent else (self.form.width, self.form.height)
@@ -131,12 +178,38 @@ class Item(QGraphicsObject):
         return super().itemChange(change, value)
 
     def mouseReleaseEvent(self, event):
+        if self._resize is not None:
+            _,_,width,height,old = self._resize; self._resize = None
+            if (self.gadget.width,self.gadget.height) != (width,height): self.resized.emit(old)
+            event.accept(); return
         super().mouseReleaseEvent(event)
         if self.gadget.layout_mode != 'ABSOLUTE': return
         ox, oy = preview_offset(self.form, self.gadget)
         self.gadget.x = round(self.pos().x() / SX - ox, 2)
         self.gadget.y = round(self.pos().y() / SY - oy, 2)
         self.moved.emit()
+
+
+class ObjectList(QListWidget):
+    orderCommitted = Signal(object,int)
+
+    def __init__(self):
+        super().__init__()
+        self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.setDefaultDropAction(Qt.MoveAction); self.setDragDropOverwriteMode(False)
+        self.setDropIndicatorShown(True)
+        self.model().rowsMoved.connect(self.commit_order)
+
+    def commit_order(self, *args):
+        order = [self.item(row).data(Qt.UserRole) for row in range(self.count())]
+        selected = self.currentItem().data(Qt.UserRole) if self.currentItem() else -1
+        self.orderCommitted.emit(order,selected)
+
+    def dropEvent(self, event):
+        previous = self.blockSignals(True)
+        try: super().dropEvent(event)
+        finally: self.blockSignals(previous)
+        self.commit_order()
 
 
 class Scene(QGraphicsScene):
@@ -180,7 +253,9 @@ class Window(QMainWindow):
         palette_scroll = QScrollArea(); palette_scroll.setWidgetResizable(True); palette_scroll.setWidget(palette)
         palette_scroll.setMaximumHeight(290); ll.addWidget(palette_scroll)
         ll.addWidget(QLabel('部品一覧'))
-        self.objects = QListWidget(); self.objects.currentRowChanged.connect(self.choose_row); ll.addWidget(self.objects)
+        self.objects = ObjectList(); self.objects.currentRowChanged.connect(self.choose_row)
+        self.objects.orderCommitted.connect(self.reorder_objects); ll.addWidget(self.objects)
+        self.objects.setToolTip('ドラッグで部品の順序を変更します（親コンテナは変わりません）。')
         left.setMinimumWidth(180); columns.addWidget(left)
         middle = QSplitter(Qt.Vertical)
         self.scene = Scene(self); self.scene.selectionChanged.connect(self.selection_changed)
@@ -592,12 +667,15 @@ class Window(QMainWindow):
         self.docking.setCurrentIndex(0 if self.form.dock_right else 1)
         self.fw.setValue(self.form.width); self.fh.setValue(self.form.height)
         self.objects.clear()
-        for g in self.form.gadgets: self.objects.addItem(f'{LABELS[g.kind]}  .{g.name}' + (f' → {g.parent}' if g.parent else ''))
+        for index,g in enumerate(self.form.gadgets):
+            self.objects.addItem(f'{LABELS[g.kind]}  .{g.name}' + (f' → {g.parent}' if g.parent else ''))
+            self.objects.item(index).setData(Qt.UserRole,index)
         self.scene.blockSignals(True); self.scene.clear()
         self.scene.setSceneRect(0, 0, self.form.width * SX, self.form.height * SY)
         for index, g in enumerate(self.form.gadgets):
             item = Item(g, self.form); item.setData(0, index)
             item.pageChosen.connect(self.choose_page)
+            item.resizing.connect(self.resize_preview); item.resized.connect(self.resize_committed)
             item.moved.connect(self.move_committed); self.scene.addItem(item)
             item.setSelected(index == self.selected)
         self.scene.blockSignals(False)
@@ -632,8 +710,37 @@ class Window(QMainWindow):
         self.setWindowTitle(('● ' if self.dirty else '') + 'E3D PML Form Designer — ' + (self.path.name if self.path else '新規設計'))
 
     def choose_row(self, index):
-        if not self.loading:
-            self.selected = index if index >= 0 else None; self.refresh()
+        if self.loading: return
+        self.selected = index if index >= 0 else None
+        self.scene.blockSignals(True)
+        for item in self.scene.items():
+            if isinstance(item,Item): item.setSelected(item.data(0)==self.selected)
+        self.scene.blockSignals(False)
+        self.sync_selection()
+
+    def reorder_objects(self, order, selected):
+        if self.loading or sorted(order) != list(range(len(self.form.gadgets))) or order == list(range(len(order))): return
+        self.checkpoint(); self.form.gadgets = [self.form.gadgets[index] for index in order]
+        self.selected = order.index(selected) if selected in order else None
+        self.loading = True
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0,self.refresh)
+
+    def resize_preview(self):
+        for item in self.scene.items():
+            if not isinstance(item,Item): continue
+            x,y,w,h = preview_geometry(self.form,item.gadget); ox,oy = preview_offset(self.form,item.gadget)
+            item.prepareGeometryChange(); item._width,item._height = w,h
+            item._sync_geometry = True
+            item.setPos((x+ox)*SX,(y+oy)*SY); item._sync_geometry = False; item.update()
+        if self.selected is not None:
+            g = self.form.gadgets[self.selected]; self.loading = True
+            self.fields['width'].setValue(g.width); self.fields['height'].setValue(g.height); self.loading = False
+
+    def resize_committed(self, old):
+        self.history.append(old); self.history = self.history[-100:]; self.future.clear(); self.dirty = True
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0,self.refresh)
 
     def selection_changed(self):
         if self._closing or not isValid(self) or not isValid(self.scene) or self.loading: return
