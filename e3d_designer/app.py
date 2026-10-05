@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QScrollArea, QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
     QGridLayout)
 from .highlighting import PmlHighlighter,COLORS
+from .colors import preview_color,foreground_color
 from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size
 
 LABELS = {'textpane':'複数行テキスト (TEXTPANE)','selector':'DB セレクタ (SELECTOR)','button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
@@ -177,7 +178,8 @@ class Item(QGraphicsObject):
         r, g = self.boundingRect(), self.gadget
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(QPen(QColor('#7f91a5'), 1))
-        painter.setBrush(QColor('#eff3f8' if g.kind == 'button' else '#ffffff'))
+        background=preview_color(g.background) if g.background and g.kind in ('button','paragraph','list') else None
+        painter.setBrush(QColor(background or ('#eff3f8' if g.kind == 'button' else '#ffffff')))
         if g.kind == 'frame':
             parent = self.form.parent_gadget(g)
             painter.setBrush(Qt.NoBrush)
@@ -211,7 +213,7 @@ class Item(QGraphicsObject):
                 painter.drawLine(r.center().x(), r.top(), r.center().x(), r.bottom())
         else:
             painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), 3, 3)
-        painter.setPen(QColor('#182b40'))
+        painter.setPen(QColor(foreground_color(background) if background else '#182b40'))
         text = g.label
         if g.display_mode == 'PIXMAP':
             if not self.pixmap.isNull():
@@ -245,8 +247,8 @@ class Item(QGraphicsObject):
                     if row*SY >= r.height(): break
                     for column,value in enumerate(values):
                         cell = QRectF(column*column_width,row*SY,column_width,SY)
-                        painter.setPen(QColor('#9caabd')); painter.setBrush(QColor('#dfeaf5' if row == 0 else '#ffffff'))
-                        painter.drawRect(cell); painter.setPen(QColor('#182b40'))
+                        painter.setPen(QColor('#9caabd')); painter.setBrush(QColor('#dfeaf5' if row == 0 else (background or '#ffffff')))
+                        painter.drawRect(cell); painter.setPen(QColor(foreground_color(background) if background and row != 0 else '#182b40'))
                         painter.drawText(cell.adjusted(4,1,-4,-1),Qt.AlignLeft|Qt.AlignVCenter,value)
                 painter.restore(); text = ''
             else: text = '\n'.join(g.items) or g.label
@@ -480,6 +482,8 @@ class Window(QMainWindow):
         self.prop_layout.addRow(self.macro_browse)
         self.macro_template=QPushButton('📄 分岐マクロのひな形を保存');self.macro_template.clicked.connect(self.save_macro_template)
         self.prop_layout.addRow(self.macro_template)
+        self.choose_background=QPushButton('🎨 色番号表から選択');self.choose_background.clicked.connect(self.pick_background)
+        self.prop_layout.addRow(self.choose_background)
         self.gadget_comment=QPlainTextEdit();self.gadget_comment.setFixedHeight(64)
         self.gadget_comment.setPlaceholderText('部品の用途や注意点。出力時に -- コメントとして付けます。')
         self.gadget_comment.textChanged.connect(self.update_gadget);self.prop_layout.addRow('部品のコメント',self.gadget_comment)
@@ -608,6 +612,15 @@ class Window(QMainWindow):
             for gadget in self.form.gadgets:
                 if gadget.popup_menu.lower() == menu.name.lower(): gadget.popup_menu = ''
         self.refresh(rebuild=False)
+
+    def pick_background(self):
+        if self.selected is None:return
+        from .color_picker import ColorPicker
+        dialog=ColorPicker(self,self.form.gadgets[self.selected].background)
+        try:
+            if dialog.exec()==ColorPicker.DialogCode.Accepted:
+                self.fields['background'].setText(dialog.value);self.update_gadget()
+        finally:dialog.deleteLater()
 
     def choose_macro(self):
         filename,_=QFileDialog.getOpenFileName(self,'外部マクロを選択','','マクロ (*.txt *.mac *.pmlmac);;すべて (*)')
@@ -896,7 +909,7 @@ class Window(QMainWindow):
         for key in ('selection_mode','list_mode','table_method','combo_keyword','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','view_aspect','channels','assembly','namespace','control_type'):
             relevant[key] = self.fields[key].isEnabled()
         for key,visible in relevant.items(): self.prop_layout.setRowVisible(self.fields[key],visible)
-        for editor,visible in ((self.macro_browse,macro),(self.macro_template,macro),(self.choices,gadget.kind in ('option','combo') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
+        for editor,visible in ((self.choose_background,relevant['background']),(self.macro_browse,macro),(self.macro_template,macro),(self.choices,gadget.kind in ('option','combo') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
                                (self.choice_commands,gadget.kind == 'option' and gadget.display_mode == 'TEXT'),
                                (self.item_values,gadget.kind == 'combo' or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
                                (self.view_code,gadget.kind in ('view','commandline')),
