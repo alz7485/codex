@@ -21,6 +21,25 @@ class OutputSettingsTests(unittest.TestCase):
     def tearDown(self):
         self.app.clipboard().clear();self.window.dirty=False;self.window.close();self.app.processEvents();self.temp.cleanup()
 
+    def test_macro_folder_persistence_and_file_dialog_start(self):
+        w=self.window
+        self.assertEqual(w.settings.macro_folder,application_directory())
+        original=w.form.dumps();history=len(w.history)
+        with patch('e3d_designer.app.QFileDialog.getExistingDirectory',return_value=str(self.folder)):
+            w.choose_macro_folder()
+        w.settings.save_output_folder(self.folder);w.settings.remember_design(self.folder/'design.json');w.settings.clear_recent()
+        self.assertEqual(Settings(self.folder/'settings.json').macro_folder,self.folder)
+        with patch('e3d_designer.app.QFileDialog.getOpenFileName',return_value=('','')) as dialog:
+            w.choose_macro()
+            self.assertEqual(dialog.call_args.args[2],str(self.folder))
+        self.assertEqual(w.form.dumps(),original);self.assertEqual(len(w.history),history)
+        w.macro_folder.setText(str(self.folder/'missing'));self.assertFalse(w.save_macro_folder())
+        self.assertEqual(w.settings.macro_folder,self.folder)
+        self.assertEqual(w.macro_folder.text(),str(self.folder))
+        with patch('e3d_designer.settings.os.replace',side_effect=OSError('read only')):
+            with self.assertRaises(OSError):w.settings.save_macro_folder(application_directory())
+        self.assertEqual(w.settings.macro_folder,self.folder)
+
     def test_application_directory_default_and_executable_location(self):
         self.assertEqual(self.window.output_folder.text(),str(application_directory()))
         self.assertFalse((self.folder/'settings.json').exists())

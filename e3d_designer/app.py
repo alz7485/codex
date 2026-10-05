@@ -657,6 +657,13 @@ class Window(QMainWindow):
         self.fields['action_mode'].setItemText(1,'外部マクロを実行')
         self.fields['macro_flag'].setPlaceholderText('例: buttonFlag（!! は不要・空欄ならフラグなし）')
         self.fields['macro_value'].setPlaceholderText('例: A / B')
+        self.prop_layout.current='動作'
+        self.macro_folder_row=QWidget();macro_layout=QHBoxLayout(self.macro_folder_row);macro_layout.setContentsMargins(0,0,0,0)
+        self.macro_folder=QLineEdit(str(self.settings.macro_folder));self.macro_folder.editingFinished.connect(self.save_macro_folder)
+        self.macro_folder.setToolTip('呼び出すマクロの選択を開始するフォルダ。settings.json に保存します。')
+        macro_layout.addWidget(self.macro_folder,1)
+        browse_macro_folder=QPushButton('📁');browse_macro_folder.setToolTip('マクロフォルダを選択');browse_macro_folder.clicked.connect(self.choose_macro_folder);macro_layout.addWidget(browse_macro_folder)
+        self.prop_layout.addRow('マクロフォルダ',self.macro_folder_row)
         self.macro_browse=QPushButton('📁 マクロファイルを選択');self.macro_browse.clicked.connect(self.choose_macro)
         self.prop_layout.current='動作'
         self.prop_layout.addRow(self.macro_browse)
@@ -950,8 +957,23 @@ class Window(QMainWindow):
                 self.fields['background'].setText(dialog.value);self.update_gadget()
         finally:dialog.deleteLater()
 
+    def save_macro_folder(self):
+        text=self.macro_folder.text().strip()
+        folder=Path(text).expanduser() if text else self.settings.app_directory
+        if not folder.is_absolute():folder=self.settings.app_directory/folder
+        try:self.settings.save_macro_folder(folder)
+        except (OSError,ValueError) as error:
+            self.macro_folder.setText(str(self.settings.macro_folder))
+            self.statusBar().showMessage('マクロフォルダを保存できません: '+str(error));return False
+        self.macro_folder.setText(str(self.settings.macro_folder))
+        self.statusBar().showMessage('マクロフォルダを settings.json に保存しました。');return True
+
+    def choose_macro_folder(self):
+        folder=QFileDialog.getExistingDirectory(self,'マクロフォルダを選択',str(self.settings.macro_folder))
+        if folder:self.macro_folder.setText(folder);self.save_macro_folder()
+
     def choose_macro(self):
-        filename,_=QFileDialog.getOpenFileName(self,'外部マクロを選択','','マクロ (*.txt *.mac *.pmlmac);;すべて (*)')
+        filename,_=QFileDialog.getOpenFileName(self,'外部マクロを選択',str(self.settings.macro_folder),'マクロ (*.txt *.mac *.pmlmac);;すべて (*)')
         if filename:
             self.fields['macro_path'].setText(filename);self.update_gadget()
 
@@ -1284,7 +1306,7 @@ class Window(QMainWindow):
         self.prop_layout.setRowVisible(self.fields['initial'],relevant['initial'] and not boolean)
         self.prop_layout.setRowVisible(self.initial_choice,boolean)
         self.initial_choice.setCurrentIndex(max(0,self.initial_choice.findData(gadget.initial.upper())))
-        for editor,visible in ((self.choose_background,relevant['background']),(self.macro_browse,macro),(self.macro_template,macro),(self.choices,gadget.kind in ('option','combo') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
+        for editor,visible in ((self.choose_background,relevant['background']),(self.macro_folder_row,macro),(self.macro_browse,macro),(self.macro_template,macro),(self.choices,gadget.kind in ('option','combo') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
                                (self.choice_commands,gadget.kind == 'option' and gadget.display_mode == 'TEXT'),
                                (self.item_values,gadget.kind == 'combo' or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
                                (self.view_code,gadget.kind in ('view','commandline')),
