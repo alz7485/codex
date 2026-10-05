@@ -154,7 +154,7 @@ rtog・グリッド・PML.NET 部品、既存 PML のインポート、E3D と�
 | RTOGGLE | 通常 FRAME を選んで追加し、OFF / ON の実値を指定します。同じ FRAME 内をラジオグループとして出力します。選択状態は FRAME 側で管理されます。 |
 | LIST | SINGLE / MULTIPLE の選択方式、単列の表示名 `.dtext`・実値 `.rtext`、複数列の SetHeadings / SetRows。 |
 | COMBO | 編集可能な選択欄として定義します。公開例に合わせ、定義キーワードを COMBO / COMBOBOX から選べます。表示名と実値に対応します。 |
-| VIEW | ALPHA / AREA / PLOT / VOLUME、幅・高さ、内部の追加 PML。追加 PML には VIEW の外枠や EXIT を書きません。 |
+| VIEW | ALPHA / AREA / PLOT / VOLUME、幅・高さ、任意の ASPECT、内部の追加 PML。追加 PML には VIEW の外枠や EXIT を書きません。 |
 | コマンド欄 | VIEW ALPHA として出力し、CHANNEL REQUESTS / COMMANDS を指定できます。 |
 | CONTAINER | PMLNETCONTROL を出力します。アセンブリ・名前空間・型をすべて指定すると import、using namespace、保持用 member、生成と Control.handle 接続を出力します。 |
 
@@ -194,3 +194,5 @@ endmethod
 ![複数列 LIST の編集画面](docs/ui-multicolumn.png)
 
 単列 LIST の複数選択も、ユーザー提供の `MULTIPLE WIDTH 値 HEIGHT 値` に対応しています。表示名の配列をコンストラクタ内で作り、`!this.部品名.dtext = !choices` として代入します。`!choices` はローカル変数名で固定キーワードではありません。旧設計ファイルの `MULTI` は読み込み時に `MULTIPLE` へ置き換えます。
+
+VIEW の「ASPECT (VIEW)」欄は空欄で省略、0より大きい有限数で指定します。出力は `WIDTH 30 HEIGHT 8 ASPECT 1.5` のように HEIGHT の直後です。キャンバスの枠サイズは WIDTH / HEIGHT に基づきます。ASPECT の E3D 側での表示への効果は実機で確認してください。

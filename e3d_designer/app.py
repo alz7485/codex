@@ -337,7 +337,7 @@ class Window(QMainWindow):
                 ('selection_mode','LIST 選択方式'), ('list_mode','LIST 表示方式'), ('table_method','表の設定メソッド名'), ('combo_keyword','COMBO 定義キーワード'),
                 ('slider_orientation','SLIDER の向き'), ('slider_min','最小値'), ('slider_max','最大値'), ('slider_step','刻み'), ('slider_value','スライダー初期値'),
                 ('off_value','ラジオ OFF 実値'), ('on_value','ラジオ ON 実値'),
-                ('view_type','VIEW 形式'), ('channels','ALPHA チャンネル'),
+                ('view_type','VIEW 形式'), ('view_aspect','ASPECT (VIEW)'), ('channels','ALPHA チャンネル'),
                 ('assembly','CONTAINER アセンブリ'), ('namespace','名前空間'), ('control_type','コントロール型')]:
             if key in ('slider_min','slider_max','slider_step','slider_value'):
                 w = self.number(-1e9, 1e9)
@@ -613,6 +613,7 @@ class Window(QMainWindow):
             self.fields[key].setEnabled(gadget.kind == 'slider')
         for key in ('off_value','on_value'): self.fields[key].setEnabled(gadget.kind == 'rtoggle')
         self.fields['view_type'].setEnabled(gadget.kind == 'view')
+        self.fields['view_aspect'].setEnabled(gadget.kind in ('view','commandline'))
         self.fields['channels'].setEnabled(gadget.kind == 'commandline' or (gadget.kind == 'view' and gadget.view_type == 'ALPHA'))
         for key in ('assembly','namespace','control_type'): self.fields[key].setEnabled(gadget.kind == 'container')
         self.fields['callback'].setEnabled(gadget.kind in ('button','text','toggle','list','combo','slider'))
@@ -628,7 +629,7 @@ class Window(QMainWindow):
         }
         for key in ('path','halign','valign','hgap','vgap'): relevant[key] = gadget.layout_mode == 'AUTO'
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): relevant[key] = gadget.layout_mode == 'RELATIVE'
-        for key in ('selection_mode','list_mode','table_method','combo_keyword','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','channels','assembly','namespace','control_type'):
+        for key in ('selection_mode','list_mode','table_method','combo_keyword','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','view_aspect','channels','assembly','namespace','control_type'):
             relevant[key] = self.fields[key].isEnabled()
         for key,visible in relevant.items(): self.prop_layout.setRowVisible(self.fields[key],visible)
         for editor,visible in ((self.choices,gadget.kind in ('option','combo') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),

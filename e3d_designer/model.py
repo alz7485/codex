@@ -62,6 +62,7 @@ class Gadget:
     off_value: str = ''
     on_value: str = 'ON'
     view_type: str = 'VOLUME'
+    view_aspect: str = ''
     channels: str = 'BOTH'
     view_code: str = ''
     assembly: str = ''
@@ -318,6 +319,16 @@ class Form:
                 literal(g.off_value); literal(g.on_value)
             if g.view_type not in ('ALPHA','AREA','PLOT','VOLUME') or g.channels not in ('NONE','REQUESTS','COMMANDS','BOTH'):
                 raise ValueError('VIEW の形式・チャンネルが不正です。')
+            if not isinstance(g.view_aspect,str):
+                raise ValueError('VIEW の ASPECT は数値を文字列で指定してください。')
+            if g.view_aspect:
+                if g.kind not in ('view','commandline'):
+                    raise ValueError('ASPECT は VIEW 用です。')
+                try:
+                    aspect = float(g.view_aspect)
+                    if not math.isfinite(aspect) or aspect <= 0: raise ValueError()
+                except ValueError:
+                    raise ValueError('ASPECT は0より大きい有限数を指定してください。') from None
             if g.kind == 'container':
                 settings = (g.assembly,g.namespace,g.control_type)
                 if any(settings) and not all(settings):
@@ -465,6 +476,7 @@ class Form:
             elif g.kind in ('view','commandline'):
                 view_type = 'ALPHA' if g.kind == 'commandline' else g.view_type
                 line = f'VIEW .{g.name} {position} {view_type}\n  {width_clause} HEIGHT {n(g.height)}'
+                if g.view_aspect: line += f' ASPECT {n(float(g.view_aspect))}'
                 if view_type == 'ALPHA':
                     for channel in ('REQUESTS','COMMANDS'):
                         if g.channels in (channel,'BOTH'): line += '\n  CHANNEL '+channel

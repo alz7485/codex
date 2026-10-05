@@ -14,6 +14,17 @@ from e3d_designer.app import Window, atomic_write, SX, SY
 
 
 class ModelTests(unittest.TestCase):
+    def test_view_aspect_export_validation_and_legacy_default(self):
+        view=Gadget(kind='view',name='model',width=30,height=8,view_aspect='1.5')
+        form=Form(gadgets=[view]);pml=Form.loads(form.dumps()).pml()
+        self.assertIn('WIDTH 30 HEIGHT 8 ASPECT 1.5',pml)
+        for value in ('0','-1','nan','inf','command',None,1.5):
+            view.view_aspect=value
+            with self.subTest(value=value),self.assertRaises(ValueError): form.pml()
+        view.view_aspect=''
+        raw=json.loads(form.dumps());del raw['form']['gadgets'][0]['view_aspect']
+        self.assertNotIn('ASPECT',Form.loads(json.dumps(raw)).pml())
+
     def test_simple_multiple_list_and_legacy_selection(self):
         listing=Gadget(kind='list',name='results',label='Results',selection_mode='MULTIPLE',width=20,height=4,items=['First','Second'])
         pml=Form(gadgets=[listing]).pml()
@@ -379,6 +390,17 @@ class GuiTests(unittest.TestCase):
     def setUpClass(cls): cls.app=QApplication.instance() or QApplication([])
     def setUp(self): self.w=Window(); self.w.show(); self.app.processEvents()
     def tearDown(self): self.w.dirty=False; self.w.close(); self.app.processEvents()
+
+    def test_view_aspect_property_edit_and_roundtrip(self):
+        self.w.add('view');editor=self.w.fields['view_aspect']
+        self.assertTrue(editor.isEnabled())
+        editor.setFocus();QTest.keyClicks(editor,'1.5')
+        self.assertIn('HEIGHT 5 ASPECT 1.5',self.w.code.toPlainText())
+        self.assertEqual(Form.loads(self.w.form.dumps()).gadgets[0].view_aspect,'1.5')
+        editor.selectAll();QTest.keyClick(editor,Qt.Key_Backspace)
+        self.assertNotIn('ASPECT',self.w.code.toPlainText())
+        self.w.selected=None;self.w.refresh();self.w.add('button')
+        self.assertFalse(self.w.fields['view_aspect'].isEnabled())
 
     def test_menu_edit_save_preview_and_undo(self):
         self.w.add_menu(); self.w.add_menu_item()

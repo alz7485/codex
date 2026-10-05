@@ -11,7 +11,7 @@ setup form !!gadgetDemo DIALOG DOCK RIGHT
   list .equipment AT X 28 Y 4 'Equipment' MULTIPLE WIDTH 28 HEIGHT 5
   COMBO .choice 'Choice' AT X 28 Y 10 WIDTH 28
   VIEW .model AT X 2 Y 9 VOLUME
-    WIDTH 22 HEIGHT 8
+    WIDTH 22 HEIGHT 8 ASPECT 1.5
     LIMITS AUTO
     ISOMETRIC 3
   EXIT

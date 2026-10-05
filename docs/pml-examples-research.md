@@ -420,3 +420,5 @@ COMBO の追加確認: [Form Layout and Gadgets の本文](https://github.com/nh
 ロード方式の追加確認: [公開された Forms の説明](https://github.com/mikhalchankasm/vscode-pml-aveva-e3d/blob/07971b883c53ae665d3c02c7670c1e8cdaa76343/hide_examples/forms/forms.md) は `.pmlfrm` の初回表示時自動ロードと、昔の `$m` によるフォーム定義マクロの互換方式を区別しています。ユーザーの一体型命令列と定義ファイルの違いを検証すべきという先の判断を補強します。
 
 ユーザー追記: 単列リストの複数選択には `LIST .name '表示名' MULTIPLE WIDTH 値 HEIGHT 値` と、表示名の配列を `.DTEXT` へ代入する方式も使える。エディタは単列・複数列とも SINGLE / MULTIPLE と HEIGHT を出力する。旧設計ファイルの MULTI は読み込み時に MULTIPLE に移行する。AT のある定義では先のユーザー指示どおり表示名の前に置く。
+
+ユーザー追記: VIEW は HEIGHT の後に ASPECT 値を指定できる。エディタに任意入力欄を追加し、HEIGHT の直後へ出力する。省略を既定とし、E3D 4.0 実機での表示効果は未検証。
