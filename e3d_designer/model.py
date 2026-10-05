@@ -37,6 +37,20 @@ class Gadget:
     frame_style: str = 'FRAME'
     parent: str = ''
     body: str = ''
+    layout_mode: str = 'ABSOLUTE'
+    path: str = 'DOWN'
+    halign: str = 'LEFT'
+    valign: str = 'TOP'
+    hgap: float = 1
+    vgap: float = .5
+    xref: str = ''
+    yref: str = ''
+    xedge: str = 'XMIN'
+    yedge: str = 'YMAX'
+    xanchor: str = 'LEFT'
+    xoffset: float = 0
+    yoffset: float = .5
+    width_ref: str = ''
 
 
 @dataclass
@@ -55,12 +69,75 @@ class Form:
     def parent_gadget(self, gadget):
         return next((g for g in self.gadgets if g.name.lower() == gadget.parent.lower()), None) if gadget.parent else None
 
+    def named(self, name):
+        return next((g for g in self.gadgets if g.name.lower() == name.lower()), None)
+
+    def previous(self, gadget):
+        siblings = self.children(gadget.parent)
+        index = next(i for i,g in enumerate(siblings) if g is gadget)
+        return siblings[index-1] if index else None
+
+    def layout_dependencies(self, gadget):
+        names = [gadget.width_ref] if gadget.width_ref else []
+        if gadget.layout_mode == 'RELATIVE': names += [gadget.xref, gadget.yref]
+        if gadget.layout_mode == 'AUTO':
+            previous = self.previous(gadget)
+            if not previous: raise ValueError(f'{gadget.name}: 自動配置の前に基準部品を配置してください。')
+            names.append(previous.name)
+        result = []
+        for name in names:
+            target = self.named(name)
+            if not target or target.parent.lower() != gadget.parent.lower():
+                raise ValueError(f'{gadget.name}: 配置参照は同じ親の部品を指定してください。')
+            if target is gadget: raise ValueError('自身を配置参照に指定できません。')
+            if target not in result: result.append(target)
+        return result
+
+    def ordered_children(self, parent):
+        result, visiting, done = [], set(), set()
+        def visit(g):
+            key = g.name.lower()
+            if key in visiting: raise ValueError('配置・幅の循環参照を解消してください。')
+            if key in done: return
+            visiting.add(key)
+            for dependency in self.layout_dependencies(g): visit(dependency)
+            visiting.remove(key); done.add(key); result.append(g)
+        for g in self.children(parent): visit(g)
+        for index, gadget in enumerate(result):
+            if gadget.layout_mode == 'AUTO' and (index == 0 or result[index-1] is not self.previous(gadget)):
+                raise ValueError(f'{gadget.name}: 自動配置の直前に基準部品が来るよう部品順と参照を変更してください。')
+        return result
+
+    def geometry(self, gadget, trail=None):
+        trail = set() if trail is None else set(trail)
+        key = gadget.name.lower()
+        if key in trail: raise ValueError('配置・幅の循環参照を解消してください。')
+        trail.add(key)
+        dependencies = {g.name.lower(): self.geometry(g, trail) for g in self.layout_dependencies(gadget)}
+        width = dependencies[gadget.width_ref.lower()][2] if gadget.width_ref else gadget.width
+        height = gadget.height
+        x, y = gadget.x, gadget.y
+        if gadget.layout_mode == 'RELATIVE':
+            xr, yr = dependencies[gadget.xref.lower()], dependencies[gadget.yref.lower()]
+            x = xr[0] + (xr[2] if gadget.xedge == 'XMAX' else 0) + gadget.xoffset
+            if gadget.xanchor == 'RIGHT': x -= width
+            y = yr[1] + (yr[3] if gadget.yedge == 'YMAX' else 0) + gadget.yoffset
+        elif gadget.layout_mode == 'AUTO':
+            prev = dependencies[self.previous(gadget).name.lower()]
+            if gadget.path in ('DOWN', 'UP'):
+                x = prev[0] + {'LEFT': 0, 'CENTRE': (prev[2]-width)/2, 'RIGHT': prev[2]-width}[gadget.halign]
+                y = prev[1]+prev[3]+gadget.vgap if gadget.path == 'DOWN' else prev[1]-height-gadget.vgap
+            else:
+                x = prev[0]+prev[2]+gadget.hgap if gadget.path == 'RIGHT' else prev[0]-width-gadget.hgap
+                y = prev[1] + {'TOP': 0, 'CENTRE': (prev[3]-height)/2, 'BOTTOM': prev[3]-height}[gadget.valign]
+        return x, y, width, height
+
     def offset(self, gadget):
         x = y = 0
         seen = {gadget.name.lower()}
         current = self.parent_gadget(gadget)
         while current is not None and current.name.lower() not in seen:
-            seen.add(current.name.lower()); x += current.x; y += current.y
+            seen.add(current.name.lower()); gx, gy, _, _ = self.geometry(current); x += gx; y += gy
             current = self.parent_gadget(current)
         return x, y
 
@@ -85,13 +162,13 @@ class Form:
         if not isinstance(self.gadgets, list) or any(not isinstance(g,Gadget) for g in self.gadgets):
             raise ValueError('部品は配列で指定してください。')
         for g in self.gadgets:
-            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body'):
+            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref'):
                 if not isinstance(getattr(g,key),str): raise ValueError(f'部品の {key} は文字列で指定してください。')
             for key in ('items','item_commands'):
                 value = getattr(g,key)
                 if not isinstance(value,list) or any(not isinstance(item,str) for item in value):
                     raise ValueError(f'{key} は文字列の配列で指定してください。')
-            for key in ('x','y','width','height'):
+            for key in ('x','y','width','height','hgap','vgap','xoffset','yoffset'):
                 value = getattr(g,key)
                 if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value):
                     raise ValueError('座標とサイズには有限数を指定してください。')
@@ -115,6 +192,12 @@ class Form:
         if len(self.gadgets) > 500:
             raise ValueError('部品数は 500 個までです。')
         for g in self.gadgets:
+            if g.layout_mode not in ('ABSOLUTE','AUTO','RELATIVE') or g.path not in ('DOWN','UP','LEFT','RIGHT') or g.halign not in ('LEFT','CENTRE','RIGHT') or g.valign not in ('TOP','CENTRE','BOTTOM') or g.xedge not in ('XMIN','XMAX') or g.yedge not in ('YMIN','YMAX') or g.xanchor not in ('LEFT','RIGHT'):
+                raise ValueError('配置方式・整列・参照辺の指定が不正です。')
+            if g.hgap < 0 or g.vgap < 0: raise ValueError('配置間隔は0以上で指定してください。')
+            if g.width_ref and g.kind in ('toggle','option'):
+                raise ValueError('TOGGLE / OPTION の幅参照は未対応です。')
+            self.layout_dependencies(g)
             parent = self.parent_gadget(g)
             if g.parent and (parent is None or parent.kind != 'frame'):
                 raise ValueError(f'{g.name}: 親は存在する FRAME / TABSET を指定してください。')
@@ -133,7 +216,10 @@ class Form:
             for value in (g.x, g.y, g.width, g.height):
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                     raise ValueError('座標とサイズには有限数を指定してください。')
-            if g.x < 0 or g.y < 0 or g.width < 1 or g.height < 1 or g.x + g.width > (parent.width if parent else self.width) + .001 or g.y + g.height > (parent.height if parent else self.height) + .001:
+            x, y, width, height = self.geometry(g)
+            parent_width = self.geometry(parent)[2] if parent else self.width
+            parent_height = parent.height if parent else self.height
+            if x < -.001 or y < -.001 or width < 1 or height < 1 or x + width > parent_width + .001 or y + height > parent_height + .001:
                 raise ValueError(f'{g.name}: 部品を親コンテナ内に収めてください。')
             if g.background:
                 if g.kind not in ('paragraph', 'button') or not re.fullmatch(r'[0-9]+', g.background):
@@ -205,28 +291,43 @@ class Form:
                   else f'setup form !!{self.name} size {n(self.width)} {n(self.height)} DIALOG'),
                  f'  title {literal(self.title)}']
         def render(g, depth):
-            at = f'at x{n(g.x)} y{n(g.y)} width {n(g.width)}'
+            indent = '  '*depth
+            position = f'AT X {n(g.x)} Y {n(g.y)}'
+            if g.layout_mode == 'RELATIVE':
+                delta = lambda value: ('+' if value > 0 else '') + n(value) if value else ''
+                right = '-SIZE' if g.xanchor == 'RIGHT' else ''
+                position = f'AT {g.xedge}.{g.xref}{right}{delta(g.xoffset)} {g.yedge}.{g.yref}{delta(g.yoffset)}'
+            elif g.layout_mode == 'AUTO':
+                for command in (f'PATH {g.path}',f'HDIST {n(g.hgap)}',f'VDIST {n(g.vgap)}',f'HALIGN {g.halign}',f'VALIGN {g.valign}'):
+                    lines.append(indent+command)
+                previous = self.previous(g)
+                lines.append(indent+f'-- Auto placement follows {previous.name}')
+                position = ''
+            width_clause = f'WIDTH.{g.width_ref}' if g.width_ref else f'WIDTH {n(g.width)}'
+            at = (f'at x{n(g.x)} y{n(g.y)}' if g.layout_mode == 'ABSOLUTE' else position) + ' ' + width_clause
             callback = f" callback '!this.{g.callback}()'" if g.callback else ''
             label = literal(g.label)
             if g.kind == 'frame':
                 if g.frame_style == 'TABSET':
-                    line = f'FRAME .{g.name} TABSET AT X {n(g.x)} Y {n(g.y)} {label} WIDTH {n(g.width)}'
+                    line = f'FRAME .{g.name} TABSET {position} {label} {width_clause}'
                 else:
                     line = f'FRAME .{g.name} {label}'
+                    if g.layout_mode != 'ABSOLUTE': line += ' '+position
+                    if g.width_ref: line += ' '+width_clause
             elif g.kind == 'line':
-                line = f"LINE .{g.name} AT X {n(g.x)} Y {n(g.y)} '' {g.orientation} WIDTH {n(g.width)} HEIGHT {n(g.height)}"
+                line = f"LINE .{g.name} {position} '' {g.orientation} {width_clause} HEIGHT {n(g.height)}"
             elif g.kind == 'paragraph':
-                line = f'PARAGRAPH .{g.name} AT X {n(g.x)} Y {n(g.y)}'
+                line = f'PARAGRAPH .{g.name} {position}'
                 if g.background: line += f' BACKGROUND {int(g.background)}'
-                line += f' TEXT {label} WIDTH {n(g.width)}'
+                line += f' TEXT {label} {width_clause}'
             elif g.kind == 'text':
-                line = f'TEXT .{g.name} AT X {n(g.x)} Y {n(g.y)} {label}'
+                line = f'TEXT .{g.name} {position} {label}'
                 command = g.command or (f'!this.{g.callback}()' if g.callback else '')
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
-                line += f' WIDTH {n(g.width)} IS {g.value_type}'
+                line += f' {width_clause} IS {g.value_type}'
             elif g.kind == 'option':
                 object_name = '_' + g.name.lstrip('_')
-                line = f"OPTION {object_name} AT X {n(g.x)} Y {n(g.y)} {label} CALL '$${object_name}'"
+                line = f"OPTION {object_name} {position} {label} CALL '$${object_name}'"
                 line += f'\nVAR LIST {object_name} PAIRS'
                 commands = g.item_commands or [''] * len(g.items)
                 for display, command in zip(g.items, commands):
@@ -235,23 +336,23 @@ class Form:
             elif g.kind == 'list':
                 line = f'list .{g.name} {label} {at} lines {max(1, round(g.height))}' + callback
             elif g.kind == 'button':
-                line = f'BUTTON .{g.name} AT X {n(g.x)} Y {n(g.y)}'
+                line = f'BUTTON .{g.name} {position}'
                 if g.background: line += f' BACKGROUND {int(g.background)}'
                 line += f' {label}'
                 command = g.command or (f'!this.{g.callback}()' if g.callback else '')
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
-                line += f' WIDTH {n(g.width)}'
+                line += f' {width_clause}'
             elif g.kind == 'toggle':
-                line = f'TOGGLE .{g.name} AT X {n(g.x)} Y {n(g.y)} {label}'
+                line = f'TOGGLE .{g.name} {position} {label}'
                 command = g.command or (f'!this.{g.callback}()' if g.callback else '')
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
             else:
                 line = f'{g.kind} .{g.name} {label} {at}' + callback
             lines.extend('  ' * depth + part for part in line.split('\n'))
             if g.kind == 'frame':
-                for child in self.children(g.name): render(child, depth + 1)
+                for child in self.ordered_children(g.name): render(child, depth + 1)
                 lines.append('  ' * depth + 'EXIT')
-        for g in self.children(''): render(g, 1)
+        for g in self.ordered_children(''): render(g, 1)
         lines.extend(['exit', '', f'define method .{self.name}()'])
         for g in self.gadgets:
             if g.kind == 'text' and g.initial:

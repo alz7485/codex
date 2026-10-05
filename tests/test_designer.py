@@ -14,6 +14,56 @@ from e3d_designer.app import Window, atomic_write, SX, SY
 
 
 class ModelTests(unittest.TestCase):
+    def test_relative_layout_order_geometry_and_roundtrip(self):
+        base = Gadget(name='base', x=10, y=5, width=14, height=2)
+        follower = Gadget(name='follower', layout_mode='RELATIVE', xref='base', yref='base',
+                          xedge='XMAX', xanchor='RIGHT', xoffset=-1, yoffset=1,
+                          width=8)
+        form = Form(gadgets=[follower,base])
+        self.assertEqual(form.geometry(follower), (15,8,8,1))
+        pml = Form.loads(form.dumps()).pml()
+        self.assertIn('AT XMAX.base-SIZE-1 YMAX.base+1',pml)
+        self.assertLess(pml.index('BUTTON .base'),pml.index('BUTTON .follower'))
+        follower.width_ref='base'
+        self.assertEqual(form.geometry(follower), (9,8,14,1))
+        self.assertIn('WIDTH.base',form.pml())
+        base.width=18
+        self.assertEqual(form.geometry(follower), (9,8,18,1))
+
+    def test_auto_alignment_and_path(self):
+        base=Gadget(name='base',x=20,y=10,width=14,height=4)
+        follower=Gadget(name='follower',layout_mode='AUTO',width=8,height=2,vgap=1,hgap=2)
+        form=Form(gadgets=[base,follower])
+        for alignment,x in [('LEFT',20),('CENTRE',23),('RIGHT',26)]:
+            follower.halign=alignment
+            self.assertEqual(form.geometry(follower),(x,15,8,2))
+            self.assertIn('HALIGN '+alignment,form.pml())
+        follower.path='UP'
+        self.assertEqual(form.geometry(follower),(26,7,8,2))
+        follower.path='RIGHT'; follower.valign='BOTTOM'
+        self.assertEqual(form.geometry(follower),(36,12,8,2))
+        follower.path='LEFT'; follower.valign='CENTRE'
+        self.assertEqual(form.geometry(follower),(10,11,8,2))
+        self.assertIn('PATH LEFT',form.pml())
+
+    def test_invalid_layout_references_and_export_order(self):
+        base=Gadget(name='base')
+        other=Gadget(name='other',y=5)
+        follower=Gadget(name='follower',layout_mode='RELATIVE',xref='base',yref='base')
+        form=Form(gadgets=[base,other,follower])
+        for reference in ('missing','follower'):
+            follower.xref=reference
+            with self.assertRaises(ValueError): form.pml()
+        follower.xref='base';base.width_ref='follower'
+        with self.assertRaises(ValueError): form.pml()
+        base.width_ref=''; follower.layout_mode='AUTO';follower.width_ref='other'
+        form.gadgets=[base,follower,other]
+        with self.assertRaisesRegex(ValueError,'直前'): form.pml()
+        form.gadgets=[follower]
+        with self.assertRaises(ValueError): form.pml()
+        form.gadgets=[base,other];other.kind='toggle';other.width_ref='base'
+        with self.assertRaisesRegex(ValueError,'幅参照'): form.pml()
+
     def test_malformed_project_field_types_are_rejected(self):
         base=json.loads(Form(gadgets=[Gadget(callback='run')]).dumps())
         for key,value in [('body',123),('parent',123),('label',None),('items','ABC'),('item_commands',[123]),('width','10')]:
@@ -182,6 +232,24 @@ class GuiTests(unittest.TestCase):
     def setUpClass(cls): cls.app=QApplication.instance() or QApplication([])
     def setUp(self): self.w=Window(); self.w.show(); self.app.processEvents()
     def tearDown(self): self.w.dirty=False; self.w.close(); self.app.processEvents()
+
+    def test_relative_controls_preview_and_rename(self):
+        self.w.form=Form(gadgets=[Gadget(name='base',x=10,y=5),Gadget(name='follow',y=8)])
+        self.w.selected=1;self.w.refresh()
+        self.w.fields['layout_mode'].setCurrentText('RELATIVE')
+        follower=self.w.form.gadgets[1]
+        self.assertEqual((follower.xref,follower.yref),('base','base'))
+        self.assertFalse(self.w.fields['x'].isEnabled())
+        self.w.fields['width_ref'].setCurrentIndex(self.w.fields['width_ref'].findData('base'))
+        self.assertFalse(self.w.fields['width'].isEnabled())
+        self.w.selected=0;self.w.refresh()
+        editor=self.w.fields['name'];editor.selectAll();QTest.keyClicks(editor,'renamed')
+        self.assertEqual((follower.xref,follower.yref,follower.width_ref),('renamed',)*3)
+        self.w.fields['x'].setValue(12)
+        item=next(item for item in self.w.scene.items() if item.data(0)==1)
+        self.assertAlmostEqual(item.pos().x(),12*SX)
+        self.assertAlmostEqual(item.pos().y(),6.5*SY)
+        self.assertEqual(Form.loads(self.w.form.dumps()).gadgets[1].xref,'renamed')
 
     def test_ctrl_s_saves_current_line_edit_without_focus_change(self):
         self.w.add('button')

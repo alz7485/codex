@@ -18,6 +18,16 @@ LABELS = {'button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト
 SX, SY = 10, 26
 
 
+def preview_geometry(form, gadget):
+    try: return form.geometry(gadget)
+    except ValueError: return gadget.x, gadget.y, gadget.width, gadget.height
+
+
+def preview_offset(form, gadget):
+    try: return form.offset(gadget)
+    except ValueError: return 0, 0
+
+
 class Item(QGraphicsObject):
     moved = Signal()
     pageChosen = Signal(str)
@@ -25,14 +35,15 @@ class Item(QGraphicsObject):
     def __init__(self, gadget, form):
         super().__init__()
         self.gadget, self.form = gadget, form
-        self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable |
-                      QGraphicsItem.ItemSendsGeometryChanges)
-        ox, oy = form.offset(gadget)
-        self.setPos((gadget.x + ox) * SX, (gadget.y + oy) * SY)
+        self.setFlags(QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
+        if gadget.layout_mode == 'ABSOLUTE': self.setFlag(QGraphicsItem.ItemIsMovable)
+        ox, oy = preview_offset(form, gadget)
+        x, y, self._width, self._height = preview_geometry(form, gadget)
+        self.setPos((x + ox) * SX, (y + oy) * SY)
         self.setZValue(len(form.descendants(gadget.name)) * -1 if gadget.kind == 'frame' else 1)
 
     def boundingRect(self):
-        return QRectF(0, 0, self.gadget.width * SX, self.gadget.height * SY)
+        return QRectF(0, 0, self._width * SX, self._height * SY)
 
     def shape(self):
         path = QPainterPath(); rect = self.boundingRect()
@@ -45,7 +56,7 @@ class Item(QGraphicsObject):
         if g.kind == 'frame' and g.frame_style == 'TABSET' and 0 <= event.pos().y() < 26:
             pages = self.form.children(g.name)
             if pages:
-                index = min(len(pages)-1, max(0,int(event.pos().x() / (g.width * SX / len(pages)))))
+                index = min(len(pages)-1, max(0,int(event.pos().x() / (self._width * SX / len(pages)))))
                 self.pageChosen.emit(pages[index].name); event.accept(); return
         super().mousePressEvent(event)
 
@@ -93,15 +104,16 @@ class Item(QGraphicsObject):
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemPositionChange and self.scene():
             g = self.gadget
-            ox, oy = self.form.offset(g); parent = self.form.parent_gadget(g)
-            width, height = (parent.width, parent.height) if parent else (self.form.width, self.form.height)
-            value.setX(ox * SX + max(0, min(round((value.x()/SX - ox)*2)/2, width-g.width))*SX)
+            ox, oy = preview_offset(self.form, g); parent = self.form.parent_gadget(g)
+            width, height = (preview_geometry(self.form,parent)[2], parent.height) if parent else (self.form.width, self.form.height)
+            value.setX(ox * SX + max(0, min(round((value.x()/SX - ox)*2)/2, width-self._width))*SX)
             value.setY(oy * SY + max(0, min(round((value.y()/SY - oy)*2)/2, height-g.height))*SY)
         return super().itemChange(change, value)
 
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
-        ox, oy = self.form.offset(self.gadget)
+        if self.gadget.layout_mode != 'ABSOLUTE': return
+        ox, oy = preview_offset(self.form, self.gadget)
         self.gadget.x = round(self.pos().x() / SX - ox, 2)
         self.gadget.y = round(self.pos().y() / SY - oy, 2)
         self.moved.emit()
@@ -181,13 +193,14 @@ class Window(QMainWindow):
         rl.addWidget(QLabel('選択部品のプロパティ'))
         self.props = QWidget(); self.prop_layout = QFormLayout(self.props)
         self.fields = {}
-        for key, label in [('name', '部品名'), ('label', '表示文字'), ('x', 'X'), ('y', 'Y'), ('width', '幅'), ('height', '高さ / 行数'), ('value_type', '入力型'), ('initial', '初期値'), ('callback', 'メソッド名'), ('command', 'CALL コマンド'), ('background', 'BACKGROUND (空欄＝背景色)'), ('orientation', 'LINE の向き'), ('frame_style', 'FRAME 形式'), ('parent', '親コンテナ')]:
-            if key in ('x', 'y', 'width', 'height'): w = self.number(0 if key in ('x', 'y') else 1, 300)
-            elif key == 'parent':
+        for key, label in [('name', '部品名'), ('label', '表示文字'), ('x', 'X'), ('y', 'Y'), ('width', '幅'), ('height', '高さ / 行数'), ('value_type', '入力型'), ('initial', '初期値'), ('callback', 'メソッド名'), ('command', 'CALL コマンド'), ('background', 'BACKGROUND (空欄＝背景色)'), ('orientation', 'LINE の向き'), ('frame_style', 'FRAME 形式'), ('parent', '親コンテナ'), ('layout_mode', '配置方式'), ('path', '配置方向'), ('halign', '水平整列'), ('valign', '垂直整列'), ('hgap', '横間隔'), ('vgap', '縦間隔'), ('xref', 'X 基準部品'), ('xedge', 'X 基準辺'), ('xanchor', '自部品の X 辺'), ('xoffset', 'X オフセット'), ('yref', 'Y 基準部品'), ('yedge', 'Y 基準辺'), ('yoffset', 'Y オフセット'), ('width_ref', '幅を揃える部品')]:
+            if key in ('x','y','width','height','hgap','vgap','xoffset','yoffset'):
+                w = self.number(-300 if key in ('xoffset','yoffset') else 0 if key in ('x','y','hgap','vgap') else 1, 300)
+            elif key in ('parent','xref','yref','width_ref'):
                 w = QComboBox(); w.addItem('(フォーム直下)', '')
-            elif key in ('value_type', 'orientation', 'frame_style'):
+            elif key in ('value_type','orientation','frame_style','layout_mode','path','halign','valign','xedge','yedge','xanchor'):
                 w = QComboBox()
-                w.addItems({'value_type': ['STRING', 'REAL'], 'orientation': ['HORIZ', 'VERT'], 'frame_style': ['FRAME', 'TABSET']}[key])
+                w.addItems({'value_type': ['STRING', 'REAL'], 'orientation': ['HORIZ', 'VERT'], 'frame_style': ['FRAME','TABSET'], 'layout_mode': ['ABSOLUTE','AUTO','RELATIVE'], 'path': ['DOWN','RIGHT','UP','LEFT'], 'halign': ['LEFT','CENTRE','RIGHT'], 'valign': ['TOP','CENTRE','BOTTOM'], 'xedge': ['XMIN','XMAX'], 'yedge': ['YMIN','YMAX'], 'xanchor': ['LEFT','RIGHT']}[key])
             else: w = QLineEdit()
             self.fields[key] = w; self.prop_layout.addRow(label, w); self.connect_field(w, self.update_gadget)
         self.choices = QPlainTextEdit(); self.choices.setMaximumHeight(100)
@@ -265,6 +278,21 @@ class Window(QMainWindow):
                 combo.addItem(g.name, g.name)
         if gadget.parent and combo.findData(gadget.parent) < 0: combo.addItem(gadget.parent, gadget.parent)
         combo.setCurrentIndex(max(0, combo.findData(gadget.parent)))
+        for key in ('xref','yref','width_ref'):
+            widget = self.fields[key]; widget.clear(); widget.addItem('(未指定)', '')
+            for g in self.form.children(gadget.parent):
+                if g is not gadget: widget.addItem(g.name,g.name)
+            value = getattr(gadget,key)
+            if value and widget.findData(value) < 0: widget.addItem(value,value)
+            widget.setCurrentIndex(max(0,widget.findData(value)))
+
+    def enable_layout_fields(self, gadget):
+        mode = gadget.layout_mode
+        for key in ('x','y'): self.fields[key].setEnabled(mode == 'ABSOLUTE')
+        for key in ('path','halign','valign','hgap','vgap'): self.fields[key].setEnabled(mode == 'AUTO')
+        for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): self.fields[key].setEnabled(mode == 'RELATIVE')
+        self.fields['width_ref'].setEnabled(gadget.kind not in ('toggle','option'))
+        self.fields['width'].setEnabled(not gadget.width_ref)
 
     def apply_page_visibility(self):
         if self.selected is not None and self.selected < len(self.form.gadgets):
@@ -302,11 +330,17 @@ class Window(QMainWindow):
         self.checkpoint(); g = self.form.gadgets[self.selected]
         old_name = g.name
         for key, w in self.fields.items():
-            value = w.currentData() if key == 'parent' else w.value() if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
+            value = w.currentData() if key in ('parent','xref','yref','width_ref') else w.value() if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
             setattr(g, key, value)
         if old_name != g.name:
             for child in self.form.gadgets:
-                if child.parent.lower() == old_name.lower(): child.parent = g.name
+                for key in ('parent','xref','yref','width_ref'):
+                    if getattr(child,key).lower() == old_name.lower(): setattr(child,key,g.name)
+        if g.layout_mode == 'RELATIVE':
+            siblings = [other for other in self.form.children(g.parent) if other is not g]
+            if siblings:
+                if not g.xref: g.xref = siblings[0].name
+                if not g.yref: g.yref = siblings[0].name
         choices = self.choices.toPlainText()
         g.items = choices.split('\n') if choices else []; g.body = self.body.toPlainText()
         if g.kind == 'option':
@@ -341,8 +375,9 @@ class Window(QMainWindow):
         if self.selected is not None and self.selected < len(self.form.gadgets):
             self.objects.setCurrentRow(self.selected); g = self.form.gadgets[self.selected]
             self.populate_parents(g)
+            self.enable_layout_fields(g)
             for key, w in self.fields.items():
-                if key == 'parent': continue
+                if key in ('parent','xref','yref','width_ref'): continue
                 value = getattr(g, key)
                 if isinstance(w, QDoubleSpinBox): w.setValue(value)
                 elif isinstance(w, QComboBox): w.setCurrentText(value)
@@ -385,8 +420,9 @@ class Window(QMainWindow):
             self.objects.setCurrentRow(self.selected)
             g = self.form.gadgets[self.selected]
             self.populate_parents(g)
+            self.enable_layout_fields(g)
             for key, w in self.fields.items():
-                if key == 'parent': continue
+                if key in ('parent','xref','yref','width_ref'): continue
                 v = getattr(g, key)
                 if isinstance(w, QDoubleSpinBox): w.setValue(v)
                 elif isinstance(w, QComboBox): w.setCurrentText(v)
@@ -440,7 +476,8 @@ class Window(QMainWindow):
             old = g.name; g.name = self.unique_name(g.kind); mapping[old.lower()] = g.name
             self.form.gadgets.append(g)
         for g in copies:
-            if g.parent.lower() in mapping: g.parent = mapping[g.parent.lower()]
+            for key in ('parent','xref','yref','width_ref'):
+                if getattr(g,key).lower() in mapping: setattr(g,key,mapping[getattr(g,key).lower()])
         self.selected = next(i for i,g in enumerate(self.form.gadgets) if g.name == mapping[original.name.lower()])
         self.refresh()
 
