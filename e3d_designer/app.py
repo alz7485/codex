@@ -261,15 +261,22 @@ class Window(QMainWindow):
         rl.addWidget(self.props)
         self.menu_group = QGroupBox('メニューバー'); menu_layout = QVBoxLayout(self.menu_group)
         menu_buttons = QHBoxLayout()
-        for label, handler in (('+ メニュー',self.add_menu),('メニュー削除',self.delete_menu)):
+        self.menu_actions = {}
+        for label, handler, key in (('+ メニュー',self.add_menu,None),('複製',self.duplicate_menu,'duplicate'),('削除',self.delete_menu,'delete')):
             button = QPushButton(label); button.clicked.connect(handler); menu_buttons.addWidget(button)
+            if key: self.menu_actions[key] = button
         menu_layout.addLayout(menu_buttons)
         self.menu_list = QListWidget(); self.menu_list.setMaximumHeight(85)
         self.menu_list.currentRowChanged.connect(self.choose_menu); menu_layout.addWidget(self.menu_list)
+        menu_order = QHBoxLayout()
+        for label, direction, key in (('← 左へ',-1,'left'),('右へ →',1,'right')):
+            button = QPushButton(label); button.clicked.connect(lambda checked=False, d=direction: self.move_menu(d))
+            self.menu_actions[key] = button; menu_order.addWidget(button)
+        menu_layout.addLayout(menu_order)
         menu_name_layout = QFormLayout(); self.menu_name = QLineEdit()
         self.menu_name.textEdited.connect(self.update_menu_name)
         menu_name_layout.addRow('メニュー名',self.menu_name); menu_layout.addLayout(menu_name_layout)
-        self.menu_items = QTableWidget(0,3); self.menu_items.setHorizontalHeaderLabels(['表示名','コマンド','削除'])
+        self.menu_items = QTableWidget(0,3); self.menu_items.setHorizontalHeaderLabels(['表示名','コマンド','操作'])
         self.menu_items.horizontalHeader().setSectionResizeMode(0,QHeaderView.Stretch)
         self.menu_items.horizontalHeader().setSectionResizeMode(1,QHeaderView.Stretch)
         self.menu_items.horizontalHeader().setSectionResizeMode(2,QHeaderView.ResizeToContents)
@@ -324,6 +331,9 @@ class Window(QMainWindow):
         self.menu_list.addItems([menu.name for menu in self.form.menus])
         self.menu_list.setCurrentRow(self.selected_menu if self.selected_menu is not None else -1)
         menu = self.current_menu()
+        for key in ('duplicate','delete'): self.menu_actions[key].setEnabled(menu is not None)
+        self.menu_actions['left'].setEnabled(menu is not None and self.selected_menu > 0)
+        self.menu_actions['right'].setEnabled(menu is not None and self.selected_menu < len(self.form.menus)-1)
         self.menu_name.setEnabled(menu is not None); self.menu_items.setEnabled(menu is not None)
         self.menu_add_item.setEnabled(menu is not None)
         name = menu.name if menu else ''
@@ -337,9 +347,14 @@ class Window(QMainWindow):
                 editor = QLineEdit(getattr(item,key))
                 editor.textEdited.connect(lambda text, r=row, k=key: self.update_menu_item(r,k,text))
                 self.menu_items.setCellWidget(row,column,editor)
-            remove = QPushButton('×')
-            remove.clicked.connect(lambda checked=False, r=row: self.delete_menu_item(r))
-            self.menu_items.setCellWidget(row,2,remove)
+            operations = QPushButton('操作'); popup = QMenu(operations)
+            for label, handler, enabled in (
+                    ('上へ',lambda checked=False, r=row: self.move_menu_item(r,-1),row > 0),
+                    ('下へ',lambda checked=False, r=row: self.move_menu_item(r,1),row < len(menu.items)-1),
+                    ('複製',lambda checked=False, r=row: self.duplicate_menu_item(r),True),
+                    ('削除',lambda checked=False, r=row: self.delete_menu_item(r),True)):
+                action = popup.addAction(label); action.triggered.connect(handler); action.setEnabled(enabled)
+            operations.setMenu(popup); self.menu_items.setCellWidget(row,2,operations)
 
     def choose_menu(self, index):
         if self.loading: return
@@ -362,6 +377,22 @@ class Window(QMainWindow):
         self.checkpoint(); self.form.menus.pop(self.selected_menu)
         self.refresh()
 
+    def duplicate_menu(self):
+        menu = self.current_menu()
+        if menu is None: return
+        self.checkpoint(); duplicate = copy.deepcopy(menu)
+        duplicate.name = self.unique_name('menu')
+        self.selected_menu += 1
+        self.form.menus.insert(self.selected_menu,duplicate); self.refresh()
+
+    def move_menu(self, direction):
+        if self.current_menu() is None or direction not in (-1,1): return
+        target = self.selected_menu + direction
+        if not 0 <= target < len(self.form.menus): return
+        self.checkpoint()
+        self.form.menus[self.selected_menu], self.form.menus[target] = self.form.menus[target], self.form.menus[self.selected_menu]
+        self.selected_menu = target; self.refresh()
+
     def update_menu_name(self, text):
         menu = self.current_menu()
         if self.loading or menu is None: return
@@ -381,6 +412,18 @@ class Window(QMainWindow):
         menu = self.current_menu()
         if menu is None or not 0 <= row < len(menu.items): return
         self.checkpoint(); menu.items.pop(row); self.refresh()
+
+    def duplicate_menu_item(self, row):
+        menu = self.current_menu()
+        if menu is None or not 0 <= row < len(menu.items): return
+        self.checkpoint(); menu.items.insert(row+1,copy.deepcopy(menu.items[row])); self.refresh()
+
+    def move_menu_item(self, row, direction):
+        menu = self.current_menu()
+        if menu is None or direction not in (-1,1) or not 0 <= row < len(menu.items): return
+        target = row + direction
+        if not 0 <= target < len(menu.items): return
+        self.checkpoint(); menu.items[row],menu.items[target] = menu.items[target],menu.items[row]; self.refresh()
 
     def update_variables(self):
         if self.loading: return

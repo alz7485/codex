@@ -348,6 +348,51 @@ class GuiTests(unittest.TestCase):
         self.w.undo();self.assertEqual(len(self.w.form.menus),1)
         self.w.redo();self.assertEqual(self.w.form.menus,[])
 
+    def test_menu_item_actions_reorder_copy_and_roundtrip(self):
+        self.w.form=Form(menus=[Menu(name='tools',items=[MenuItem('A','runA'),MenuItem('B','runB')])])
+        self.w.refresh()
+        actions=self.w.menu_items.cellWidget(0,2).menu().actions()
+        self.assertFalse(actions[0].isEnabled())
+        actions[1].trigger()
+        self.assertEqual([item.label for item in self.w.form.menus[0].items],['B','A'])
+        self.assertEqual([action.text() for action in self.w.preview_menus[0].actions()],['B','A'])
+        pml=self.w.form.pml();self.assertLess(pml.index("add 'B'"),pml.index("add 'A'"))
+        self.w.menu_items.cellWidget(1,2).menu().actions()[2].trigger()
+        self.assertEqual([item.label for item in self.w.form.menus[0].items],['B','A','A'])
+        copied=self.w.menu_items.cellWidget(2,0);copied.setFocus();copied.selectAll();QTest.keyClicks(copied,'Copy')
+        self.assertEqual(self.w.form.menus[0].items[1].label,'A')
+        self.assertEqual(Form.loads(self.w.form.dumps()).menus[0].items[2],MenuItem('Copy','runA'))
+        self.w.menu_items.cellWidget(2,2).menu().actions()[3].trigger()
+        self.assertEqual(len(self.w.form.menus[0].items),2)
+        self.w.undo();self.assertEqual(self.w.form.menus[0].items[2].label,'Copy')
+
+    def test_menu_duplicate_order_controls_and_undo(self):
+        self.assertFalse(self.w.menu_actions['duplicate'].isEnabled())
+        self.w.form=Form(gadgets=[Gadget(name='menu1')],menus=[Menu(name='tools',items=[MenuItem('A','runA')]),Menu(name='other')])
+        self.w.refresh()
+        self.assertFalse(self.w.menu_actions['left'].isEnabled())
+        QTest.mouseClick(self.w.menu_actions['duplicate'],Qt.LeftButton)
+        self.assertEqual([menu.name for menu in self.w.form.menus],['tools','menu2','other'])
+        self.assertEqual(self.w.selected_menu,1)
+        copied=self.w.menu_items.cellWidget(0,1);copied.setFocus();QTest.keyClicks(copied,'Changed')
+        self.assertEqual(self.w.form.menus[0].items[0].command,'runA')
+        QTest.mouseClick(self.w.menu_actions['right'],Qt.LeftButton)
+        self.assertEqual(self.w.selected_menu,2)
+        self.assertFalse(self.w.menu_actions['right'].isEnabled())
+        self.assertEqual([action.text() for action in self.w.preview_menu_bar.actions()],['tools','other','menu2'])
+        self.w.undo();self.assertEqual([menu.name for menu in self.w.form.menus],['tools','menu2','other'])
+        self.w.redo();self.assertEqual([menu.name for menu in Form.loads(self.w.form.dumps()).menus],['tools','other','menu2'])
+
+    def test_menu_reorder_boundaries_do_not_change_history(self):
+        self.w.move_menu(1);self.w.move_menu_item(0,1);self.w.duplicate_menu_item(0)
+        self.assertEqual(self.w.history,[])
+        self.w.add_menu();self.w.add_menu_item()
+        self.w.dirty=False;before=len(self.w.history)
+        for direction in (-1,1,2):
+            self.w.move_menu(direction);self.w.move_menu_item(0,direction)
+        self.w.move_menu_item(-1,1);self.w.duplicate_menu_item(-1)
+        self.assertEqual(len(self.w.history),before);self.assertFalse(self.w.dirty)
+
     def test_menu_switching_rename_and_unique_names(self):
         self.w.add('button');self.w.form.gadgets[0].name='menu1';self.w.refresh()
         self.w.add_menu();self.assertEqual(self.w.form.menus[0].name,'menu2')
