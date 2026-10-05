@@ -541,8 +541,6 @@ class Window(QMainWindow):
         note = QLabel('プレビューの見出しはメニュー名です。項目のコマンドは E3D で実行されます。')
         note.setWordWrap(True); menu_layout.addWidget(note)
         rl.insertWidget(rl.indexOf(self.props)-1,self.menu_group)
-        self.encoding = QComboBox(); self.encoding.addItems(['utf-8', 'cp932'])
-        rl.addWidget(QLabel('PML 出力文字コード')); rl.addWidget(self.encoding)
         rl.addWidget(QLabel('text / toggle / option の高さは E3D 側で決まります。\n選択肢は OPTION / LIST / COMBO 用です。\n処理コードの構文は E3D で確認してください。'))
         rl.addWidget(QLabel('表示後のプログラム')); rl.addWidget(self.after_show)
         rl.addWidget(QLabel('DEFAULT メソッドの追加処理（初期値は自動出力）')); rl.addWidget(self.default_body)
@@ -611,7 +609,7 @@ class Window(QMainWindow):
         except ValueError as error:self.statusBar().showMessage(str(error));return
         filename,_=QFileDialog.getSaveFileName(self,'分岐マクロのひな形を保存','code1.txt','マクロ (*.txt *.mac);;すべて (*)')
         if not filename:return
-        try:Path(filename).write_text(text,encoding=self.encoding.currentText())
+        try:atomic_write(Path(filename),text.replace('\n','\r\n').encode('cp932'))
         except (OSError,UnicodeError) as error:self.statusBar().showMessage(str(error));return
         self.statusBar().showMessage('分岐マクロのひな形を保存しました。各分岐の処理をファイルで編集してください。')
 
@@ -1334,7 +1332,7 @@ class Window(QMainWindow):
     def export(self):
         try:
             if self.variable_error: raise ValueError('変数欄を修正してください。')
-            data = self.form.pml().replace('\n', '\r\n').encode(self.encoding.currentText())
+            data = self.form.pml().replace('\n', '\r\n').encode('cp932')
         except (ValueError, UnicodeError) as e:
             QMessageBox.warning(self, '出力エラー', str(e)); return
         name, _ = QFileDialog.getSaveFileName(self, 'PML を出力', self.form.name.lower() + '.pmlfrm', 'PML form (*.pmlfrm)')
