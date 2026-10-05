@@ -4,10 +4,11 @@ import tempfile
 import unittest
 import json
 from dataclasses import asdict
+from unittest.mock import patch
 from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication,QScrollArea
 from e3d_designer.app import Window,Item,SX,SY,preview_offset
 from e3d_designer.clipboard import clone_subtree
 from e3d_designer.model import Form,Gadget,Menu,MenuItem
@@ -247,6 +248,53 @@ class AuditGuiRegressionTests(unittest.TestCase):
         w.choose_row(0);w.fields['width'].setValue(50);w.fields['height'].setValue(14)
         self.assertEqual(w.form.geometry(w.form.named(page)),(0,0,50,14))
         w.form.validate()
+
+    def test_double_click_canvas_and_list_rename_updates_references(self):
+        w=self.w
+        self.load(Form(gadgets=[Gadget(name='first',x=2,y=2),Gadget(name='second',x=20,y=2)],default_body='!this.first.val = 1'))
+        item=next(item for item in w.scene.items() if isinstance(item,Item) and item.gadget.name=='first')
+        point=w.view.mapFromScene(item.mapToScene(item.boundingRect().center()))
+        with patch('e3d_designer.app.QInputDialog.getText',return_value=('renamed',True)) as dialog:
+            QTest.mouseDClick(w.view.viewport(),Qt.LeftButton,Qt.NoModifier,point)
+            self.app.processEvents();dialog.assert_called_once()
+        self.assertEqual(w.form.gadgets[0].name,'renamed')
+        self.assertEqual(w.form.default_body,'!this.renamed.val = 1')
+        point=w.objects.visualItemRect(w.objects.item(0)).center()
+        with patch('e3d_designer.app.QInputDialog.getText',return_value=('listed',True)) as dialog:
+            QTest.mouseClick(w.objects.viewport(),Qt.LeftButton,Qt.NoModifier,point)
+            QTest.mouseDClick(w.objects.viewport(),Qt.LeftButton,Qt.NoModifier,point)
+            self.app.processEvents();dialog.assert_called_once()
+        self.assertEqual(w.form.gadgets[0].name,'listed')
+        self.assertEqual(w.form.default_body,'!this.listed.val = 1')
+        w.undo();self.assertEqual(w.form.gadgets[0].name,'renamed')
+        original=w.form.dumps();history=len(w.history)
+        for result in (('second',True),('',True),('ignored',False)):
+            with patch('e3d_designer.app.QInputDialog.getText',return_value=result):w.edit_object_name('renamed')
+            self.assertEqual(w.form.dumps(),original);self.assertEqual(len(w.history),history)
+
+    def test_inspector_pages_and_separate_menu_editor(self):
+        w=self.w;w.add('button')
+        self.assertEqual([w.inspector_tabs.tabText(i) for i in range(w.inspector_tabs.count())],['部品','フォーム','処理'])
+        self.assertEqual([w.props.tabText(i) for i in range(w.props.count())],['基本','配置','内容','動作'])
+        self.assertEqual(w.inspector_tabs.findChildren(QScrollArea),[])
+        self.assertFalse(w.menu_dialog.isVisible())
+        w.palette_buttons['menubar'].click();self.app.processEvents()
+        self.assertTrue(w.menu_dialog.isVisible())
+        self.assertIs(w.menu_group.parentWidget(),w.menu_dialog)
+        self.assertNotIn(w.menu_group,w.inspector_tabs.findChildren(type(w.menu_group)))
+        w.add_menu_item();w.menu_dialog.close()
+        original=w.form.dumps();history=len(w.history)
+        w.palette_buttons['menubar'].click();self.app.processEvents()
+        self.assertEqual(w.form.dumps(),original);self.assertEqual(len(w.history),history)
+        w.dirty=False;w.close();self.assertFalse(w.menu_dialog.isVisible())
+
+    def test_inspector_fits_requested_window_height_for_gadget_categories(self):
+        w=self.w
+        for kind in ('button','text','list','option','view','container','slider','textpane'):
+            with self.subTest(kind=kind):
+                w.add(kind);self.app.processEvents()
+                self.assertLessEqual(w.height(),880)
+                self.assertLess(w.inspector_tabs.minimumSizeHint().height(),750)
 
 
 if __name__ == '__main__':unittest.main()

@@ -11,8 +11,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QFormLayout, QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
-    QScrollArea, QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
-    QGridLayout, QTabBar, QDialog, QDialogButtonBox)
+    QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
+    QGridLayout, QTabBar, QDialog, QDialogButtonBox, QTabWidget, QInputDialog)
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
 from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size
@@ -85,6 +85,39 @@ class PropertyLayout(QGridLayout):
             used.add(id(editor));row += 1
 
 
+class PropertyPages:
+    """Keep existing property synchronization shared across compact tab pages."""
+    def __init__(self,tabs):
+        self.pages={};self.owners={};self.current='基本';self.batching=False
+        for title in ('基本','配置','内容','動作'):
+            page=QWidget();layout=QVBoxLayout(page);content=QWidget()
+            grid=PropertyLayout(content);layout.addWidget(content);layout.addStretch()
+            tabs.addTab(page,title);self.pages[title]=grid
+
+    def addRow(self,label,editor=None,pair=None):
+        actual=editor if editor is not None else label
+        grid=self.pages[self.current];self.owners[actual]=grid
+        grid.addRow(label,editor,pair)
+
+    def setRowVisible(self,editor,visible):
+        grid=self.owners[editor];grid.batching=self.batching;grid.setRowVisible(editor,visible)
+        if not self.batching:self.activate_page(grid)
+
+    def setCaption(self,editor,text):self.owners[editor].setCaption(editor,text)
+
+    @property
+    def pending(self):return any(grid.pending for grid in self.pages.values())
+
+    def reflow(self):
+        for grid in self.pages.values():
+            grid.batching=False;grid.reflow();self.activate_page(grid)
+
+    @staticmethod
+    def activate_page(grid):
+        grid.activate();content=grid.parentWidget();content.updateGeometry()
+        page=content.parentWidget();page.layout().activate();page.updateGeometry()
+
+
 def preview_offset(form, gadget):
     try: return form.offset(gadget)
     except ValueError: return 0, 0
@@ -95,6 +128,7 @@ class Item(QGraphicsObject):
     resizing = Signal()
     resized = Signal(object)
     pageChosen = Signal(str)
+    renameRequested = Signal(str)
 
     def __init__(self, gadget, form):
         super().__init__()
@@ -133,6 +167,11 @@ class Item(QGraphicsObject):
                 index = min(len(pages)-1, max(0,int(event.pos().x() / (self._width * SX / len(pages)))))
                 self.pageChosen.emit(pages[index].name); event.accept(); return
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self,event):
+        if event.button()==Qt.LeftButton:
+            self.renameRequested.emit(self.gadget.name);event.accept();return
+        super().mouseDoubleClickEvent(event)
 
     def handles(self):
         if not self.isSelected() or self.form.is_tab_page(self.gadget): return {}
@@ -370,7 +409,7 @@ class Window(QMainWindow):
             b = QPushButton(f'{icon} {label}'); b.setFixedHeight(28)
             b.setStyleSheet('font-size: 12px; padding: 2px 4px;')
             if key == 'menubar':
-                b.setToolTip('メニューバーにメニューを追加し、編集欄を表示します。')
+                b.setToolTip('別ウィンドウでメニューバーを編集します。')
                 b.clicked.connect(self.add_palette_menu)
             else:
                 b.setToolTip(f'{LABELS[kind]} を追加' + (f' ({direction})' if direction else ''))
@@ -381,6 +420,7 @@ class Window(QMainWindow):
         ll.addWidget(QLabel('部品一覧'))
         self.objects = ObjectList(); self.objects.currentRowChanged.connect(self.choose_row)
         self.objects.orderCommitted.connect(self.reorder_objects); ll.addWidget(self.objects)
+        self.objects.itemDoubleClicked.connect(lambda item:self.request_object_rename(self.form.gadgets[item.data(Qt.UserRole)].name))
         self.objects.setToolTip('ドラッグで部品の順序を変更します（親コンテナは変わりません）。')
         left.setMinimumWidth(220); columns.addWidget(left)
         middle = QSplitter(Qt.Vertical)
@@ -427,7 +467,8 @@ class Window(QMainWindow):
         legend=QLabel('  '.join(f'<span style="color:{COLORS[kind]}">{label}</span>' for kind,label in (('command','コマンド'),('object','オブジェクト'),('variable','変数'),('string','文字列'),('number','数値・論理値'),('method','メソッド'),('comment','コメント'))))
         legend.setWordWrap(True);code_layout.addWidget(legend);code_layout.addWidget(self.code)
         middle.addWidget(code_panel); middle.setSizes([550, 230]); columns.addWidget(middle)
-        right = QWidget(); rl = QVBoxLayout(right)
+        right = QTabWidget();self.inspector_tabs=right
+        form_page=QWidget();rl=QVBoxLayout(form_page);right.addTab(form_page,'フォーム')
         self.form_fields = QFormLayout()
         self.fname = QLineEdit(); self.ftitle = QLineEdit()
         self.fw, self.fh = self.number(1, 300), self.number(1, 300)
@@ -455,8 +496,10 @@ class Window(QMainWindow):
             self.form_callbacks[event] = editor;lifecycle_layout.addRow(event.upper(),editor)
             editor.textEdited.connect(lambda text,e=event:self.update_form_callback(e,text))
         rl.addWidget(lifecycle)
+        rl.addStretch()
+        part_page=QWidget();rl=QVBoxLayout(part_page);right.insertTab(0,part_page,'部品');right.setCurrentIndex(0)
         rl.addWidget(QLabel('選択部品のプロパティ'))
-        self.props = QWidget(); self.prop_layout = PropertyLayout(self.props)
+        self.props = QTabWidget(); self.prop_layout = PropertyPages(self.props)
         self.fields = {}
         pairs = {}
         for first,second in (('name','label'),('x','y'),('width','height'),('value_type','initial'),('macro_flag','macro_value'),
@@ -486,6 +529,10 @@ class Window(QMainWindow):
             if isinstance(w,QComboBox):
                 w.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
                 w.setMinimumContentsLength(8)
+            layout_keys={'parent','layout_mode','path','halign','valign','hgap','vgap','xref','xedge','xanchor','xoffset','yref','yedge','yoffset','width_ref'}
+            content_keys={'selection_mode','list_mode','table_method','combo_keyword','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','view_aspect','channels','assembly','namespace','control_type','pixmap_path','database'}
+            action_keys={'callback','command','popup_menu','action_mode','macro_path','macro_flag','macro_value'}
+            self.prop_layout.current='配置' if key in layout_keys else '内容' if key in content_keys else '動作' if key in action_keys else '基本'
             self.fields[key] = w; self.prop_layout.addRow(label, w,pairs.get(key)); self.connect_field(w, self.update_gadget)
         self.fields['action_mode'].setItemData(0,'CODE');self.fields['action_mode'].setItemData(1,'MACRO')
         self.fields['action_mode'].setItemText(0,'手入力のコマンド / メソッド')
@@ -493,15 +540,18 @@ class Window(QMainWindow):
         self.fields['macro_flag'].setPlaceholderText('例: buttonFlag（!! は不要・空欄ならフラグなし）')
         self.fields['macro_value'].setPlaceholderText('例: A / B')
         self.macro_browse=QPushButton('📁 マクロファイルを選択');self.macro_browse.clicked.connect(self.choose_macro)
+        self.prop_layout.current='動作'
         self.prop_layout.addRow(self.macro_browse)
         self.macro_template=QPushButton('📄 分岐マクロのひな形を保存');self.macro_template.clicked.connect(self.save_macro_template)
         self.prop_layout.addRow(self.macro_template)
         self.choose_background=QPushButton('🎨 色番号表から選択');self.choose_background.clicked.connect(self.pick_background)
+        self.prop_layout.current='基本'
         self.prop_layout.addRow(self.choose_background)
         self.gadget_comment=QPlainTextEdit();self.gadget_comment.setFixedHeight(64)
         self.gadget_comment.setPlaceholderText('部品の用途や注意点。出力時に -- コメントとして付けます。')
         self.gadget_comment.textChanged.connect(self.update_gadget);self.prop_layout.addRow('部品のコメント',self.gadget_comment)
         self.browse_image = QPushButton('📁 画像ファイルを選択');self.browse_image.clicked.connect(self.choose_image)
+        self.prop_layout.current='内容'
         self.prop_layout.addRow(self.browse_image)
         self.fixed_font = QCheckBox('FIXCHARS：等幅フォント');self.fixed_font.toggled.connect(self.update_gadget)
         self.prop_layout.addRow(self.fixed_font)
@@ -569,15 +619,17 @@ class Window(QMainWindow):
         menu_layout.addWidget(self.menu_add_item)
         note = QLabel('プレビューの見出しはメニュー名です。項目のコマンドは E3D で実行されます。')
         note.setWordWrap(True); menu_layout.addWidget(note)
-        rl.insertWidget(rl.indexOf(self.props)-1,self.menu_group)
-        rl.addWidget(QLabel('text / toggle / option の高さは E3D 側で決まります。\n選択肢は OPTION / LIST / COMBO 用です。\n処理コードの構文は E3D で確認してください。'))
+        self.menu_dialog=QDialog(self);self.menu_dialog.setWindowTitle('メニューバーの編集');self.menu_dialog.resize(760,620)
+        menu_dialog_layout=QVBoxLayout(self.menu_dialog);menu_dialog_layout.addWidget(self.menu_group)
+        close_menu=QPushButton('閉じる');close_menu.clicked.connect(self.menu_dialog.close);menu_dialog_layout.addWidget(close_menu)
+        rl.addStretch()
+        method_page=QWidget();rl=QVBoxLayout(method_page);right.addTab(method_page,'処理')
         rl.addWidget(QLabel('表示後のプログラム')); rl.addWidget(self.after_show)
         rl.addWidget(QLabel('DEFAULT メソッドの追加処理（初期値は自動出力）')); rl.addWidget(self.default_body)
         rl.addWidget(QLabel('選択部品のメソッド処理')); rl.addWidget(self.body)
         rl.addStretch()
-        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(right); scroll.setMinimumWidth(320)
-        self.property_scroll = scroll
-        columns.addWidget(scroll); columns.setSizes([220, 780, 360])
+        right.setMinimumWidth(360)
+        columns.addWidget(right); columns.setSizes([220, 780, 380])
         outer.addWidget(columns, 1); self.setCentralWidget(root)
         self.pml_highlighters=[]
         for editor in (self.code,self.after_show,self.default_body,self.body,self.view_code,self.choice_commands):
@@ -733,9 +785,23 @@ class Window(QMainWindow):
         self.loading = False
 
     def add_palette_menu(self):
-        self.add_menu()
-        self.property_scroll.ensureWidgetVisible(self.menu_group,0,0)
+        if not self.form.menus:self.add_menu()
+        self.menu_dialog.show();self.menu_dialog.raise_();self.menu_dialog.activateWindow()
         self.menu_name.setFocus()
+
+    def request_object_rename(self,name):
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0,lambda:self.edit_object_name(name))
+
+    def edit_object_name(self,name):
+        index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name),None)
+        if index is None or self._closing:return
+        text,accepted=QInputDialog.getText(self,'オブジェクト名の変更','新しいオブジェクト名',QLineEdit.Normal,name)
+        if not accepted or text==name:return
+        from .names import rename
+        try:candidate=rename(self.form,'gadget',index,text)
+        except ValueError as error:self.statusBar().showMessage(str(error));return
+        self.checkpoint();self.form=candidate;self.selected=index;self.refresh()
         self.menu_name.selectAll()
 
     def add_menu(self):
@@ -1235,6 +1301,7 @@ class Window(QMainWindow):
         for index, g in enumerate(self.form.gadgets):
             item = Item(g, self.form); item.setData(0, index)
             item.pageChosen.connect(self.choose_page)
+            item.renameRequested.connect(self.request_object_rename)
             item.resizing.connect(self.resize_preview); item.resized.connect(self.resize_committed)
             item.moved.connect(self.move_committed); self.scene.addItem(item)
             item.setSelected(index == self.selected)
@@ -1262,6 +1329,7 @@ class Window(QMainWindow):
             self.fields['label'].setEnabled(g.kind != 'line'); self.fields['orientation'].setEnabled(g.kind == 'line'); self.fields['frame_style'].setEnabled(g.kind == 'frame'); self.fields['callback'].setEnabled(g.kind not in ('paragraph', 'line', 'frame', 'option')); self.fields['command'].setEnabled(g.kind in ('toggle', 'text', 'button')); self.fields['background'].setEnabled(g.kind in ('paragraph', 'button', 'list')); self.body.setEnabled(bool(g.callback))
             self.sync_extra_editors(g, rebuild)
         else: self.selected = None; self.props.setEnabled(False); self.body.setEnabled(False)
+        self.props.setVisible(self.selected is not None and not self.form.is_tab_page(self.form.gadgets[self.selected]))
         self.loading = False
         try:
             if self.variable_error: raise ValueError('変数欄の 名前=初期値 の形式を修正してください。')
@@ -1335,6 +1403,7 @@ class Window(QMainWindow):
             self.sync_extra_editors(g)
         self.apply_page_visibility()
         self.props.setEnabled(self.selected is not None and not self.form.is_tab_page(self.form.gadgets[self.selected])); self.loading = False
+        self.props.setVisible(self.selected is not None and not self.form.is_tab_page(self.form.gadgets[self.selected]))
 
     def move_committed(self):
         # Items mutate coordinates only on release. Capture previous UI values for undo.
@@ -1541,6 +1610,7 @@ class Window(QMainWindow):
     def closeEvent(self, event):
         if self.confirm_discard():
             self._closing = True
+            self.menu_dialog.close()
             self.scene.blockSignals(True)
             event.accept()
         else: event.ignore()
