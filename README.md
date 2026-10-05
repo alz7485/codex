@@ -7,7 +7,7 @@ AVEVA E3D の PML ユーザーフォームを視覚的に設計する、日本�
 ![現在のフォームエディタ](docs/current-ui/finished-editor.png)
 
 基本操作は同梱の [USER_GUIDE.txt](USER_GUIDE.txt) にまとめています。
-アプリのアイコンは [PNG](e3d_designer/assets/app-icon.png) / [Windows ICO](e3d_designer/assets/app-icon.ico) を同梱し、ウィンドウとEXEに設定します。
+アプリのアイコンはZIP直下に [app-icon.png](app-icon.png) / [app-icon.ico](app-icon.ico) を同梱し、ウィンドウ用にも `e3d_designer/assets` に収録しています。`build_onedir.ps1` でアイコン付きのEXEをビルドできます。
 
 ## 起動 (Windows)
 

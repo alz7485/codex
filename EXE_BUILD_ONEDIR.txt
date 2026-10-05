@@ -4,6 +4,15 @@ Windows上でビルドしてください。Python 3.12（64bit）を使用しま
 ZIPを展開し、このテキストと run_designer.py があるフォルダーを
 PowerShellで開いて、以下を上から順に実行してください。
 
+自動ビルドする場合は、以下の1行で依存関係の導入・アイコン付きEXEの作成・
+サンプルと説明書のコピーを実行できます。
+
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build_onedir.ps1
+
+app-icon.ico と app-icon.png は、この手順書と同じフォルダーにも同梱しています。
+以前のコマンドやspecファイルで作成したEXEには自動反映されません。
+上のスクリプトまたは以下のアイコン付きコマンドで再ビルドしてください。
+
 1. ビルド用仮想環境の作成と依存パッケージのインストール
 
 py -3.12 -m venv .venv-build
@@ -19,6 +28,8 @@ py -3.12 -m venv .venv-build
 
 Copy-Item -Path .\examples -Destination .\dist\E3DFormDesigner\examples -Recurse -Force
 Copy-Item -Path .\EXE_BUILD_ONEDIR.txt -Destination .\dist\E3DFormDesigner\EXE_BUILD_ONEDIR.txt -Force
+Copy-Item -Path .\app-icon.ico -Destination .\dist\E3DFormDesigner\app-icon.ico -Force
+Copy-Item -Path .\app-icon.png -Destination .\dist\E3DFormDesigner\app-icon.png -Force
 
 New-Item -ItemType Directory -Path .\dist\E3DFormDesigner\e3d_designer -Force | Out-Null
 Copy-Item -Path .\e3d_designer\assets -Destination .\dist\E3DFormDesigner\e3d_designer\assets -Recurse -Force
@@ -34,6 +45,7 @@ Copy-Item -Path .\docs -Destination .\dist\E3DFormDesigner\docs -Recurse -Force
 
 dist\E3DFormDesigner\
   E3DFormDesigner.exe
+  app-icon.ico / app-icon.png
   _internal\              Python・PySide6・Qtなどの実行用ファイル
   examples\               JSON設計ファイルとPMLサンプル
   EXE_BUILD_ONEDIR.txt
