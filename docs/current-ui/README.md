@@ -41,3 +41,5 @@
 [外部マクロを呼び出すサンプル](../../examples/macro-launcher.json) / [分岐マクロのひな形](../../examples/macro-code1.mac)
 
 ![MAC出力先フォルダと部品コメント](output-comments.png)
+
+最新のフォーム枠・ハンドル・共通プロパティ: [form-canvas.png](form-canvas.png)。フォームタブは廃止し、選択に合わせてプロパティを表示します。

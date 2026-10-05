@@ -159,3 +159,32 @@ class MiniProperties(QDialog):
             candidate.validate()
         except ValueError as error:self.error.setText(str(error));return
         self.result_form=candidate;super().accept()
+
+
+class FormProperties(QDialog):
+    def __init__(self,parent,form):
+        super().__init__(parent);self.draft=copy.deepcopy(form);self.result_form=None
+        self.setWindowTitle('フォームの設定');self.setMinimumWidth(350)
+        layout=QVBoxLayout(self);fields=QFormLayout();layout.addLayout(fields)
+        self.name=QLineEdit(form.name);self.title=QLineEdit(form.title)
+        fields.addRow('フォーム名',self.name);fields.addRow('表示名',self.title)
+        self.width=QDoubleSpinBox();self.height=QDoubleSpinBox()
+        for widget,value,label in ((self.width,form.width,'WIDTH'),(self.height,form.height,'HEIGHT')):
+            widget.setRange(1,300);widget.setDecimals(1);widget.setSingleStep(.1);widget.setValue(value);widget.setProperty('baseline',widget.value());fields.addRow(label,widget)
+        self.docking=QComboBox()
+        for label,value in (('通常ダイアログ','NONE'),('右ドッキング','RIGHT'),('左ドッキング','LEFT'),('上ドッキング','TOP'),('下ドッキング','BOTTOM'),('MAIN フォーム','MAIN')):self.docking.addItem(label,value)
+        self.docking.setCurrentIndex(self.docking.findData('MAIN' if form.form_type=='MAIN' else form.docking_side()))
+        fields.addRow('表示形式',self.docking)
+        self.error=QLabel();self.error.setWordWrap(True);layout.addWidget(self.error)
+        buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);layout.addWidget(buttons)
+    def exec(self):return super().exec()
+    def accept(self):
+        candidate=copy.deepcopy(self.draft);candidate.title=self.title.text()
+        for key in ('width','height'):
+            widget=getattr(self,key)
+            if widget.value()!=widget.property('baseline'):setattr(candidate,key,widget.value())
+        mode=self.docking.currentData();candidate.form_type='MAIN' if mode=='MAIN' else 'DIALOG'
+        candidate.dock_side='NONE' if mode=='MAIN' else mode;candidate.dock_right=candidate.dock_side=='RIGHT'
+        try:candidate=rename(candidate,'form',None,self.name.text());candidate.validate()
+        except ValueError as error:self.error.setText(str(error));return
+        self.result_form=candidate;super().accept()

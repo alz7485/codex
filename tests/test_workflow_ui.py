@@ -24,7 +24,7 @@ class WorkflowUiTests(unittest.TestCase):
 
     def test_view_switches_do_not_change_design_or_history(self):
         w=self.w;original=w.form.dumps()
-        self.assertEqual(w.current_workflow,'form');self.assertEqual(w.inspector_tabs.currentIndex(),1)
+        self.assertEqual(w.current_workflow,'form');self.assertEqual(w.inspector_tabs.currentIndex(),0)
         for stage in ('layout','action','output','form'):
             w.workflow_buttons[stage].click();self.app.processEvents()
             self.assertEqual(w.current_workflow,stage)
@@ -55,7 +55,7 @@ class WorkflowUiTests(unittest.TestCase):
         w.workflow_buttons['action'].click();self.assertEqual(w.props.currentIndex(),3)
         w.fields['callback'].setFocus();w.fields['callback'].selectAll();QTest.keyClicks(w.fields['callback'],'RUN')
         self.assertTrue(w.edit_method_button.isVisible());w.edit_method_button.click()
-        self.assertEqual(w.inspector_tabs.currentIndex(),2)
+        self.assertEqual(w.inspector_tabs.currentIndex(),1)
         w.body.setPlainText('$p |Run|')
         w.workflow_buttons['output'].click()
         self.assertIn('問題なし',w.output_validation.text())
@@ -146,7 +146,7 @@ class WorkflowUiTests(unittest.TestCase):
         w=self.w;w.form=Form(gadgets=[Gadget(name='legacy')]);w.selected=0;w.refresh()
         before=w.form.dumps();w.set_workflow('action');w.edit_method_button.click()
         self.assertEqual(w.form.gadgets[0].callback,'on_legacy')
-        self.assertEqual(w.inspector_tabs.currentIndex(),2)
+        self.assertEqual(w.inspector_tabs.currentIndex(),1)
         self.assertEqual(len(w.history),1);w.undo();self.assertEqual(w.form.dumps(),before)
 
     def test_method_edit_does_not_replace_existing_direct_call(self):

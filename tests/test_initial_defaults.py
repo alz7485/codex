@@ -58,7 +58,7 @@ class InitialTests(unittest.TestCase):
                 window.undo();self.assertEqual(window.form.gadgets[-1].initial,'')
             self.assertLessEqual(window.default_body.maximumHeight(),64)
             self.assertLessEqual(window.body.maximumHeight(),64)
-            self.assertEqual(window.inspector_tabs.tabText(2),'処理')
-            self.assertIs(window.default_body.parentWidget(),window.inspector_tabs.widget(2))
+            self.assertEqual(window.inspector_tabs.tabText(1),'処理')
+            self.assertIs(window.default_body.parentWidget(),window.inspector_tabs.widget(1))
         finally:
             app.clipboard().clear();window.dirty=False;window.close();app.processEvents()

@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QPoint, QEvent, QCoreApplication, QTimer, QModelI
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from e3d_designer.model import Form, Gadget, Menu, MenuItem, literal
-from e3d_designer.app import Window, atomic_write, SX, SY
+from e3d_designer.app import Window, atomic_write, SX, SY, Item
 
 
 class ModelTests(unittest.TestCase):
@@ -703,12 +703,12 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(len(self.w.form.gadgets),5)
         copied=self.w.form.gadgets[self.w.selected]
         self.assertEqual(len(self.w.form.children(copied.name)),1)
-        visible_names={item.gadget.name for item in self.w.scene.items() if item.isVisible()}
+        visible_names={item.gadget.name for item in self.w.scene.items() if isinstance(item,Item) and item.isVisible()}
         self.assertIn(copied.name,visible_names); self.assertNotIn('pageA',visible_names)
         self.w.delete(); self.assertEqual(len(self.w.form.gadgets),3)
         self.w.undo(); self.assertEqual(len(self.w.form.gadgets),5)
         self.w.choose_row(1)
-        visible_names={item.gadget.name for item in self.w.scene.items() if item.isVisible()}
+        visible_names={item.gadget.name for item in self.w.scene.items() if isinstance(item,Item) and item.isVisible()}
         self.assertIn('pageA',visible_names); self.assertNotIn(copied.name,visible_names)
         self.assertEqual(Form.loads(self.w.form.dumps()).gadgets[2].parent,'pageA')
 

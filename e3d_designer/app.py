@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
     QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
-    QGridLayout, QTabBar, QDialog, QDialogButtonBox, QTabWidget, QInputDialog, QToolButton, QButtonGroup)
+    QGridLayout, QTabBar, QDialog, QDialogButtonBox, QTabWidget, QInputDialog, QToolButton, QButtonGroup, QStackedWidget)
+from .form_item import FormItem
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
 from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size
@@ -413,10 +414,12 @@ class TableCell(QLineEdit):
 
 class Scene(QGraphicsScene):
     def drawBackground(self, painter, rect):
-        painter.fillRect(self.sceneRect(), QColor('#f8fafc'))
+        painter.fillRect(rect,QColor('#e8edf3'))
+        form=self.parent().form
+        painter.fillRect(QRectF(0,0,form.width*SX,form.height*SY),QColor('#f8fafc'))
         painter.setPen(QPen(QColor('#d9e2ec'), 1))
-        for x in range(0, int(self.width()), SX):
-            for y in range(0, int(self.height()), SY): painter.drawPoint(x, y)
+        for x in range(0,int(form.width*SX),SX):
+            for y in range(0,int(form.height*SY),SY):painter.drawPoint(x,y)
 
 
 class Window(QMainWindow):
@@ -568,7 +571,7 @@ class Window(QMainWindow):
         middle.addTab(code_panel,'生成コード・出力');columns.addWidget(middle)
         right = QTabWidget();self.inspector_tabs=right
         right.setStyleSheet(INSPECTOR_STYLE)
-        form_page=QWidget();rl=QVBoxLayout(form_page);right.addTab(form_page,'フォーム')
+        form_page=QWidget();rl=QVBoxLayout(form_page)
         self.form_fields = QFormLayout()
         self.fname = QLineEdit(); self.ftitle = QLineEdit()
         self.fname.setToolTip('自動設定済みです。管理しやすい名前にしたい場合だけ変更してください。')
@@ -605,7 +608,9 @@ class Window(QMainWindow):
             editor.textEdited.connect(lambda text,e=event:self.update_form_callback(e,text))
         rl.addWidget(lifecycle)
         rl.addStretch()
-        part_page=QWidget();rl=QVBoxLayout(part_page);right.insertTab(0,part_page,'部品');right.setCurrentIndex(0)
+        part_page=QWidget();rl=QVBoxLayout(part_page)
+        self.selection_stack=QStackedWidget();self.selection_stack.addWidget(form_page);self.selection_stack.addWidget(part_page)
+        right.addTab(self.selection_stack,'プロパティ');right.setCurrentIndex(0)
         self.selection_hint=QLabel();self.selection_hint.setWordWrap(True)
         self.selection_hint.setStyleSheet('color: #46566b; padding: 4px;')
         rl.addWidget(self.selection_hint)
@@ -779,13 +784,14 @@ class Window(QMainWindow):
         self.workspace_tabs.setCurrentIndex(1 if step=='output' else 0)
         self.library_panel.setVisible(step!='output');self.inspector_tabs.setVisible(step!='output')
         if previous=='output' and step!='output':self.columns.setSizes(getattr(self,'design_sizes',[220,780,380]))
-        if step=='form':self.inspector_tabs.setCurrentIndex(1)
+        if step=='form':
+            self.choose_row(-1);self.inspector_tabs.setCurrentIndex(0)
         elif step=='layout':self.inspector_tabs.setCurrentIndex(0)
         elif step=='action':
-            self.inspector_tabs.setCurrentIndex(0 if self.selected is not None else 1)
+            self.inspector_tabs.setCurrentIndex(0)
             if self.props.isTabEnabled(3):self.props.setCurrentIndex(3)
         hints={'form':'フォーム名は設定済みです。そのまま配置を始められます。タイトル・表示形式・管理用の名前は必要に応じて変更します。',
-               'layout':'追加先を確認 → 部品を追加 → ドラッグとハンドルで配置。ダブルクリックで表示文字を変更できます。',
+               'layout':'追加先を確認 → 部品を追加 → ドラッグとハンドルで配置。ダブルクリックで設定を編集できます。',
                'action':'処理名は自動設定します。部品の動作を設定し、「処理コードを編集」から処理内容を追加します。',
                'output':'設計JSONを保存し、生成コードを確認してMACを出力します。プレビューは概略表示です。'}
         self.workflow_hint.setText(hints[step])
@@ -807,7 +813,7 @@ class Window(QMainWindow):
             except ValueError as error:self.statusBar().showMessage(str(error));return
             self.checkpoint();self.form=candidate;self.refresh()
         if self.current_workflow!='action':self.set_workflow('action')
-        self.inspector_tabs.setCurrentIndex(2);self.body.setFocus()
+        self.inspector_tabs.setCurrentIndex(1);self.body.setFocus()
 
     def sync_output_summary(self):
         count=sum(not self.form.is_tab_page(g) for g in self.form.gadgets)
@@ -1424,7 +1430,7 @@ class Window(QMainWindow):
         for index,g in enumerate(self.form.gadgets):
             self.objects.item(index).setHidden(self.form.is_tab_page(g))
             self.objects.item(index).setForeground(QColor('#24354b' if visibility.get(index,True) else '#98a2b3'))
-            self.objects.item(index).setToolTip(f'.{g.name}'+(f' / 親: .{g.parent}' if g.parent else ' / フォーム直下')+'\nダブルクリックで表示名を変更')
+            self.objects.item(index).setToolTip(f'.{g.name}'+(f' / 親: .{g.parent}' if g.parent else ' / フォーム直下')+'\nダブルクリックで設定を編集')
         self.sync_tab_editor()
         self.sync_context_hints()
 
@@ -1643,7 +1649,11 @@ class Window(QMainWindow):
             self.objects.addItem(f'{PALETTE[g.kind][0]} {gadget_title(g)}  .{g.name}' + (f' → {g.parent}' if g.parent else ''))
             self.objects.item(index).setData(Qt.UserRole,index)
         self.scene.blockSignals(True); self.scene.clear()
-        self.scene.setSceneRect(0, 0, self.form.width * SX, self.form.height * SY)
+        self.scene.setSceneRect(-12,-30,self.form.width*SX+24,self.form.height*SY+42)
+        self.form_item=FormItem(self.form,SX,SY);self.scene.addItem(self.form_item)
+        self.form_item.setSelected(self.selected is None)
+        self.form_item.resizing.connect(self.form_resize_preview);self.form_item.resized.connect(self.resize_committed)
+        self.form_item.editRequested.connect(lambda:QTimer.singleShot(0,self.edit_form_properties))
         image_directories = ((self.path.resolve().parent,) if self.path else ()) + (self.settings.app_directory,)
         for index, g in enumerate(self.form.gadgets):
             item = Item(g, self.form, image_directories); item.setData(0, index)
@@ -1676,6 +1686,7 @@ class Window(QMainWindow):
             self.fields['label'].setEnabled(g.kind != 'line'); self.fields['orientation'].setEnabled(g.kind == 'line'); self.fields['frame_style'].setEnabled(g.kind == 'frame'); self.fields['callback'].setEnabled(g.kind not in ('paragraph', 'line', 'frame', 'option')); self.fields['command'].setEnabled(g.kind in ('toggle', 'text', 'button')); self.fields['background'].setEnabled(g.kind in ('paragraph', 'button', 'list')); self.body.setEnabled(bool(g.callback))
             self.sync_extra_editors(g, rebuild)
         else: self.selected = None; self.props.setEnabled(False); self.body.setEnabled(False)
+        self.selection_stack.setCurrentIndex(1 if self.selected is not None else 0)
         self.props.setVisible(self.selected is not None and not self.form.is_tab_page(self.form.gadgets[self.selected]))
         self.loading = False
         try:
@@ -1693,6 +1704,7 @@ class Window(QMainWindow):
         self.scene.blockSignals(True)
         for item in self.scene.items():
             if isinstance(item,Item): item.setSelected(item.data(0)==self.selected)
+            elif isinstance(item,FormItem):item.setSelected(self.selected is None)
         self.scene.blockSignals(False)
         self.sync_selection()
 
@@ -1703,6 +1715,21 @@ class Window(QMainWindow):
         self.loading = True
         from PySide6.QtCore import QTimer
         QTimer.singleShot(0,self.refresh)
+
+    def form_resize_preview(self):
+        self.scene.setSceneRect(-12,-30,self.form.width*SX+24,self.form.height*SY+42)
+        self.loading=True
+        self.load_number(self.fw,self.form.width);self.load_number(self.fh,self.form.height)
+        self.loading=False
+
+    def edit_form_properties(self):
+        if self._closing:return
+        from .quick_editor import FormProperties
+        dialog=FormProperties(self,self.form)
+        if dialog.exec()==QDialog.Accepted and dialog.result_form is not None:
+            if dialog.result_form.dumps()!=self.form.dumps():
+                self.checkpoint();self.form=dialog.result_form;self.selected=None;self.refresh()
+        dialog.deleteLater()
 
     def resize_preview(self):
         for item in self.scene.items():
@@ -1732,6 +1759,9 @@ class Window(QMainWindow):
         if self._closing or not isValid(self) or not isValid(self.scene): return
         # Property loading only: keep the grabbed graphics item alive while dragging.
         self.loading = True
+        self.form_item.setSelected(self.selected is None)
+        if self.selected is None:
+            self.objects.setCurrentRow(-1);self.inspector_tabs.setCurrentIndex(0)
         if self.selected is not None:
             self.objects.setCurrentRow(self.selected)
             g = self.form.gadgets[self.selected]
@@ -1752,6 +1782,7 @@ class Window(QMainWindow):
             self.sync_extra_editors(g)
         self.apply_page_visibility()
         self.props.setEnabled(self.selected is not None and not self.form.is_tab_page(self.form.gadgets[self.selected])); self.loading = False
+        self.selection_stack.setCurrentIndex(1 if self.selected is not None else 0)
         self.props.setVisible(self.selected is not None and not self.form.is_tab_page(self.form.gadgets[self.selected]))
         if self.selected is not None and self.current_workflow=='form':self.set_workflow('layout')
         elif self.selected is not None and self.current_workflow=='action':

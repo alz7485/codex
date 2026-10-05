@@ -337,7 +337,7 @@ class AuditGuiRegressionTests(unittest.TestCase):
 
     def test_inspector_pages_and_separate_menu_editor(self):
         w=self.w;w.add('button')
-        self.assertEqual([w.inspector_tabs.tabText(i) for i in range(w.inspector_tabs.count())],['部品','フォーム','処理'])
+        self.assertEqual([w.inspector_tabs.tabText(i) for i in range(w.inspector_tabs.count())],['プロパティ','処理'])
         self.assertEqual([w.props.tabText(i) for i in range(w.props.count())],['基本','配置','内容','動作'])
         self.assertEqual(w.inspector_tabs.findChildren(QScrollArea),[])
         self.assertFalse(w.menu_dialog.isVisible())
