@@ -189,17 +189,23 @@ class Item(QGraphicsObject):
         if self.gadget.kind == 'frame' and parent and parent.frame_style == 'TABSET': rect = rect.adjusted(0, 26, 0, 0)
         path.addRect(rect); return path
 
+    def tab_page_at(self, pos):
+        if self.gadget.kind == 'frame' and self.gadget.frame_style == 'TABSET' and 0 <= pos.y() < 26:
+            pages = self.form.children(self.gadget.name)
+            if pages:
+                index = min(len(pages)-1, max(0,int(pos.x() / (self._width * SX / len(pages)))))
+                return pages[index]
+        return None
+
     def mousePressEvent(self, event):
         g = self.gadget
         handle = self.handle_at(event.pos())
         if event.button() == Qt.LeftButton and handle:
             self._resize = (handle,event.scenePos(),g.width,g.height,copy.deepcopy(self.form))
             event.accept(); return
-        if g.kind == 'frame' and g.frame_style == 'TABSET' and 0 <= event.pos().y() < 26:
-            pages = self.form.children(g.name)
-            if pages:
-                index = min(len(pages)-1, max(0,int(event.pos().x() / (self._width * SX / len(pages)))))
-                self.pageChosen.emit(pages[index].name); event.accept(); return
+        page = self.tab_page_at(event.pos())
+        if page:
+            self.pageChosen.emit(page.name); event.accept(); return
         for item in self.scene().selectedItems():
             if item is not self:item.setSelected(False)
         # This editor moves one object at a time; Qt otherwise drags every selected item.
@@ -211,7 +217,8 @@ class Item(QGraphicsObject):
     def mouseDoubleClickEvent(self,event):
         if event.button()==Qt.LeftButton:
             self._move_start=None
-            self.labelEditRequested.emit(self.gadget.name);event.accept();return
+            page = self.tab_page_at(event.pos())
+            self.labelEditRequested.emit(page.name if page else self.gadget.name);event.accept();return
         super().mouseDoubleClickEvent(event)
 
     def handles(self):
@@ -691,6 +698,17 @@ class Window(QMainWindow):
         w = QDoubleSpinBox(); w.setRange(low, high); w.setDecimals(1); w.setSingleStep(.1); return w
 
     @staticmethod
+    def load_number(widget, value):
+        widget.setValue(value)
+        # Qt rounds for display; retain the model's precision until this field changes.
+        widget.setProperty('loadedDisplayValue', widget.value())
+
+    @staticmethod
+    def edited_number(widget, original):
+        value = widget.value()
+        return original if value == widget.property('loadedDisplayValue') else value
+
+    @staticmethod
     def connect_field(w, fn):
         if isinstance(w, QLineEdit): w.textEdited.connect(fn)
         elif isinstance(w, QComboBox): w.currentTextChanged.connect(fn)
@@ -953,7 +971,8 @@ class Window(QMainWindow):
         candidate.dock_right=candidate.dock_side=='RIGHT'
         candidate.form_type='MAIN' if selection=='MAIN' else 'DIALOG'
         candidate.title=self.ftitle.text()
-        candidate.width,candidate.height=self.fw.value(),self.fh.value()
+        candidate.width=self.edited_number(self.fw,candidate.width)
+        candidate.height=self.edited_number(self.fh,candidate.height)
         if candidate.name!=self.fname.text():
             try:candidate=rename(candidate,'form',None,self.fname.text())
             except ValueError as error:self.statusBar().showMessage(str(error));return
@@ -1295,7 +1314,7 @@ class Window(QMainWindow):
         old_actual = actual_name(g)
         for key, w in self.fields.items():
             if key=='name':continue
-            value = w.currentData() if key in ('parent','xref','yref','width_ref','popup_menu','action_mode') else w.value() if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
+            value = w.currentData() if key in ('parent','xref','yref','width_ref','popup_menu','action_mode') else self.edited_number(w,getattr(g,key)) if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
             setattr(g, key, value)
         if old_display != g.display_mode:
             if g.display_mode == 'PIXMAP': g.width *= SX;g.height *= SY
@@ -1365,7 +1384,7 @@ class Window(QMainWindow):
         self.docking.setCurrentIndex(self.docking.findData('MAIN' if self.form.form_type=='MAIN' else self.form.docking_side()))
         for event,editor in self.form_callbacks.items():
             if editor.text() != getattr(self.form,event): editor.setText(getattr(self.form,event))
-        self.fw.setValue(self.form.width); self.fh.setValue(self.form.height)
+        self.load_number(self.fw,self.form.width); self.load_number(self.fh,self.form.height)
         self.objects.clear()
         for index,g in enumerate(self.form.gadgets):
             self.objects.addItem(f'{PALETTE[g.kind][0]} {gadget_title(g)}  .{g.name}' + (f' → {g.parent}' if g.parent else ''))
@@ -1388,7 +1407,7 @@ class Window(QMainWindow):
             for key, w in self.fields.items():
                 if key in ('parent','xref','yref','width_ref','popup_menu'): continue
                 value = getattr(g, key)
-                if isinstance(w, QDoubleSpinBox): w.setValue(value)
+                if isinstance(w, QDoubleSpinBox): self.load_number(w,value)
                 elif key == 'action_mode': w.setCurrentIndex(w.findData(value))
                 elif isinstance(w, QComboBox): w.setCurrentText(value)
                 else: w.setText(value)
@@ -1438,7 +1457,7 @@ class Window(QMainWindow):
             item.setPos((x+ox)*SX,(y+oy)*SY); item._sync_geometry = False; item.update()
         if self.selected is not None:
             g = self.form.gadgets[self.selected]; self.loading = True
-            self.fields['width'].setValue(g.width); self.fields['height'].setValue(g.height); self.loading = False
+            self.load_number(self.fields['width'],g.width); self.load_number(self.fields['height'],g.height); self.loading = False
 
     def resize_committed(self, old):
         self.history.append(old); self.history = self.history[-100:]; self.future.clear(); self.dirty = True
@@ -1465,7 +1484,7 @@ class Window(QMainWindow):
             for key, w in self.fields.items():
                 if key in ('parent','xref','yref','width_ref','popup_menu'): continue
                 v = getattr(g, key)
-                if isinstance(w, QDoubleSpinBox): w.setValue(v)
+                if isinstance(w, QDoubleSpinBox): self.load_number(w,v)
                 elif key == 'action_mode': w.setCurrentIndex(w.findData(v))
                 elif isinstance(w, QComboBox): w.setCurrentText(v)
                 else: w.setText(v)

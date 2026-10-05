@@ -279,6 +279,59 @@ class AuditGuiRegressionTests(unittest.TestCase):
             self.assertEqual(w.form.gadgets[0].label,label)
             w.undo();self.assertEqual(w.form.dumps(),original)
 
+    def test_unrelated_edit_preserves_loaded_numeric_precision(self):
+        w=self.w
+        form=Form.loads(Form(gadgets=[Gadget(kind='slider',name='level',x=2.25,width=14.25,slider_step=.01)]).dumps())
+        self.load(form)
+        original=w.form.dumps()
+        w.fields['label'].selectAll();QTest.keyClicks(w.fields['label'],'U')
+        g=w.form.named('level')
+        self.assertEqual((g.x,g.width,g.slider_step),(2.25,14.25,.01))
+        self.assertFalse(w.code.toPlainText().startswith('-- 出力できません'))
+        self.assertEqual(Form.loads(w.form.dumps()).named('level').slider_step,.01)
+        w.fields['x'].stepUp()
+        self.assertEqual(w.form.named('level').x,2.4)
+        self.assertEqual((g.width,g.slider_step),(14.25,.01))
+        w.undo();self.assertEqual(w.form.named('level').x,2.25)
+        w.undo();self.assertEqual(w.form.dumps(),original)
+        # Selection-only synchronization must preserve the same precision.
+        w.choose_row(-1);w.choose_row(0)
+        w.fields['slider_step'].stepUp()
+        self.assertEqual(w.form.named('level').slider_step,.1)
+        self.assertEqual(w.form.named('level').width,14.25)
+        w.undo();self.assertEqual(w.form.dumps(),original)
+
+    def test_unrelated_form_edit_preserves_loaded_dimensions(self):
+        w=self.w;self.load(Form(width=70.25,height=22.25))
+        original=w.form.dumps()
+        w.ftitle.selectAll();QTest.keyClicks(w.ftitle,'U')
+        self.assertEqual((w.form.width,w.form.height),(70.25,22.25))
+        w.fw.stepUp()
+        self.assertAlmostEqual(w.form.width,70.4)
+        self.assertEqual(w.form.height,22.25)
+        w.undo();w.undo();self.assertEqual(w.form.dumps(),original)
+
+    def test_double_click_tab_header_edits_clicked_page_label(self):
+        w=self.w
+        self.load(Form(gadgets=[Gadget(kind='frame',name='tabs',label='Tabs',frame_style='TABSET',x=2,y=1,width=40,height=12,
+            tabs=[Gadget(kind='frame',name='first',label='First'),Gadget(kind='frame',name='second',label='Second')])]))
+        original=w.form.dumps()
+        for x,name,label in ((8,'first','First'),(30,'second','Second')):
+            point=w.view.mapFromScene((2+x)*SX,SY+12)
+            with patch('e3d_designer.app.QInputDialog.getText',return_value=('Changed',True)) as dialog:
+                QTest.mouseDClick(w.view.viewport(),Qt.LeftButton,Qt.NoModifier,point)
+                self.app.processEvents();dialog.assert_called_once()
+                self.assertEqual(dialog.call_args.args[4],label)
+            self.assertEqual(w.form.named(name).label,'Changed')
+            self.assertEqual(w.form.named('tabs').label,'Tabs')
+            w.undo();self.assertEqual(w.form.dumps(),original)
+        point=w.view.mapFromScene(10*SX,SY+12)
+        history=len(w.history)
+        with patch('e3d_designer.app.QInputDialog.getText',return_value=('Ignored',False)):
+            QTest.mouseDClick(w.view.viewport(),Qt.LeftButton,Qt.NoModifier,point)
+            self.app.processEvents()
+        self.assertEqual(w.form.dumps(),original);self.assertEqual(len(w.history),history)
+
     def test_inspector_pages_and_separate_menu_editor(self):
         w=self.w;w.add('button')
         self.assertEqual([w.inspector_tabs.tabText(i) for i in range(w.inspector_tabs.count())],['部品','フォーム','処理'])
