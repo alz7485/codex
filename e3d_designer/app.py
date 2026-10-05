@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
     QScrollArea, QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
     QGridLayout)
-from .model import Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size
+from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size
 
 LABELS = {'textpane':'複数行テキスト (TEXTPANE)','selector':'DB セレクタ (SELECTOR)','button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
           'toggle': 'チェックボックス', 'option': 'ドロップダウン', 'list': 'リスト', 'line': '線 (LINE)', 'frame': '枠 (FRAME)', 'slider':'スライダー', 'rtoggle':'ラジオボタン', 'combo':'コンボボックス', 'view':'ビュー', 'commandline':'コマンド欄 (ALPHA)', 'container':'外部部品 (CONTAINER)'}
@@ -431,7 +431,7 @@ class Window(QMainWindow):
         self.props = QWidget(); self.prop_layout = PropertyLayout(self.props)
         self.fields = {}
         pairs = {}
-        for first,second in (('name','label'),('x','y'),('width','height'),('value_type','initial'),
+        for first,second in (('name','label'),('x','y'),('width','height'),('value_type','initial'),('macro_flag','macro_value'),
                 ('orientation','background'),('parent','frame_style'),('layout_mode','path'),
                 ('halign','valign'),('hgap','vgap'),('xref','yref'),('xedge','yedge'),('xanchor','width_ref'),
                 ('xoffset','yoffset'),('selection_mode','list_mode'),('slider_min','slider_max'),
@@ -444,21 +444,30 @@ class Window(QMainWindow):
                 ('view_type','VIEW 形式'), ('view_aspect','ASPECT (VIEW)'), ('channels','ALPHA チャンネル'),
                 ('assembly','CONTAINER アセンブリ'), ('namespace','名前空間'), ('control_type','コントロール型'),
                 ('display_mode','文字 / 画像'),('pixmap_path','画像ファイル (E3D 側のパス)'),('popup_menu','ポップアップメニュー'),
-                ('database','DATABASE'),('button_role','ボタン属性')]:
+                ('database','DATABASE'),('button_role','ボタン属性'),('action_mode','ボタンの処理方式'),('macro_path','外部マクロのファイル'),('macro_flag','分岐用の変数名'),('macro_value','このボタンの分岐値')]:
             if key in ('slider_min','slider_max','slider_step','slider_value'):
                 w = self.number(-1e9, 1e9)
             elif key in ('x','y','width','height','hgap','vgap','xoffset','yoffset'):
                 w = self.number(-300 if key in ('xoffset','yoffset') else 0 if key in ('x','y','hgap','vgap') else 1, 300)
             elif key in ('parent','xref','yref','width_ref','popup_menu'):
                 w = QComboBox(); w.addItem('(フォーム直下)', '')
-            elif key in ('value_type','orientation','frame_style','layout_mode','path','halign','valign','xedge','yedge','xanchor','selection_mode','combo_keyword','slider_orientation','view_type','channels','list_mode','display_mode','database','button_role'):
+            elif key in ('value_type','orientation','frame_style','layout_mode','path','halign','valign','xedge','yedge','xanchor','selection_mode','combo_keyword','slider_orientation','view_type','channels','list_mode','display_mode','database','button_role','action_mode'):
                 w = QComboBox()
-                w.addItems({'display_mode':['TEXT','PIXMAP'],'database':['OWNERS','MEMBERS','AUTO'],'button_role':['NORMAL','OK','APPLY','CANCEL','RESET','HELP'],'value_type': ['STRING', 'REAL'], 'orientation': ['HORIZ', 'VERT'], 'frame_style': ['FRAME','TABSET','TOOLBAR'], 'layout_mode': ['ABSOLUTE','AUTO','RELATIVE'], 'path': ['DOWN','RIGHT','UP','LEFT'], 'halign': ['LEFT','CENTRE','RIGHT'], 'valign': ['TOP','CENTRE','BOTTOM'], 'xedge': ['XMIN','XMAX'], 'yedge': ['YMIN','YMAX'], 'xanchor': ['LEFT','RIGHT'], 'list_mode':['SIMPLE','TABLE'], 'selection_mode':['SINGLE','MULTIPLE'], 'combo_keyword':['COMBO','COMBOBOX'], 'slider_orientation':['HORIZONTAL','VERTICAL'], 'view_type':['ALPHA','AREA','PLOT','VOLUME'], 'channels':['NONE','REQUESTS','COMMANDS','BOTH']}[key])
+                w.addItems({'action_mode':['CODE','MACRO'],'display_mode':['TEXT','PIXMAP'],'database':['OWNERS','MEMBERS','AUTO'],'button_role':['NORMAL','OK','APPLY','CANCEL','RESET','HELP'],'value_type': ['STRING', 'REAL'], 'orientation': ['HORIZ', 'VERT'], 'frame_style': ['FRAME','TABSET','TOOLBAR'], 'layout_mode': ['ABSOLUTE','AUTO','RELATIVE'], 'path': ['DOWN','RIGHT','UP','LEFT'], 'halign': ['LEFT','CENTRE','RIGHT'], 'valign': ['TOP','CENTRE','BOTTOM'], 'xedge': ['XMIN','XMAX'], 'yedge': ['YMIN','YMAX'], 'xanchor': ['LEFT','RIGHT'], 'list_mode':['SIMPLE','TABLE'], 'selection_mode':['SINGLE','MULTIPLE'], 'combo_keyword':['COMBO','COMBOBOX'], 'slider_orientation':['HORIZONTAL','VERTICAL'], 'view_type':['ALPHA','AREA','PLOT','VOLUME'], 'channels':['NONE','REQUESTS','COMMANDS','BOTH']}[key])
             else: w = QLineEdit()
             if isinstance(w,QComboBox):
                 w.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
                 w.setMinimumContentsLength(8)
             self.fields[key] = w; self.prop_layout.addRow(label, w,pairs.get(key)); self.connect_field(w, self.update_gadget)
+        self.fields['action_mode'].setItemData(0,'CODE');self.fields['action_mode'].setItemData(1,'MACRO')
+        self.fields['action_mode'].setItemText(0,'手入力のコマンド / メソッド')
+        self.fields['action_mode'].setItemText(1,'外部マクロを実行')
+        self.fields['macro_flag'].setPlaceholderText('例: buttonFlag（!! は不要・空欄ならフラグなし）')
+        self.fields['macro_value'].setPlaceholderText('例: A / B')
+        self.macro_browse=QPushButton('📁 マクロファイルを選択');self.macro_browse.clicked.connect(self.choose_macro)
+        self.prop_layout.addRow(self.macro_browse)
+        self.macro_template=QPushButton('📄 分岐マクロのひな形を保存');self.macro_template.clicked.connect(self.save_macro_template)
+        self.prop_layout.addRow(self.macro_template)
         self.browse_image = QPushButton('📁 画像ファイルを選択');self.browse_image.clicked.connect(self.choose_image)
         self.prop_layout.addRow(self.browse_image)
         self.fixed_font = QCheckBox('FIXCHARS：等幅フォント');self.fixed_font.toggled.connect(self.update_gadget)
@@ -495,7 +504,7 @@ class Window(QMainWindow):
         self.container_hint = QLabel('外部 DLL が必要です。未設定時は DEFAULT で Control を接続してください。')
         self.container_hint.setWordWrap(True); self.prop_layout.addRow(self.container_hint)
         self.body = QPlainTextEdit(); self.body.setPlaceholderText('メソッド内の PML コード。自動実行はしません。')
-        self.body.setFixedHeight(64); self.prop_layout.addRow('処理コード', self.body)
+        self.body.setFixedHeight(64)
         self.body.textChanged.connect(self.update_gadget)
         rl.addWidget(self.props)
         self.menu_group = QGroupBox('メニューバー'); menu_layout = QVBoxLayout(self.menu_group)
@@ -580,6 +589,22 @@ class Window(QMainWindow):
             for gadget in self.form.gadgets:
                 if gadget.popup_menu.lower() == menu.name.lower(): gadget.popup_menu = ''
         self.refresh(rebuild=False)
+
+    def choose_macro(self):
+        filename,_=QFileDialog.getOpenFileName(self,'外部マクロを選択','','マクロ (*.txt *.mac *.pmlmac);;すべて (*)')
+        if filename:
+            self.fields['macro_path'].setText(filename);self.update_gadget()
+
+    def save_macro_template(self):
+        if self.selected is None:return
+        from .macro_actions import branch_template
+        try:text=branch_template(self.form,self.form.gadgets[self.selected].macro_path)
+        except ValueError as error:self.statusBar().showMessage(str(error));return
+        filename,_=QFileDialog.getSaveFileName(self,'分岐マクロのひな形を保存','code1.txt','マクロ (*.txt *.mac);;すべて (*)')
+        if not filename:return
+        try:Path(filename).write_text(text,encoding=self.encoding.currentText())
+        except (OSError,UnicodeError) as error:self.statusBar().showMessage(str(error));return
+        self.statusBar().showMessage('分岐マクロのひな形を保存しました。各分岐の処理をファイルで編集してください。')
 
     def choose_image(self):
         if self.selected is None: return
@@ -823,6 +848,10 @@ class Window(QMainWindow):
         if gadget.kind in ('toggle','rtoggle'): hint = 'TRUE / FALSE'
         elif gadget.kind in ('option','combo','list'): hint = '選択行番号（1から）。MULTIPLE は 1,3 のように入力'
         self.fields['initial'].setPlaceholderText(hint)
+        macro = gadget.kind == 'button' and gadget.action_mode == 'MACRO'
+        self.fields['callback'].setEnabled(self.fields['callback'].isEnabled() and not macro)
+        self.fields['command'].setEnabled(self.fields['command'].isEnabled() and not macro)
+        self.body.setEnabled(bool(gadget.callback) and not macro)
         relevant = {
             'value_type':gadget.kind == 'text', 'initial':gadget.kind in ('text','paragraph','toggle','rtoggle','option','combo','list') and not (gadget.kind == 'paragraph' and gadget.display_mode == 'PIXMAP'),
             'callback':gadget.kind in ('button','text','toggle','list','combo','slider'),
@@ -833,20 +862,22 @@ class Window(QMainWindow):
             'pixmap_path':gadget.kind in ('paragraph','button','toggle') and gadget.display_mode == 'PIXMAP',
             'popup_menu':gadget.kind in ('view','commandline','list','button','toggle','text','combo','slider'),
             'database':gadget.kind == 'selector', 'button_role':gadget.kind == 'button',
+            'action_mode':gadget.kind == 'button' and gadget.button_role not in ('OK','CANCEL','HELP'),
+            'macro_path':macro,'macro_flag':macro,'macro_value':macro,
             'width_ref':gadget.kind not in ('toggle','option','rtoggle'),
         }
         relevant['callback'] = self.fields['callback'].isEnabled()
-        relevant['command'] = gadget.kind in ('button','text','toggle') and gadget.button_role not in ('OK','CANCEL','HELP')
+        relevant['command'] = gadget.kind in ('button','text','toggle') and gadget.button_role not in ('OK','CANCEL','HELP') and not macro
         for key in ('path','halign','valign','hgap','vgap'): relevant[key] = gadget.layout_mode == 'AUTO'
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): relevant[key] = gadget.layout_mode == 'RELATIVE'
         for key in ('selection_mode','list_mode','table_method','combo_keyword','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','view_aspect','channels','assembly','namespace','control_type'):
             relevant[key] = self.fields[key].isEnabled()
         for key,visible in relevant.items(): self.prop_layout.setRowVisible(self.fields[key],visible)
-        for editor,visible in ((self.choices,gadget.kind in ('option','combo') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
+        for editor,visible in ((self.macro_browse,macro),(self.macro_template,macro),(self.choices,gadget.kind in ('option','combo') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
                                (self.choice_commands,gadget.kind == 'option' and gadget.display_mode == 'TEXT'),
                                (self.item_values,gadget.kind == 'combo' or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
                                (self.view_code,gadget.kind in ('view','commandline')),
- (self.container_hint,gadget.kind == 'container'),
+                               (self.container_hint,gadget.kind == 'container'),
                                (self.browse_image,relevant['pixmap_path'] or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP')),(self.fixed_font,gadget.kind == 'textpane'),(self.pane_lines,gadget.kind == 'textpane')):
             self.prop_layout.setRowVisible(editor,visible)
         self.fields['pixmap_path'].setEnabled(relevant['pixmap_path'])
@@ -958,6 +989,7 @@ class Window(QMainWindow):
     def update_gadget(self):
         if self.loading or self.selected is None: return
         self.checkpoint(); g = self.form.gadgets[self.selected]
+        old_action = g.action_mode
         old_mode = g.list_mode
         old_name = g.name
         old_role = g.button_role
@@ -965,17 +997,24 @@ class Window(QMainWindow):
         from .names import actual_name,code_slots,read_slot,write_slot,rewrite_code
         old_actual = actual_name(g)
         for key, w in self.fields.items():
-            value = w.currentData() if key in ('parent','xref','yref','width_ref','popup_menu') else w.value() if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
+            value = w.currentData() if key in ('parent','xref','yref','width_ref','popup_menu','action_mode') else w.value() if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
             setattr(g, key, value)
         if old_display != g.display_mode:
             if g.display_mode == 'PIXMAP': g.width *= SX;g.height *= SY
             else: g.width = max(1,g.width/SX);g.height = max(1,g.height/SY)
             if g.kind == 'option' and g.display_mode == 'PIXMAP': g.name = g.name.lstrip('_')
         if g.button_role != old_role and g.button_role in ('OK','CANCEL','HELP'):
-            g.callback = '';g.command = ''
+            g.callback = '';g.command = '';g.action_mode = 'CODE'
         if g.kind == 'option' and old_display == 'PIXMAP' and g.display_mode == 'TEXT':
             g.callback = '';g.item_values = []
             self.item_values.blockSignals(True);self.item_values.clear();self.item_values.blockSignals(False)
+        if g.action_mode == 'MACRO':
+            if old_action != 'MACRO':
+                if not g.macro_flag:g.macro_flag='buttonFlag'
+                if not g.macro_value:g.macro_value=g.name
+            g.callback='';g.command=''
+            if g.macro_flag and IDENTIFIER.fullmatch(g.macro_flag) and g.macro_flag.lower() not in {name.lower() for name in self.form.variables}:
+                self.form.variables[g.macro_flag]=''
         table_changed = old_mode != g.list_mode
         if g.kind == 'list' and g.list_mode == 'TABLE' and not g.headings:
             g.headings = ['見出し1','見出し2']; g.rows = [['','']]
@@ -1041,6 +1080,7 @@ class Window(QMainWindow):
                 if key in ('parent','xref','yref','width_ref','popup_menu'): continue
                 value = getattr(g, key)
                 if isinstance(w, QDoubleSpinBox): w.setValue(value)
+                elif key == 'action_mode': w.setCurrentIndex(w.findData(value))
                 elif isinstance(w, QComboBox): w.setCurrentText(value)
                 else: w.setText(value)
             # Do not reset typing cursor in multi-line editors on every keystroke.
@@ -1116,6 +1156,7 @@ class Window(QMainWindow):
                 if key in ('parent','xref','yref','width_ref','popup_menu'): continue
                 v = getattr(g, key)
                 if isinstance(w, QDoubleSpinBox): w.setValue(v)
+                elif key == 'action_mode': w.setCurrentIndex(w.findData(v))
                 elif isinstance(w, QComboBox): w.setCurrentText(v)
                 else: w.setText(v)
             self.choices.setPlainText('\n'.join(g.items)); self.body.setPlainText(g.body)

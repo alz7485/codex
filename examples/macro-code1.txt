@@ -1,0 +1,8 @@
+-- Generated branch skeleton; edit each branch with your E3D logic.
+IF (!!buttonFlag EQ 'A') THEN
+  -- Add the operation for this button here.
+  $P 'Button A'
+ELSEIF (!!buttonFlag EQ 'B') THEN
+  -- Add the operation for this button here.
+  $P 'Button B'
+ENDIF

@@ -15,6 +15,7 @@ def clone_subtree(target,source,index,restore_names=False):
     if restore_names and any(actual_name(g).lower() in occupied for _,g in originals): restore_names = False
     reserved = occupied|{draft.name.lower(),'default'}|{g.name.lower() for g in draft.gadgets}
     reserved |= {g.callback.lower() for g in draft.gadgets if g.callback}
+    reserved |= {('macro_'+g.name).lower() for g in draft.gadgets if g.action_mode == 'MACRO'}
     reserved |= {(g.table_method or 'populate_'+g.name).lower() for g in draft.gadgets if g.kind == 'list' and g.list_mode == 'TABLE'}
     reserved |= {(g.name+'Control').lower() for g in draft.gadgets if g.kind == 'container' and g.assembly}
     def unique(base,extra=None):
@@ -26,10 +27,15 @@ def clone_subtree(target,source,index,restore_names=False):
     for original_index,original in originals:
         gadget = copy.deepcopy(original)
         if not restore_names:
-            extra = (lambda name:'_'+name) if original.kind == 'option' and original.display_mode == 'TEXT' else (lambda name:name+'Control') if original.kind == 'container' else (lambda name:'populate_'+name) if original.kind == 'list' and original.list_mode == 'TABLE' else None
+            extra = (lambda name:'macro_'+name) if original.action_mode == 'MACRO' else (lambda name:'_'+name) if original.kind == 'option' and original.display_mode == 'TEXT' else (lambda name:name+'Control') if original.kind == 'container' else (lambda name:'populate_'+name) if original.kind == 'list' and original.list_mode == 'TABLE' else None
             gadget.name = unique(gadget.kind,extra)
         mapping[original.name.lower()] = gadget.name
         members[actual_name(original)] = actual_name(gadget)
+        if original.action_mode == 'MACRO':
+            methods['macro_'+original.name] = 'macro_'+gadget.name;reserved.add(('macro_'+gadget.name).lower())
+            if gadget.macro_flag and gadget.macro_flag.lower() not in {name.lower() for name in draft.variables}:
+                source_key=next((name for name in source.variables if name.lower() == gadget.macro_flag.lower()),None)
+                if source_key is not None:draft.variables[gadget.macro_flag]=source.variables[source_key]
         if original.kind == 'container':
             members[original.name+'Control'] = gadget.name+'Control';reserved.add((gadget.name+'Control').lower())
         if original.kind == 'list' and original.list_mode == 'TABLE':

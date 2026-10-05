@@ -18,3 +18,7 @@
 ![初期値の設定](initial-defaults.png)
 
 [編集用JSON](../../examples/initial-defaults.json) / [生成PML](../../examples/initial-defaults.pmlfrm)
+
+![外部マクロと分岐フラグの設定](macro-actions.png)
+
+[外部マクロを呼び出すサンプル](../../examples/macro-launcher.json) / [分岐マクロのひな形](../../examples/macro-code1.txt)

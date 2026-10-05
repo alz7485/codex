@@ -63,6 +63,9 @@ def reference_locations(form, kind, name):
         for g in form.gadgets:
             for key in ('parent','xref','yref','width_ref'):
                 if getattr(g,key).lower() == stored.lower(): locations.append((f'{g.name}: {key}',1))
+    if kind == 'variable':
+        for g in form.gadgets:
+            if g.action_mode == 'MACRO' and g.macro_flag.lower() == name.lower():locations.append((f'{g.name}: 分岐フラグ',1))
     if kind == 'menu':
         for g in form.gadgets:
             if g.popup_menu.lower() == name.lower(): locations.append((f'{g.name}: popup_menu',1))
@@ -103,6 +106,7 @@ def rename_many(form, changes, update_code=True):
             members[actual_name(form.gadgets[key]).lower()] = actual_name(result.gadgets[key])
             if form.gadgets[key].kind == 'container': members[(old+'Control').lower()] = new_name+'Control'
             g = form.gadgets[key]
+            if g.action_mode == 'MACRO':methods[('macro_'+old).lower()] = 'macro_'+new_name
             if g.kind == 'list' and g.list_mode == 'TABLE' and not g.table_method:
                 methods[('populate_'+old).lower()] = 'populate_'+new_name
     variable_names = [globals_map.get(name.lower(),name) for name in form.variables]
@@ -114,6 +118,7 @@ def rename_many(form, changes, update_code=True):
             old = getattr(g,attribute)
             setattr(g,attribute,gadgets_map.get(old.lower(),old))
         g.popup_menu = menus_map.get(g.popup_menu.lower(),g.popup_menu)
+        g.macro_flag = globals_map.get(g.macro_flag.lower(),g.macro_flag)
     if update_code:
         # Consume qualified references and globals together so swaps cannot cascade.
         pattern = re.compile(r'(!this|!![A-Za-z][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?',re.I)

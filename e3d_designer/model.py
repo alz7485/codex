@@ -88,6 +88,10 @@ class Gadget:
     pane_lines: list[str] = field(default_factory=list)
     database: str = 'OWNERS'
     button_role: str = 'NORMAL'
+    action_mode: str = 'CODE'
+    macro_path: str = ''
+    macro_flag: str = ''
+    macro_value: str = ''
 
     def __post_init__(self):
         if self.selection_mode == 'MULTI': self.selection_mode = 'MULTIPLE'
@@ -245,7 +249,7 @@ class Form:
         if not isinstance(self.gadgets, list) or any(not isinstance(g,Gadget) for g in self.gadgets):
             raise ValueError('部品は配列で指定してください。')
         for g in self.gadgets:
-            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method','display_mode','pixmap_path','popup_menu','database','button_role'):
+            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method','display_mode','pixmap_path','popup_menu','database','button_role','action_mode','macro_path','macro_flag','macro_value'):
                 if not isinstance(getattr(g,key),str): raise ValueError(f'部品の {key} は文字列で指定してください。')
             for key in ('items','item_commands','item_values','headings','pane_lines'):
                 value = getattr(g,key)
@@ -432,6 +436,21 @@ class Form:
                 callbacks[key] = g.body
         methods = {self.name.lower(),'default',*callbacks}
         for g in self.gadgets:
+            if g.action_mode not in ('CODE','MACRO'):raise ValueError('ボタンの処理方式が不正です。')
+            if g.action_mode != 'MACRO':continue
+            if g.kind != 'button' or g.button_role not in ('NORMAL','APPLY','RESET'):
+                raise ValueError('外部マクロは通常 / APPLY / RESET ボタンで設定してください。')
+            if g.callback or g.command:raise ValueError('外部マクロと手入力の CALL は同時に設定できません。')
+            if not g.macro_path.strip() or any(c in g.macro_path for c in '\r\n"$'):
+                raise ValueError(f'{g.name}: マクロファイルのパスを指定してください（改行・二重引用符・$ は使用できません）。')
+            if g.macro_flag:
+                if not IDENTIFIER.fullmatch(g.macro_flag) or g.macro_flag.lower() not in {name.lower() for name in self.variables}:
+                    raise ValueError(f'{g.name}: フラグには登録済みのグローバル変数名を指定してください。')
+                literal(g.macro_value)
+            method='macro_'+g.name
+            if method.lower() in methods:raise ValueError('外部マクロの生成メソッド名が重複しています。')
+            methods.add(method.lower())
+        for g in self.gadgets:
             if g.kind == 'list' and g.list_mode == 'TABLE':
                 method = g.table_method or f'populate_{g.name}'
                 if not IDENTIFIER.fullmatch(method) or method.lower() in methods:
@@ -560,7 +579,7 @@ class Form:
                 line += (f' PIXMAP {width_clause} HEIGHT {n(g.height)}' if g.display_mode == 'PIXMAP' else f' TEXT {label} {width_clause}')
             elif g.kind == 'text':
                 line = f'TEXT .{g.name} {position} {label}'
-                command = g.command or (f'!this.{g.callback}()' if g.callback else '')
+                command = f'!this.macro_{g.name}()' if g.action_mode == 'MACRO' else g.command or (f'!this.{g.callback}()' if g.callback else '')
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
                 line += f' {width_clause} IS {g.value_type}'
             elif g.kind == 'option':
@@ -607,13 +626,13 @@ class Form:
                 if g.background: line += f' BACKGROUND {int(g.background)}'
                 line += ' PIXMAP' if g.display_mode == 'PIXMAP' else f' {label}'
                 if g.button_role != 'NORMAL': line += ' '+g.button_role
-                command = g.command or (f'!this.{g.callback}()' if g.callback else '')
+                command = f'!this.macro_{g.name}()' if g.action_mode == 'MACRO' else g.command or (f'!this.{g.callback}()' if g.callback else '')
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
                 line += f' {width_clause}'
                 if g.display_mode == 'PIXMAP': line += f' HEIGHT {n(g.height)}'
             elif g.kind == 'toggle':
                 line = f'TOGGLE .{g.name} {position}'+(f' PIXMAP {width_clause} HEIGHT {n(g.height)}' if g.display_mode == 'PIXMAP' else f' {label}')
-                command = g.command or (f'!this.{g.callback}()' if g.callback else '')
+                command = f'!this.macro_{g.name}()' if g.action_mode == 'MACRO' else g.command or (f'!this.{g.callback}()' if g.callback else '')
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
             else:
                 line = f'{g.kind} .{g.name} {label} {at}' + callback
@@ -667,6 +686,11 @@ class Form:
             lines += [f'  !THIS.{g.name}.setrows(!ROWS)', 'endmethod', '']
         default_code = self.default_body or next((g.body for g in self.gadgets if g.callback.lower() == 'default' and g.body), '')
         lines += ['DEFINE METHOD .DEFAULT()', *initial_lines, *([default_code] if default_code else ([] if initial_lines else ['  -- TODO: add default logic'])), 'ENDMETHOD', '']
+        for g in self.gadgets:
+            if g.action_mode == 'MACRO':
+                lines += [f'define method .macro_{g.name}()']
+                if g.macro_flag:lines.append(f'  !!{g.macro_flag} = {literal(g.macro_value)}')
+                lines += [f'  $M "{g.macro_path.replace(chr(92), chr(47))}"', 'endmethod', '']
         seen = {'default'}
         for g in self.gadgets:
             if g.callback and g.callback.lower() not in seen:
