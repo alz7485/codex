@@ -264,9 +264,9 @@ class Item(QGraphicsObject):
         if change == QGraphicsItem.ItemPositionChange and self.scene() and not self._sync_geometry:
             g = self.gadget
             ox, oy = preview_offset(self.form, g); parent = self.form.parent_gadget(g)
-            width, height = (preview_geometry(self.form,parent)[2], parent.height) if parent else (self.form.width, self.form.height)
+            width, height = preview_geometry(self.form,parent)[2:] if parent else (self.form.width, self.form.height)
             value.setX(ox * SX + max(0, min(round((value.x()/SX - ox)*2)/2, width-self._width))*SX)
-            value.setY(oy * SY + max(0, min(round((value.y()/SY - oy)*2)/2, height-g.height))*SY)
+            value.setY(oy * SY + max(0, min(round((value.y()/SY - oy)*2)/2, height-self._height))*SY)
         return super().itemChange(change, value)
 
     def mouseReleaseEvent(self, event):

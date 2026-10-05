@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
-from e3d_designer.app import Window,Item
+from e3d_designer.app import Window,Item,SX,SY,preview_offset
 from e3d_designer.clipboard import clone_subtree
 from e3d_designer.model import Form,Gadget,Menu,MenuItem
 
@@ -134,6 +134,35 @@ class AuditGuiRegressionTests(unittest.TestCase):
         self.assertEqual(self.w.form.gadgets[0].height,80);self.w.undo();self.assertEqual(self.w.form.gadgets[0].height,50)
         self.w.form.gadgets[0].width=800
         with self.assertRaises(ValueError):self.w.form.validate()
+
+    def test_image_and_image_option_move_below_top_and_clamp_to_bottom(self):
+        for kind in ('paragraph','option'):
+            for nested in (False,True):
+                with self.subTest(kind=kind,nested=nested):
+                    gadgets=[Gadget(kind='frame',name='group',x=3,y=2,width=35,height=12)] if nested else []
+                    image=Gadget(kind=kind,name='image',display_mode='PIXMAP',width=100,height=50,
+                                 x=2,y=1,parent='group' if nested else '')
+                    gadgets.append(image);self.load(Form(gadgets=gadgets),len(gadgets)-1)
+                    item=next(item for item in self.w.scene.items() if isinstance(item,Item) and item.gadget is image)
+                    ox,oy=preview_offset(self.w.form,image)
+                    item.setPos((ox+5)*SX,(oy+6)*SY)
+                    self.assertEqual(item.pos().y(),(oy+6)*SY)
+                    self.assertEqual(item.pos().x(),(ox+5)*SX)
+                    parent_height=12 if nested else self.w.form.height
+                    item.setPos(item.pos().x(),10000)
+                    self.assertAlmostEqual(item.pos().y(),(oy+parent_height)*SY-50)
+                    item.setPos((ox+2)*SX,(oy+1)*SY)
+                    start=self.w.view.mapFromScene(item.mapToScene(item.boundingRect().center()))
+                    end=start+type(start)(SX*3,SY*3)
+                    QTest.mousePress(self.w.view.viewport(),Qt.LeftButton,Qt.NoModifier,start)
+                    QTest.mouseMove(self.w.view.viewport(),end,30)
+                    QTest.mouseRelease(self.w.view.viewport(),Qt.LeftButton,Qt.NoModifier,end)
+                    self.app.processEvents()
+                    moved=self.w.form.gadgets[-1]
+                    self.assertEqual((moved.x,moved.y),(5,4))
+                    self.w.form.validate()
+                    self.assertIn('AT X 5 Y 4',self.w.form.pml(normalize=False))
+                    self.w.undo();self.assertEqual((self.w.form.gadgets[-1].x,self.w.form.gadgets[-1].y),(2,1))
 
 
 if __name__ == '__main__':unittest.main()
