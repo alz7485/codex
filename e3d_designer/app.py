@@ -5,14 +5,14 @@ import sys
 from shiboken6 import isValid
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QRectF, Signal, QMimeData
+from PySide6.QtCore import Qt, QRectF, Signal, QMimeData, QTimer
 from PySide6.QtGui import QAction, QColor, QPainter, QPen, QKeySequence, QPainterPath, QPixmap, QFont, QIcon
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QFormLayout, QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
     QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
-    QGridLayout, QTabBar, QDialog, QDialogButtonBox, QTabWidget, QInputDialog)
+    QGridLayout, QTabBar, QDialog, QDialogButtonBox, QTabWidget, QInputDialog, QToolButton)
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
 from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size
@@ -410,6 +410,10 @@ class Window(QMainWindow):
         super().__init__()
         from .settings import Settings
         self.settings=Settings(settings_path)
+        from .recovery import RecoveryStore
+        self.recovery=RecoveryStore(self.settings.path.parent/'recovery')
+        self.backup_timer=QTimer(self);self.backup_timer.setInterval(30000)
+        self.backup_timer.timeout.connect(self.backup_work)
         self.setWindowIcon(QIcon(str(Path(__file__).parent/'assets'/'app-icon.ico')))
         self.form, self.path, self.selected = Form(), None, None
         self.project_key = uuid.uuid4().hex
@@ -435,6 +439,12 @@ class Window(QMainWindow):
         names_action = QAction('変数・名前管理',self)
         names_action.setShortcut(QKeySequence('Ctrl+M'));names_action.triggered.connect(self.manage_names)
         toolbar.addAction(names_action)
+        self.recent_menu=QMenu('最近の設計',self)
+        recent_button=QToolButton();recent_button.setText('最近の設計')
+        recent_button.setMenu(self.recent_menu);recent_button.setPopupMode(QToolButton.InstantPopup)
+        toolbar.addWidget(recent_button)
+        recovery_action=toolbar.addAction('作業を復元');recovery_action.triggered.connect(self.recover_work)
+        self.refresh_recent_menu()
         root = QWidget(); outer = QVBoxLayout(root)
         outer.addWidget(QLabel('PML フォーム設計  •  プレビューは概略表示 / E3D 4.0 実機互換性は未検証'))
         columns = QSplitter()
@@ -696,6 +706,78 @@ class Window(QMainWindow):
             self.pml_highlighters.append(highlighter)
         self.refresh()
         if self.settings.error:self.statusBar().showMessage('設定JSONを読み込めません: '+self.settings.error)
+        self.backup_timer.start()
+
+    def refresh_recent_menu(self):
+        self.recent_menu.clear()
+        for name in self.settings.recent_files:
+            path=Path(name)
+            action=self.recent_menu.addAction(path.name.replace('&','&&'))
+            action.setToolTip(str(path));action.setStatusTip(str(path))
+            action.triggered.connect(lambda checked=False,p=path:self.open_design(p))
+        if not self.settings.recent_files:
+            self.recent_menu.addAction('履歴はありません').setEnabled(False)
+        else:
+            self.recent_menu.addSeparator()
+            self.recent_menu.addAction('履歴を消去').triggered.connect(self.clear_recent)
+
+    def remember_project(self):
+        try:self.settings.remember_design(self.path)
+        except (OSError,ValueError) as error:return '最近の設計を保存できません: '+str(error)
+        self.refresh_recent_menu();return ''
+
+    def clear_recent(self):
+        try:self.settings.clear_recent()
+        except OSError as error:self.statusBar().showMessage('履歴を消去できません: '+str(error));return
+        self.refresh_recent_menu()
+
+    def backup_work(self):
+        if self.loading or self._closing or not self.dirty:return
+        try:self.recovery.write(self.form,self.path,self.variables.toPlainText() if self.variable_error else None)
+        except (OSError,ValueError) as error:self.statusBar().showMessage('自動バックアップを保存できません（最後の成功分は保持）: '+str(error))
+
+    def clear_backup(self):
+        try:self.recovery.clear()
+        except OSError as error:self.statusBar().showMessage('バックアップを削除できません: '+str(error))
+
+    def recovery_options(self):
+        options=[]
+        try:paths=self.recovery.candidates()
+        except OSError as error:self.statusBar().showMessage('復元データを確認できません: '+str(error));return []
+        for path in paths:
+            try:
+                form,data=self.recovery.read(path)
+                options.append((path,f"{data.get('saved_at','日時不明')}  {data['source'] or form.title or '未保存の設計'}"))
+            except (OSError,ValueError):continue
+        return options
+
+    def offer_recovery(self):
+        options=self.recovery_options()
+        if not options:return
+        path,label=options[0]
+        answer=QMessageBox.question(self,'未保存作業の復元',f'未保存の作業が見つかりました。復元しますか？\n{label}\n\n「いいえ」でもバックアップは保持し、「作業を復元」から選べます。',QMessageBox.Yes|QMessageBox.No,QMessageBox.Yes)
+        if answer==QMessageBox.Yes:self.restore_work(path)
+
+    def recover_work(self):
+        options=self.recovery_options()
+        if not options:self.statusBar().showMessage('復元できる未保存作業はありません。');return
+        labels=[f'{index+1}. {label}' for index,(_,label) in enumerate(options)]
+        label,accepted=QInputDialog.getItem(self,'作業を復元','復元する作業',labels,0,False)
+        if accepted:self.restore_work(options[labels.index(label)][0])
+
+    def restore_work(self,path):
+        try:form,data=self.recovery.read(path)
+        except (OSError,ValueError) as error:QMessageBox.warning(self,'復元エラー',str(error));return False
+        if not self.confirm_discard():return False
+        try:claim=self.recovery.claim(path)
+        except ValueError as error:QMessageBox.warning(self,'復元エラー',str(error));return False
+        self.clear_backup();self.recovery.restored_path=Path(path);self.recovery.restored_lock=claim
+        self.project_key=uuid.uuid4().hex;self.form=form
+        self.path=Path(data['source']) if data['source'] else None
+        self.selected=None;self.history.clear();self.future.clear()
+        self.variable_error=False;self.dirty=True;self.refresh()
+        if data['pending_variables'] is not None:self.variables.setPlainText(data['pending_variables'])
+        self.statusBar().showMessage('未保存の作業を復元しました。内容を確認して設計を保存してください。');return True
 
     @staticmethod
     def number(low, high):
@@ -1680,6 +1762,7 @@ class Window(QMainWindow):
 
     def new(self):
         if not self.confirm_discard(): return
+        self.clear_backup()
         self.project_key = uuid.uuid4().hex
         self.variable_error = False; self.form = Form(); self.path = None; self.selected = None; self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
 
@@ -1687,13 +1770,21 @@ class Window(QMainWindow):
         if not self.confirm_discard(): return
         name, _ = QFileDialog.getOpenFileName(self, '設計を開く', '', '設計 (*.json)')
         if not name: return
+        self.open_design(Path(name),confirmed=True)
+
+    def open_design(self,path,*,confirmed=False):
+        if not confirmed and not self.confirm_discard():return False
         try:
-            text = Path(name).read_text(encoding='utf-8')
+            text = Path(path).read_text(encoding='utf-8')
             form = Form.loads(text)
         except (OSError, ValueError) as e:
-            QMessageBox.warning(self, '読込エラー', str(e)); return
+            QMessageBox.warning(self, '読込エラー', str(e)); return False
+        self.clear_backup()
         self.project_key = uuid.uuid4().hex
-        self.variable_error = False; self.form = form; self.path = Path(name); self.selected = None; self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
+        self.variable_error = False; self.form = form; self.path = Path(path); self.selected = None; self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
+        warning=self.remember_project()
+        if warning:self.statusBar().showMessage(warning)
+        return True
 
     def save_as(self):
         return self.save(force_dialog=True)
@@ -1718,7 +1809,8 @@ class Window(QMainWindow):
         except OSError as e:
             QMessageBox.warning(self, '保存エラー', str(e)); return False
         self.path = path; self.dirty = False; self.refresh()
-        self.statusBar().showMessage(f'設計を保存しました: {path}');return True
+        self.clear_backup();warning=self.remember_project()
+        self.statusBar().showMessage(f'設計を保存しました: {path}'+(' / '+warning if warning else ''));return True
 
     def mac_output_path(self,filename):
         selected=Path(filename);path=selected.with_suffix('.mac')
@@ -1761,6 +1853,7 @@ class Window(QMainWindow):
 
     def closeEvent(self, event):
         if self.confirm_discard():
+            self.clear_backup();self.backup_timer.stop()
             self._closing = True
             self.menu_dialog.close()
             self.scene.blockSignals(True)
@@ -1787,4 +1880,5 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     window = Window(); window.show()
+    QTimer.singleShot(0,window.offer_recovery)
     return app.exec()
