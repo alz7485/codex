@@ -758,11 +758,11 @@ class Window(QMainWindow):
 
     def update_menu_name(self, text):
         menu = self.current_menu()
-        if self.loading or menu is None: return
-        self.checkpoint();old_name = menu.name;menu.name = text
-        for gadget in self.form.gadgets:
-            if gadget.popup_menu.lower() == old_name.lower(): gadget.popup_menu = text
-        self.refresh(rebuild=False)
+        if self.loading or menu is None or menu.name==text:return
+        from .names import rename
+        try:result=rename(self.form,'menu',self.selected_menu,text)
+        except ValueError as error:self.statusBar().showMessage(str(error));return
+        self.checkpoint();self.form=result;self.refresh()
 
     def add_menu_item(self):
         menu = self.current_menu()
@@ -816,14 +816,18 @@ class Window(QMainWindow):
 
     def update_form(self):
         if self.loading: return
-        self.checkpoint()
-        self.form.show_form = True
-        self.form.dock_side = ('RIGHT','NONE','NONE','LEFT','TOP','BOTTOM')[self.docking.currentIndex()]
-        self.form.dock_right = self.form.dock_side == 'RIGHT'
-        self.form.form_type = 'MAIN' if self.docking.currentIndex() == 2 else 'DIALOG'
-        self.form.name, self.form.title = self.fname.text(), self.ftitle.text()
-        self.form.width, self.form.height = self.fw.value(), self.fh.value()
-        self.refresh()
+        from .names import rename
+        candidate=copy.deepcopy(self.form)
+        candidate.show_form=True
+        candidate.dock_side=('RIGHT','NONE','NONE','LEFT','TOP','BOTTOM')[self.docking.currentIndex()]
+        candidate.dock_right=candidate.dock_side=='RIGHT'
+        candidate.form_type='MAIN' if self.docking.currentIndex()==2 else 'DIALOG'
+        candidate.title=self.ftitle.text()
+        candidate.width,candidate.height=self.fw.value(),self.fh.value()
+        if candidate.name!=self.fname.text():
+            try:candidate=rename(candidate,'form',None,self.fname.text())
+            except ValueError as error:self.statusBar().showMessage(str(error));return
+        self.checkpoint();self.form=candidate;self.refresh()
 
     def populate_parents(self, gadget):
         combo = self.fields['parent']; combo.clear(); combo.addItem('(フォーム直下)', '')
@@ -1025,7 +1029,11 @@ class Window(QMainWindow):
 
     def update_gadget(self):
         if self.loading or self.selected is None: return
-        self.checkpoint(); g = self.form.gadgets[self.selected]
+        previous_future=list(self.future);previous_dirty=self.dirty
+        requested_name=self.fields['name'].text()
+        self.checkpoint()
+        if requested_name!=self.form.gadgets[self.selected].name:self.form=copy.deepcopy(self.form)
+        g = self.form.gadgets[self.selected]
         g.comment = self.gadget_comment.toPlainText()
         old_action = g.action_mode
         old_mode = g.list_mode
@@ -1035,12 +1043,14 @@ class Window(QMainWindow):
         from .names import actual_name,code_slots,read_slot,write_slot,rewrite_code
         old_actual = actual_name(g)
         for key, w in self.fields.items():
+            if key=='name':continue
             value = w.currentData() if key in ('parent','xref','yref','width_ref','popup_menu','action_mode') else w.value() if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
             setattr(g, key, value)
         if old_display != g.display_mode:
             if g.display_mode == 'PIXMAP': g.width *= SX;g.height *= SY
             else: g.width = max(1,g.width/SX);g.height = max(1,g.height/SY)
             if g.kind == 'option' and g.display_mode == 'PIXMAP': g.name = g.name.lstrip('_')
+        if g.kind == 'option' and g.display_mode == 'PIXMAP':requested_name=requested_name.lstrip('_')
         if g.button_role != old_role and g.button_role in ('OK','CANCEL','HELP'):
             g.callback = '';g.command = '';g.action_mode = 'CODE'
         if g.kind == 'option' and old_display == 'PIXMAP' and g.display_mode == 'TEXT':
@@ -1080,7 +1090,14 @@ class Window(QMainWindow):
         if g.kind == 'option' and old_display != g.display_mode:
             for _,owner,key in code_slots(self.form):
                 write_slot(owner,key,rewrite_code(read_slot(owner,key),self.form.name,self.form.name,{old_actual:actual_name(g)}))
-        self.refresh(rebuild=table_changed)
+        name_changed=requested_name!=g.name
+        if name_changed:
+            from .names import rename
+            try:self.form=rename(self.form,'gadget',self.selected,requested_name)
+            except ValueError as error:
+                self.form=self.history.pop();self.future=previous_future;self.dirty=previous_dirty
+                self.statusBar().showMessage(str(error));return
+        self.refresh(rebuild=table_changed or name_changed)
 
     def refresh(self, rebuild=True):
         if self._closing or not isValid(self) or not isValid(self.scene): return

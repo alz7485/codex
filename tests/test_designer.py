@@ -619,6 +619,7 @@ class GuiTests(unittest.TestCase):
         self.assertFalse(self.w.fields['width'].isEnabled())
         self.w.selected=0;self.w.refresh()
         editor=self.w.fields['name'];editor.selectAll();QTest.keyClicks(editor,'renamed')
+        follower=self.w.form.gadgets[1]
         self.assertEqual((follower.xref,follower.yref,follower.width_ref),('renamed',)*3)
         self.w.fields['x'].setValue(12)
         item=next(item for item in self.w.scene.items() if item.data(0)==1)

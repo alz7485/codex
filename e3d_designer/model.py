@@ -443,8 +443,8 @@ class Form:
             if g.kind != 'button' or g.button_role not in ('NORMAL','APPLY','RESET'):
                 raise ValueError('外部マクロは通常 / APPLY / RESET ボタンで設定してください。')
             if g.callback or g.command:raise ValueError('外部マクロと手入力の CALL は同時に設定できません。')
-            if not g.macro_path.strip() or any(c in g.macro_path for c in '\r\n"$'):
-                raise ValueError(f'{g.name}: マクロファイルのパスを指定してください（改行・二重引用符・$ は使用できません）。')
+            if not g.macro_path.strip() or any(ord(c)<32 or c in '"$' for c in g.macro_path):
+                raise ValueError(f'{g.name}: マクロファイルのパスを指定してください（制御文字・二重引用符・$ は使用できません）。')
             if g.macro_flag:
                 if not IDENTIFIER.fullmatch(g.macro_flag) or g.macro_flag.lower() not in {name.lower() for name in self.variables}:
                     raise ValueError(f'{g.name}: フラグには登録済みのグローバル変数名を指定してください。')
@@ -702,4 +702,4 @@ class Form:
                 lines += [f'define method .{g.callback}{signature}', g.body or '  -- TODO: add PML logic', 'endmethod', '']
         from .formatting import canonical_pml
         text='\n'.join(lines)
-        return canonical_pml(text) if normalize else text
+        return canonical_pml(text,external_types={g.control_type for g in self.gadgets if g.kind=='container' and g.assembly}) if normalize else text
