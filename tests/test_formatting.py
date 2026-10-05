@@ -29,7 +29,7 @@ class FormattingTests(unittest.TestCase):
         form=Form(name='mixedForm',variables={'flag':'mixed'},default_body="!!flag = 'ready'",gadgets=[Gadget(name='runButton',label='Run',command='SAVEWORK')])
         before=form.dumps();result=form.pml()
         self.assertIn("Var !!FLAG 'MIXED'",result)
-        self.assertIn('Setup Form !!MIXEDFORM Dialog Dock Right',result)
+        self.assertIn('Setup Form !!MIXEDFORM Size 70 22 Dialog',result)
         self.assertIn("Call 'Savework'",result)
         self.assertIn("!!FLAG = 'READY'",result)
         self.assertEqual(form.dumps(),before)

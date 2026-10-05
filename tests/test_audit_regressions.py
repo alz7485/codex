@@ -248,7 +248,7 @@ class AuditGuiRegressionTests(unittest.TestCase):
         self.assertEqual(w.form.geometry(w.form.named(page)),(0,0,50,14))
         w.form.validate()
 
-    def test_double_click_canvas_and_list_rename_updates_references(self):
+    def test_double_click_canvas_and_list_changes_label_only(self):
         w=self.w
         self.load(Form(gadgets=[Gadget(name='first',x=2,y=2),Gadget(name='second',x=20,y=2)],default_body='!this.first.val = 1'))
         item=next(item for item in w.scene.items() if isinstance(item,Item) and item.gadget.name=='first')
@@ -256,20 +256,28 @@ class AuditGuiRegressionTests(unittest.TestCase):
         with patch('e3d_designer.app.QInputDialog.getText',return_value=('renamed',True)) as dialog:
             QTest.mouseDClick(w.view.viewport(),Qt.LeftButton,Qt.NoModifier,point)
             self.app.processEvents();dialog.assert_called_once()
-        self.assertEqual(w.form.gadgets[0].name,'renamed')
-        self.assertEqual(w.form.default_body,'!this.renamed.val = 1')
+        self.assertEqual(w.form.gadgets[0].label,'renamed')
+        self.assertEqual(w.form.gadgets[0].name,'first')
+        self.assertEqual(w.form.default_body,'!this.first.val = 1')
         point=w.objects.visualItemRect(w.objects.item(0)).center()
         with patch('e3d_designer.app.QInputDialog.getText',return_value=('listed',True)) as dialog:
             QTest.mouseClick(w.objects.viewport(),Qt.LeftButton,Qt.NoModifier,point)
             QTest.mouseDClick(w.objects.viewport(),Qt.LeftButton,Qt.NoModifier,point)
             self.app.processEvents();dialog.assert_called_once()
-        self.assertEqual(w.form.gadgets[0].name,'listed')
-        self.assertEqual(w.form.default_body,'!this.listed.val = 1')
-        w.undo();self.assertEqual(w.form.gadgets[0].name,'renamed')
+        self.assertEqual(w.form.gadgets[0].label,'listed')
+        self.assertEqual(w.form.gadgets[0].name,'first')
+        self.assertEqual(w.form.default_body,'!this.first.val = 1')
+        w.undo();self.assertEqual(w.form.gadgets[0].label,'renamed')
         original=w.form.dumps();history=len(w.history)
-        for result in (('second',True),('',True),('ignored',False)):
-            with patch('e3d_designer.app.QInputDialog.getText',return_value=result):w.edit_object_name('renamed')
+        for result in (('$bad',True),('bad\nlabel',True),('ignored',False),('renamed',True)):
+            with patch('e3d_designer.app.QInputDialog.getText',return_value=result):w.edit_object_label('first')
             self.assertEqual(w.form.dumps(),original);self.assertEqual(len(w.history),history)
+
+        for label in ('Run',''):
+            with patch('e3d_designer.app.QInputDialog.getText',return_value=(label,True)):w.edit_object_label('first')
+            self.assertEqual(w.form.gadgets[0].name,'first')
+            self.assertEqual(w.form.gadgets[0].label,label)
+            w.undo();self.assertEqual(w.form.dumps(),original)
 
     def test_inspector_pages_and_separate_menu_editor(self):
         w=self.w;w.add('button')

@@ -263,7 +263,8 @@ class ModelTests(unittest.TestCase):
         pml = Form.loads(f.dumps()).pml(normalize=False)
         self.assertTrue(pml.startswith("VAR !!projectName 'Project A'\nVAR !!mode 'Default'\nkill !!userform\n"))
         self.assertLess(pml.index('kill !!userform'), pml.index('setup form'))
-        self.assertIn('setup form !!userform DIALOG DOCK RIGHT',pml)
+        self.assertIn('setup form !!userform size 70 22 DIALOG',pml)
+        self.assertNotIn('DIALOG DOCK',pml)
         self.assertIn('size 70 22 DIALOG',Form(dock_right=False).pml(normalize=False))
         with self.assertRaises(ValueError): Form(variables={'userform':'bad'}).pml(normalize=False)
 
@@ -801,7 +802,7 @@ class GuiTests(unittest.TestCase):
         self.w.variables.setPlainText('mode=Default')
         self.assertFalse(self.w.variable_error)
         self.assertIn(canonical_pml("VAR !!mode 'Default'"),self.w.code.toPlainText())
-        self.w.docking.setCurrentIndex(1)
+        self.w.docking.setCurrentIndex(0)
         self.assertIn(canonical_pml("size 70 22 DIALOG"),self.w.code.toPlainText())
 
     def test_mouse_drag_updates_model_and_undo(self):

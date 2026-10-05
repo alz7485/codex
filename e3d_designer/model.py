@@ -116,7 +116,7 @@ class Menu:
 class Form:
     name: str = 'userform'
     title: str = 'User Form'
-    dock_right: bool = True
+    dock_right: bool = False
     show_form: bool = True
     after_show_code: str = ''
     default_body: str = ''
@@ -502,6 +502,7 @@ class Form:
             data = json.loads(text)
             if data['version'] not in (1,2): raise ValueError('未対応の設計ファイルです。')
             raw = dict(data['form'])
+            if data['version']==1:raw.setdefault('dock_right',True)
             def read_gadget(value):
                 record=dict(value)
                 tabs=record.get('tabs',[])

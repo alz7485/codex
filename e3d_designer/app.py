@@ -160,7 +160,7 @@ class Item(QGraphicsObject):
     resizing = Signal()
     resized = Signal(object)
     pageChosen = Signal(str)
-    renameRequested = Signal(str)
+    labelEditRequested = Signal(str)
 
     def __init__(self, gadget, form):
         super().__init__()
@@ -211,7 +211,7 @@ class Item(QGraphicsObject):
     def mouseDoubleClickEvent(self,event):
         if event.button()==Qt.LeftButton:
             self._move_start=None
-            self.renameRequested.emit(self.gadget.name);event.accept();return
+            self.labelEditRequested.emit(self.gadget.name);event.accept();return
         super().mouseDoubleClickEvent(event)
 
     def handles(self):
@@ -462,7 +462,7 @@ class Window(QMainWindow):
         self.objects.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.objects.setTextElideMode(Qt.ElideRight)
         self.objects.orderCommitted.connect(self.reorder_objects); ll.addWidget(self.objects)
-        self.objects.itemDoubleClicked.connect(lambda item:self.request_object_rename(self.form.gadgets[item.data(Qt.UserRole)].name))
+        self.objects.itemDoubleClicked.connect(lambda item:self.request_object_label(self.form.gadgets[item.data(Qt.UserRole)].name))
         self.objects.setToolTip('ドラッグで部品の順序を変更します（親コンテナは変わりません）。')
         left.setMinimumWidth(220); columns.addWidget(left)
         middle = QSplitter(Qt.Vertical)
@@ -517,7 +517,9 @@ class Window(QMainWindow):
         self.fw, self.fh = self.number(1, 300), self.number(1, 300)
         for label, w in [('フォーム名', self.fname), ('タイトル', self.ftitle), ('幅 (PML)', self.fw), ('高さ (PML)', self.fh)]:
             self.form_fields.addRow(label, w); self.connect_field(w, self.update_form)
-        self.docking = QComboBox(); self.docking.addItems(['右ドッキング', '通常ダイアログ','MAIN フォーム','左ドッキング','上ドッキング','下ドッキング'])
+        self.docking = QComboBox()
+        for label,value in (('通常ダイアログ','NONE'),('右ドッキング','RIGHT'),('左ドッキング','LEFT'),('上ドッキング','TOP'),('下ドッキング','BOTTOM'),('MAIN フォーム','MAIN')):
+            self.docking.addItem(label,value)
         self.docking.currentIndexChanged.connect(self.update_form)
         self.form_fields.addRow('表示形式', self.docking)
         rl.addLayout(self.form_fields)
@@ -686,7 +688,7 @@ class Window(QMainWindow):
 
     @staticmethod
     def number(low, high):
-        w = QDoubleSpinBox(); w.setRange(low, high); w.setDecimals(2); w.setSingleStep(.5); return w
+        w = QDoubleSpinBox(); w.setRange(low, high); w.setDecimals(1); w.setSingleStep(.1); return w
 
     @staticmethod
     def connect_field(w, fn):
@@ -832,22 +834,24 @@ class Window(QMainWindow):
     def add_palette_menu(self):
         if not self.form.menus:self.add_menu()
         self.menu_dialog.show();self.menu_dialog.raise_();self.menu_dialog.activateWindow()
-        self.menu_name.setFocus()
+        self.menu_name.setFocus();self.menu_name.selectAll()
 
-    def request_object_rename(self,name):
+    def request_object_label(self,name):
         from PySide6.QtCore import QTimer
-        QTimer.singleShot(0,lambda:self.edit_object_name(name))
+        QTimer.singleShot(0,lambda:self.edit_object_label(name))
 
-    def edit_object_name(self,name):
+    def edit_object_label(self,name):
         index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name),None)
         if index is None or self._closing:return
-        text,accepted=QInputDialog.getText(self,'オブジェクト名の変更','新しいオブジェクト名',QLineEdit.Normal,name)
-        if not accepted or text==name:return
-        from .names import rename
-        try:candidate=rename(self.form,'gadget',index,text)
+        gadget=self.form.gadgets[index]
+        if gadget.kind=='line':
+            self.statusBar().showMessage('線には表示名を設定できません。');return
+        text,accepted=QInputDialog.getText(self,'表示名の変更','画面に表示する文字',QLineEdit.Normal,gadget.label)
+        if not accepted or text==gadget.label:return
+        candidate=copy.deepcopy(self.form);candidate.gadgets[index].label=text
+        try:candidate.validate()
         except ValueError as error:self.statusBar().showMessage(str(error));return
         self.checkpoint();self.form=candidate;self.selected=index;self.refresh()
-        self.menu_name.selectAll()
 
     def add_menu(self):
         self.checkpoint()
@@ -944,9 +948,10 @@ class Window(QMainWindow):
         from .names import rename
         candidate=copy.deepcopy(self.form)
         candidate.show_form=True
-        candidate.dock_side=('RIGHT','NONE','NONE','LEFT','TOP','BOTTOM')[self.docking.currentIndex()]
+        selection=self.docking.currentData()
+        candidate.dock_side='NONE' if selection=='MAIN' else selection
         candidate.dock_right=candidate.dock_side=='RIGHT'
-        candidate.form_type='MAIN' if self.docking.currentIndex()==2 else 'DIALOG'
+        candidate.form_type='MAIN' if selection=='MAIN' else 'DIALOG'
         candidate.title=self.ftitle.text()
         candidate.width,candidate.height=self.fw.value(),self.fh.value()
         if candidate.name!=self.fname.text():
@@ -982,8 +987,8 @@ class Window(QMainWindow):
         for key in ('width','height'):
             pixel = gadget.display_mode == 'PIXMAP'
             self.fields[key].setMaximum(8192 if pixel else 300)
-            self.fields[key].setDecimals(0 if pixel else 2)
-            self.fields[key].setSingleStep(1 if pixel else .5)
+            self.fields[key].setDecimals(1)
+            self.fields[key].setSingleStep(.1)
         for key in ('x','y'): self.fields[key].setEnabled(mode == 'ABSOLUTE')
         for key in ('path','halign','valign','hgap','vgap'): self.fields[key].setEnabled(mode == 'AUTO')
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): self.fields[key].setEnabled(mode == 'RELATIVE')
@@ -1159,7 +1164,7 @@ class Window(QMainWindow):
         for index,g in enumerate(self.form.gadgets):
             self.objects.item(index).setHidden(self.form.is_tab_page(g))
             self.objects.item(index).setForeground(QColor('#24354b' if visibility.get(index,True) else '#98a2b3'))
-            self.objects.item(index).setToolTip(f'.{g.name}'+(f' / 親: .{g.parent}' if g.parent else ' / フォーム直下')+'\nダブルクリックで名前を変更')
+            self.objects.item(index).setToolTip(f'.{g.name}'+(f' / 親: .{g.parent}' if g.parent else ' / フォーム直下')+'\nダブルクリックで表示名を変更')
         self.sync_tab_editor()
         self.sync_context_hints()
 
@@ -1169,7 +1174,7 @@ class Window(QMainWindow):
             parent=self.form.parent_gadget(g)
             location=f'{parent.label} (.{parent.name})' if parent else 'フォーム直下'
             self.selection_hint.setText(f'{gadget_title(g)}  .{g.name}\n所属: {location}')
-        else:self.selection_hint.setText('部品を選択してください。\nダブルクリックで名前を変更できます。')
+        else:self.selection_hint.setText('部品を選択してください。\nダブルクリックで表示名を変更できます。')
         target=g if g and g.kind=='frame' else self.form.parent_gadget(g) if g else self.form.named(self.tabset_picker.currentData()) if self.tabset_picker.currentData() else None
         if target and target.frame_style=='TABSET':
             target=next((page for page in target.tabs if page.name.lower()==self.active_pages.get(target.name.lower())),None)
@@ -1357,7 +1362,7 @@ class Window(QMainWindow):
         if self.default_body.toPlainText() != self.form.default_body: self.default_body.setPlainText(self.form.default_body)
         if self.after_show.toPlainText() != self.form.after_show_code: self.after_show.setPlainText(self.form.after_show_code)
         self.fname.setText(self.form.name); self.ftitle.setText(self.form.title)
-        self.docking.setCurrentIndex(2 if self.form.form_type == 'MAIN' else {'RIGHT':0,'NONE':1,'LEFT':3,'TOP':4,'BOTTOM':5}[self.form.docking_side()])
+        self.docking.setCurrentIndex(self.docking.findData('MAIN' if self.form.form_type=='MAIN' else self.form.docking_side()))
         for event,editor in self.form_callbacks.items():
             if editor.text() != getattr(self.form,event): editor.setText(getattr(self.form,event))
         self.fw.setValue(self.form.width); self.fh.setValue(self.form.height)
@@ -1370,7 +1375,7 @@ class Window(QMainWindow):
         for index, g in enumerate(self.form.gadgets):
             item = Item(g, self.form); item.setData(0, index)
             item.pageChosen.connect(self.choose_page)
-            item.renameRequested.connect(self.request_object_rename)
+            item.labelEditRequested.connect(self.request_object_label)
             item.resizing.connect(self.resize_preview); item.resized.connect(self.resize_committed)
             item.moved.connect(self.move_committed); self.scene.addItem(item)
             item.setSelected(index == self.selected)
