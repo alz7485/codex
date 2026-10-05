@@ -286,8 +286,8 @@ class Form:
             if x < -.001 or y < -.001 or width < 1 or height < 1 or x + width > parent_width + .001 or y + height > parent_height + .001:
                 raise ValueError(f'{g.name}: 部品を親コンテナ内に収めてください。')
             if g.background:
-                if g.kind not in ('paragraph', 'button') or not re.fullmatch(r'[0-9]+', g.background):
-                    raise ValueError('BACKGROUND は PARAGRAPH / BUTTON の非負整数カラー番号を指定してください。')
+                if g.kind not in ('paragraph', 'button', 'list') or not re.fullmatch(r'[0-9]+', g.background):
+                    raise ValueError('BACKGROUND は PARAGRAPH / BUTTON / LIST の非負整数カラー番号を指定してください。')
             if g.frame_style not in ('FRAME', 'TABSET'):
                 raise ValueError('FRAME 形式は FRAME / TABSET を指定してください。')
             if g.frame_style == 'TABSET' and g.kind != 'frame':
@@ -464,7 +464,8 @@ class Form:
                 line += '\nEXIT'
             elif g.kind == 'list':
                 selection = 'MULTIPLE' if g.selection_mode == 'MULTI' else g.selection_mode
-                line = f'list .{g.name} {position} {label} {selection} {width_clause} HEIGHT {n(g.height)}' + callback
+                background = f'BACKGROUND {int(g.background)} ' if g.background else ''
+                line = f'list .{g.name} {background}{position} {label} {selection} {width_clause} HEIGHT {n(g.height)}' + callback
             elif g.kind == 'combo':
                 line = f'{g.combo_keyword} .{g.name} {label} {position} {width_clause}' + callback
             elif g.kind == 'slider':

@@ -623,7 +623,7 @@ class Window(QMainWindow):
             'value_type':gadget.kind == 'text', 'initial':gadget.kind == 'text',
             'callback':gadget.kind in ('button','text','toggle','list','combo','slider'),
             'command':gadget.kind in ('button','text','toggle'),
-            'background':gadget.kind in ('button','paragraph'), 'orientation':gadget.kind == 'line',
+            'background':gadget.kind in ('button','paragraph','list'), 'orientation':gadget.kind == 'line',
             'frame_style':gadget.kind == 'frame',
             'width_ref':gadget.kind not in ('toggle','option','rtoggle'),
         }
@@ -806,7 +806,7 @@ class Window(QMainWindow):
             self.props.setEnabled(True)
             self.fields['value_type'].setEnabled(g.kind == 'text'); self.fields['initial'].setEnabled(g.kind == 'text')
             self.choices.setEnabled(g.kind in ('option', 'list', 'combo'))
-            self.fields['label'].setEnabled(g.kind != 'line'); self.fields['orientation'].setEnabled(g.kind == 'line'); self.fields['frame_style'].setEnabled(g.kind == 'frame'); self.fields['callback'].setEnabled(g.kind not in ('paragraph', 'line', 'frame', 'option')); self.fields['command'].setEnabled(g.kind in ('toggle', 'text', 'button')); self.fields['background'].setEnabled(g.kind in ('paragraph', 'button')); self.body.setEnabled(bool(g.callback))
+            self.fields['label'].setEnabled(g.kind != 'line'); self.fields['orientation'].setEnabled(g.kind == 'line'); self.fields['frame_style'].setEnabled(g.kind == 'frame'); self.fields['callback'].setEnabled(g.kind not in ('paragraph', 'line', 'frame', 'option')); self.fields['command'].setEnabled(g.kind in ('toggle', 'text', 'button')); self.fields['background'].setEnabled(g.kind in ('paragraph', 'button', 'list')); self.body.setEnabled(bool(g.callback))
             self.sync_extra_editors(g, rebuild)
         else: self.selected = None; self.props.setEnabled(False)
         self.loading = False
@@ -877,7 +877,7 @@ class Window(QMainWindow):
             self.choice_commands.setPlainText('\n'.join(g.item_commands)); self.choice_commands.setEnabled(g.kind == 'option')
             self.fields['value_type'].setEnabled(g.kind == 'text'); self.fields['initial'].setEnabled(g.kind == 'text')
             self.choices.setEnabled(g.kind in ('option', 'list', 'combo'))
-            self.fields['label'].setEnabled(g.kind != 'line'); self.fields['orientation'].setEnabled(g.kind == 'line'); self.fields['frame_style'].setEnabled(g.kind == 'frame'); self.fields['callback'].setEnabled(g.kind not in ('paragraph', 'line', 'frame', 'option')); self.fields['command'].setEnabled(g.kind in ('toggle', 'text', 'button')); self.fields['background'].setEnabled(g.kind in ('paragraph', 'button')); self.body.setEnabled(bool(g.callback))
+            self.fields['label'].setEnabled(g.kind != 'line'); self.fields['orientation'].setEnabled(g.kind == 'line'); self.fields['frame_style'].setEnabled(g.kind == 'frame'); self.fields['callback'].setEnabled(g.kind not in ('paragraph', 'line', 'frame', 'option')); self.fields['command'].setEnabled(g.kind in ('toggle', 'text', 'button')); self.fields['background'].setEnabled(g.kind in ('paragraph', 'button', 'list')); self.body.setEnabled(bool(g.callback))
             self.sync_extra_editors(g)
         self.apply_page_visibility()
         self.props.setEnabled(self.selected is not None); self.loading = False

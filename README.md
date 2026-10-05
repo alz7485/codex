@@ -87,7 +87,7 @@ setup form !!equipmenttool DIALOG DOCK RIGHT
 exit
 ```
 
-BACKGROUND は PARAGRAPH / BUTTON に対応します。空欄なら省略します。PARAGRAPH は省略時に背景色になります。色番号は非負整数として出力し、色の対応や有効範囲は E3D で確認してください。プレビューでは BG 番号を表示します。
+BACKGROUND は PARAGRAPH / BUTTON / LIST に対応します。LIST では `list .name BACKGROUND 5 AT X 2 Y 3` のように AT より前に出力します。空欄なら省略します。PARAGRAPH は省略時に背景色になります。色番号は非負整数として出力し、色の対応や有効範囲は E3D で確認してください。プレビューでは BG 番号を表示します。
 
 LINE は HORIZ / VERT を選択できます。表示文字は空文字に固定します。TEXT は STRING / REAL に対応します。TEXT / TOGGLE / OPTION の幅・高さや PARAGRAPH / BUTTON の高さなど、指定構文に含まれない寸法はプレビュー用です。LIST はユーザー指定の順序で `list .name AT X 値 Y 値 '表示名' SINGLE WIDTH 値 HEIGHT 値` と出力し、コンストラクタ内の `.dtext` を使用します。相対配置でも AT は表示名の前です。AUTO では AT を省略します。
 

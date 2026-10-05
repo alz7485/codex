@@ -422,3 +422,5 @@ COMBO の追加確認: [Form Layout and Gadgets の本文](https://github.com/nh
 ユーザー追記: 単列リストの複数選択には `LIST .name '表示名' MULTIPLE WIDTH 値 HEIGHT 値` と、表示名の配列を `.DTEXT` へ代入する方式も使える。エディタは単列・複数列とも SINGLE / MULTIPLE と HEIGHT を出力する。旧設計ファイルの MULTI は読み込み時に MULTIPLE に移行する。AT のある定義では先のユーザー指示どおり表示名の前に置く。
 
 ユーザー追記: VIEW は HEIGHT の後に ASPECT 値を指定できる。エディタに任意入力欄を追加し、HEIGHT の直後へ出力する。省略を既定とし、E3D 4.0 実機での表示効果は未検証。
+
+ユーザー追記: LIST の色指定は AT より前に置ける。エディタは BACKGROUND 欄を LIST にも対応させ、`LIST .name BACKGROUND 番号 AT ...` の順で出力する。空欄では省略する。

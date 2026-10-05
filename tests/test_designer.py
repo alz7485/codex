@@ -14,6 +14,18 @@ from e3d_designer.app import Window, atomic_write, SX, SY
 
 
 class ModelTests(unittest.TestCase):
+    def test_list_background_precedes_position(self):
+        listing=Gadget(kind='list',name='results',label='Results',background='5',height=4)
+        form=Form(gadgets=[listing]);pml=Form.loads(form.dumps()).pml()
+        self.assertIn("list .results BACKGROUND 5 AT X 2 Y 1 'Results' SINGLE WIDTH 14 HEIGHT 4",pml)
+        listing.list_mode='TABLE';listing.headings=['Name'];listing.rows=[['Pump']]
+        self.assertIn('list .results BACKGROUND 5 AT X 2 Y 1',form.pml())
+        for invalid in ('-1','5.5','5 AT X 10'):
+            listing.background=invalid
+            with self.subTest(value=invalid),self.assertRaises(ValueError): form.pml()
+        listing.background=''
+        self.assertNotIn('BACKGROUND',form.pml())
+
     def test_view_aspect_export_validation_and_legacy_default(self):
         view=Gadget(kind='view',name='model',width=30,height=8,view_aspect='1.5')
         form=Form(gadgets=[view]);pml=Form.loads(form.dumps()).pml()
@@ -401,6 +413,13 @@ class GuiTests(unittest.TestCase):
         self.assertNotIn('ASPECT',self.w.code.toPlainText())
         self.w.selected=None;self.w.refresh();self.w.add('button')
         self.assertFalse(self.w.fields['view_aspect'].isEnabled())
+
+    def test_list_background_property_enabled_and_saved(self):
+        self.w.add('list');editor=self.w.fields['background']
+        self.assertTrue(editor.isEnabled())
+        editor.setFocus();QTest.keyClicks(editor,'5')
+        self.assertIn('list .list1 BACKGROUND 5 AT X 0 Y 0',self.w.code.toPlainText())
+        self.assertEqual(Form.loads(self.w.form.dumps()).gadgets[0].background,'5')
 
     def test_menu_edit_save_preview_and_undo(self):
         self.w.add_menu(); self.w.add_menu_item()
