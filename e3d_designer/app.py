@@ -272,6 +272,9 @@ class Window(QMainWindow):
             if shortcut: a.setShortcut(QKeySequence(shortcut))
             a.triggered.connect(fn)
             toolbar.addAction(a)
+        names_action = QAction('変数・名前管理',self)
+        names_action.setShortcut(QKeySequence('Ctrl+M'));names_action.triggered.connect(self.manage_names)
+        toolbar.addAction(names_action)
         root = QWidget(); outer = QVBoxLayout(root)
         outer.addWidget(QLabel('PML フォーム設計  •  プレビューは概略表示 / E3D 4.0 実機互換性は未検証'))
         columns = QSplitter()
@@ -440,6 +443,14 @@ class Window(QMainWindow):
     def checkpoint(self):
         self.history.append(copy.deepcopy(self.form)); self.history = self.history[-100:]; self.future.clear()
         self.dirty = True
+
+    def manage_names(self):
+        if self.variable_error:
+            self.statusBar().showMessage('変数欄の入力エラーを修正してから名前管理を開いてください。');return
+        from .name_manager import NameManager
+        manager = NameManager(self)
+        try: manager.exec()
+        finally: manager.deleteLater()
 
     def current_menu(self):
         if self.selected_menu is not None and 0 <= self.selected_menu < len(self.form.menus):
