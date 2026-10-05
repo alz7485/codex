@@ -9,11 +9,21 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QFormLayout, QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
-    QScrollArea, QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView)
+    QScrollArea, QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
+    QGridLayout)
 from .model import Form, Gadget, Menu, MenuItem, KINDS
 
 LABELS = {'button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
           'toggle': 'チェックボックス', 'option': 'ドロップダウン', 'list': 'リスト', 'line': '線 (LINE)', 'frame': '枠 (FRAME)', 'slider':'スライダー', 'rtoggle':'ラジオボタン', 'combo':'コンボボックス', 'view':'ビュー', 'commandline':'コマンド欄 (ALPHA)', 'container':'外部部品 (CONTAINER)'}
+PALETTE = {
+    'button': ('🖱️','ボタン'), 'paragraph': ('🏷️','ラベル'),
+    'text': ('✏️','入力'), 'toggle': ('☑️','チェック'),
+    'option': ('🔽','プルダウン'), 'list': ('📋','リスト'),
+    'line': ('📏','線'), 'frame': ('🖼️','フレーム'),
+    'slider': ('🎚️','スライダー'), 'rtoggle': ('🔘','ラジオ'),
+    'combo': ('📝','コンボ'), 'view': ('👁️','ビュー'),
+    'commandline': ('⌨️','コマンド'), 'container': ('🧩','コンテナ'),
+}
 # Independent character-width and line-height scales; approximate preview only.
 SX, SY = 10, 26
 
@@ -247,16 +257,23 @@ class Window(QMainWindow):
         columns = QSplitter()
         left = QWidget(); ll = QVBoxLayout(left)
         ll.addWidget(QLabel('部品を追加'))
-        palette = QWidget(); palette_layout = QVBoxLayout(palette)
-        for kind in KINDS:
-            b = QPushButton('+ ' + LABELS[kind]); b.clicked.connect(lambda checked=False, k=kind: self.add(k)); palette_layout.addWidget(b)
-        palette_scroll = QScrollArea(); palette_scroll.setWidgetResizable(True); palette_scroll.setWidget(palette)
-        palette_scroll.setMaximumHeight(290); ll.addWidget(palette_scroll)
+        palette = QWidget(); palette_layout = QGridLayout(palette)
+        palette_layout.setContentsMargins(0,0,0,0); palette_layout.setSpacing(4)
+        self.palette_buttons = {}
+        for index,kind in enumerate(KINDS):
+            icon,label = PALETTE[kind]
+            b = QPushButton(f'{icon} {label}'); b.setFixedHeight(28)
+            b.setStyleSheet('font-size: 12px; padding: 2px 4px;')
+            b.setToolTip(f'{LABELS[kind]} を追加')
+            b.clicked.connect(lambda checked=False, k=kind: self.add(k))
+            palette_layout.addWidget(b,index//2,index%2); self.palette_buttons[kind] = b
+        palette_layout.setColumnStretch(0,1); palette_layout.setColumnStretch(1,1)
+        ll.addWidget(palette)
         ll.addWidget(QLabel('部品一覧'))
         self.objects = ObjectList(); self.objects.currentRowChanged.connect(self.choose_row)
         self.objects.orderCommitted.connect(self.reorder_objects); ll.addWidget(self.objects)
         self.objects.setToolTip('ドラッグで部品の順序を変更します（親コンテナは変わりません）。')
-        left.setMinimumWidth(180); columns.addWidget(left)
+        left.setMinimumWidth(220); columns.addWidget(left)
         middle = QSplitter(Qt.Vertical)
         self.scene = Scene(self); self.scene.selectionChanged.connect(self.selection_changed)
         self.view = QGraphicsView(self.scene)
@@ -367,7 +384,7 @@ class Window(QMainWindow):
         rl.addWidget(QLabel('text / toggle / option の高さは E3D 側で決まります。\n選択肢は OPTION / LIST / COMBO 用です。\n処理コードの構文は E3D で確認してください。'))
         rl.addStretch()
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(right); scroll.setMinimumWidth(320)
-        columns.addWidget(scroll); columns.setSizes([180, 820, 360])
+        columns.addWidget(scroll); columns.setSizes([220, 780, 360])
         outer.addWidget(columns, 1); self.setCentralWidget(root)
         self.refresh()
 
