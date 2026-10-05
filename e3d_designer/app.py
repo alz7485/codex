@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
     QScrollArea, QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
     QGridLayout)
+from .highlighting import PmlHighlighter,COLORS
 from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size
 
 LABELS = {'textpane':'複数行テキスト (TEXTPANE)','selector':'DB セレクタ (SELECTOR)','button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
@@ -398,7 +399,10 @@ class Window(QMainWindow):
         middle.addWidget(preview)
         self.code = QPlainTextEdit(); self.code.setReadOnly(True)
         self.code.setStyleSheet('font-family: monospace; font-size: 12px;')
-        middle.addWidget(self.code); middle.setSizes([550, 230]); columns.addWidget(middle)
+        code_panel=QWidget();code_layout=QVBoxLayout(code_panel);code_layout.setContentsMargins(0,0,0,0);code_layout.setSpacing(3)
+        legend=QLabel('  '.join(f'<span style="color:{COLORS[kind]}">{label}</span>' for kind,label in (('command','コマンド'),('object','オブジェクト'),('variable','変数'),('string','文字列'),('number','数値・論理値'),('method','メソッド'),('comment','コメント'))))
+        legend.setWordWrap(True);code_layout.addWidget(legend);code_layout.addWidget(self.code)
+        middle.addWidget(code_panel); middle.setSizes([550, 230]); columns.addWidget(middle)
         right = QWidget(); rl = QVBoxLayout(right)
         self.form_fields = QFormLayout()
         self.fname = QLineEdit(); self.ftitle = QLineEdit()
@@ -548,6 +552,11 @@ class Window(QMainWindow):
         self.property_scroll = scroll
         columns.addWidget(scroll); columns.setSizes([220, 780, 360])
         outer.addWidget(columns, 1); self.setCentralWidget(root)
+        self.pml_highlighters=[]
+        for editor in (self.code,self.after_show,self.default_body,self.body,self.view_code,self.choice_commands):
+            editor.setStyleSheet('font-family: monospace; font-size: 12px; background-color: #ffffff; color: #222222;')
+            highlighter=PmlHighlighter(editor.document());editor.pml_highlighter=highlighter
+            self.pml_highlighters.append(highlighter)
         self.refresh()
 
     @staticmethod
@@ -1047,6 +1056,7 @@ class Window(QMainWindow):
     def refresh(self, rebuild=True):
         if self._closing or not isValid(self) or not isValid(self.scene): return
         self.loading = True
+        for highlighter in self.pml_highlighters:highlighter.set_symbols(self.form)
         self.refresh_menus(rebuild)
         variable_text = '\n'.join(f'{k}={v}' for k,v in self.form.variables.items())
         if not self.variable_error and self.variables.toPlainText() != variable_text:
