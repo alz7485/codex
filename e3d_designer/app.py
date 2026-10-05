@@ -280,13 +280,21 @@ class Window(QMainWindow):
         palette = QWidget(); palette_layout = QGridLayout(palette)
         palette_layout.setContentsMargins(0,0,0,0); palette_layout.setSpacing(4)
         self.palette_buttons = {}
-        for index,kind in enumerate(KINDS):
-            icon,label = PALETTE[kind]
+        entries = []
+        palette_order = [kind for kind in KINDS if kind != 'frame']
+        palette_order.insert(palette_order.index('rtoggle'),'frame')
+        for kind in palette_order:
+            if kind == 'line':
+                entries += [('line_horiz',kind,'HORIZ','📏','横線'),('line_vert',kind,'VERT','↕️','縦線')]
+            elif kind == 'slider':
+                entries += [('slider_horiz',kind,'HORIZONTAL','🎚️','横スライダー'),('slider_vert',kind,'VERTICAL','🎚️','縦スライダー')]
+            else: entries.append((kind,kind,None,*PALETTE[kind]))
+        for index,(key,kind,direction,icon,label) in enumerate(entries):
             b = QPushButton(f'{icon} {label}'); b.setFixedHeight(28)
             b.setStyleSheet('font-size: 12px; padding: 2px 4px;')
-            b.setToolTip(f'{LABELS[kind]} を追加')
-            b.clicked.connect(lambda checked=False, k=kind: self.add(k))
-            palette_layout.addWidget(b,index//2,index%2); self.palette_buttons[kind] = b
+            b.setToolTip(f'{LABELS[kind]} を追加' + (f' ({direction})' if direction else ''))
+            b.clicked.connect(lambda checked=False, k=kind, d=direction: self.add(k,d))
+            palette_layout.addWidget(b,index//2,index%2); self.palette_buttons[key] = b
         palette_layout.setColumnStretch(0,1); palette_layout.setColumnStretch(1,1)
         ll.addWidget(palette)
         ll.addWidget(QLabel('部品一覧'))
@@ -892,7 +900,7 @@ class Window(QMainWindow):
         from PySide6.QtCore import QTimer
         QTimer.singleShot(0, self.refresh)
 
-    def add(self, kind):
+    def add(self, kind, direction=None):
         container = self.form.gadgets[self.selected] if self.selected is not None else None
         if container and container.kind != 'frame': container = self.form.parent_gadget(container)
         if container and container.frame_style == 'TABSET' and kind != 'frame':
@@ -902,11 +910,14 @@ class Window(QMainWindow):
         self.checkpoint()
         name = self.unique_name(kind)
         width_limit, height_limit = (container.width, container.height) if container else (self.form.width, self.form.height)
-        height = min(5 if kind in ('list', 'frame', 'view', 'commandline', 'container') else 1, height_limit)
+        vertical = (kind == 'line' and direction == 'VERT') or (kind == 'slider' and direction == 'VERTICAL')
+        height = min(5 if vertical or kind in ('list', 'frame', 'view', 'commandline', 'container') else 1, height_limit)
         g = Gadget(kind=kind, name=name, label={'button':'Run','paragraph':'Message','text':'Name','toggle':'Enabled','option':'Mode','list':'Results','line':'','frame':'Group','slider':'Level','rtoggle':'Choice','combo':'Choice','view':'Model view','commandline':'Command line','container':'External control'}[kind],
-                   width=min(18, width_limit), height=height,
+                   width=min((1 if kind == 'line' else 3) if vertical else 18,width_limit), height=height,
                    x=0, y=0 if container else min(len(self.form.gadgets) * 1.5, height_limit-height),
                    parent=container.name if container else '')
+        if kind == 'line' and direction: g.orientation = direction
+        if kind == 'slider' and direction: g.slider_orientation = direction
         if kind in ('option', 'list', 'combo'): g.items = ['Item A', 'Item B']
         self.form.gadgets.append(g); self.selected = len(self.form.gadgets) - 1; self.refresh()
 

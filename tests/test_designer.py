@@ -738,6 +738,17 @@ class GuiTests(unittest.TestCase):
         self.w.undo()
         self.assertEqual(self.w.form.gadgets[0].orientation,'HORIZ')
 
+    def test_directional_palette_buttons_create_oriented_gadgets(self):
+        for key,kind,direction in [('line_horiz','line','HORIZ'),('line_vert','line','VERT'),
+                                   ('slider_horiz','slider','HORIZONTAL'),('slider_vert','slider','VERTICAL')]:
+            self.w.selected=None;self.w.refresh()
+            QTest.mouseClick(self.w.palette_buttons[key],Qt.LeftButton)
+            g=self.w.form.gadgets[-1]
+            self.assertEqual(g.kind,kind)
+            self.assertEqual(g.orientation if kind == 'line' else g.slider_orientation,direction)
+            if direction in ('VERT','VERTICAL'): self.assertGreater(g.height,g.width)
+            self.assertIn(direction,self.w.code.toPlainText())
+
     def test_variable_edit_and_invalid_edit_blocks_output(self):
         self.w.variables.setPlainText('projectName=Demo')
         self.assertIn("VAR !!projectName 'Demo'", self.w.code.toPlainText())
