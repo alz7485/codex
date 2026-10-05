@@ -442,3 +442,11 @@ COMBO の追加確認: [Form Layout and Gadgets の本文](https://github.com/nh
 ユーザー追記: VIEW は HEIGHT の後に ASPECT 値を指定できる。エディタに任意入力欄を追加し、HEIGHT の直後へ出力する。省略を既定とし、E3D 4.0 実機での表示効果は未検証。
 
 ユーザー追記: LIST の色指定は AT より前に置ける。エディタは BACKGROUND 欄を LIST にも対応させ、`LIST .name BACKGROUND 番号 AT ...` の順で出力する。空欄では省略する。
+
+
+### フォームのドッキング方向と FILL（2026-10-05）
+
+- [フォームの属性資料](https://github.com/mikhalchankasm/vscode-pml-aveva-e3d/blob/07971b883c53ae665d3c02c7670c1e8cdaa76343/hide_examples/forms/forms.md): `DIALOG DOCK LEFT | RIGHT | TOP | BOTTOM`。フォームを初期表示するアプリケーションの辺を指定。
+- [Forms の公開例](https://github.com/shivangKheradiya/AVEVA_PML/blob/2d3a87205cb80fbc68ca6b0518c9cf58dbd14285/10.%20Forms/README.md): `frame .f1 dock fill`。親の空き領域を埋める部品側の指定。
+
+フォームの4方向を実装。フォームに対する `DIALOG DOCK FILL` は確認できず未採用。部品側の `DOCK FILL` も未実装。資料による構文確認であり、E3D 4.0 実機検証は未実施。

@@ -405,7 +405,7 @@ class Window(QMainWindow):
         self.fw, self.fh = self.number(1, 300), self.number(1, 300)
         for label, w in [('フォーム名', self.fname), ('タイトル', self.ftitle), ('幅 (PML)', self.fw), ('高さ (PML)', self.fh)]:
             self.form_fields.addRow(label, w); self.connect_field(w, self.update_form)
-        self.docking = QComboBox(); self.docking.addItems(['右ドッキング', '通常ダイアログ','MAIN フォーム'])
+        self.docking = QComboBox(); self.docking.addItems(['右ドッキング', '通常ダイアログ','MAIN フォーム','左ドッキング','上ドッキング','下ドッキング'])
         self.docking.currentIndexChanged.connect(self.update_form)
         self.form_fields.addRow('表示形式', self.docking)
         rl.addLayout(self.form_fields)
@@ -758,7 +758,8 @@ class Window(QMainWindow):
         if self.loading: return
         self.checkpoint()
         self.form.show_form = self.show_form.isChecked()
-        self.form.dock_right = self.docking.currentIndex() == 0
+        self.form.dock_side = ('RIGHT','NONE','NONE','LEFT','TOP','BOTTOM')[self.docking.currentIndex()]
+        self.form.dock_right = self.form.dock_side == 'RIGHT'
         self.form.form_type = 'MAIN' if self.docking.currentIndex() == 2 else 'DIALOG'
         self.form.name, self.form.title = self.fname.text(), self.ftitle.text()
         self.form.width, self.form.height = self.fw.value(), self.fh.value()
@@ -1012,7 +1013,7 @@ class Window(QMainWindow):
         self.show_form.setChecked(self.form.show_form)
         if self.after_show.toPlainText() != self.form.after_show_code: self.after_show.setPlainText(self.form.after_show_code)
         self.fname.setText(self.form.name); self.ftitle.setText(self.form.title)
-        self.docking.setCurrentIndex(2 if self.form.form_type == 'MAIN' else 0 if self.form.dock_right else 1)
+        self.docking.setCurrentIndex(2 if self.form.form_type == 'MAIN' else {'RIGHT':0,'NONE':1,'LEFT':3,'TOP':4,'BOTTOM':5}[self.form.docking_side()])
         for event,editor in self.form_callbacks.items():
             if editor.text() != getattr(self.form,event): editor.setText(getattr(self.form,event))
         self.fw.setValue(self.form.width); self.fh.setValue(self.form.height)
