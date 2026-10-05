@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
     QScrollArea, QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
-    QGridLayout)
+    QGridLayout, QTabBar, QDialog, QDialogButtonBox)
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
 from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size
@@ -106,7 +106,7 @@ class Item(QGraphicsObject):
         self.setAcceptHoverEvents(True)
         self.setFlags(QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
         parent = form.parent_gadget(gadget)
-        if gadget.layout_mode == 'ABSOLUTE' and not (parent and parent.frame_style == 'TOOLBAR'): self.setFlag(QGraphicsItem.ItemIsMovable)
+        if gadget.layout_mode == 'ABSOLUTE' and not (parent and parent.frame_style in ('TOOLBAR','TABSET')): self.setFlag(QGraphicsItem.ItemIsMovable)
         ox, oy = preview_offset(form, gadget)
         x, y, self._width, self._height = preview_geometry(form, gadget)
         self.setPos((x + ox) * SX, (y + oy) * SY)
@@ -135,7 +135,7 @@ class Item(QGraphicsObject):
         super().mousePressEvent(event)
 
     def handles(self):
-        if not self.isSelected(): return {}
+        if not self.isSelected() or self.form.is_tab_page(self.gadget): return {}
         r = self.boundingRect(); size = 8
         result = {'height':QRectF(r.center().x()-size/2,r.bottom()-size,size,size)}
         if not self.gadget.width_ref:
@@ -167,7 +167,7 @@ class Item(QGraphicsObject):
             for candidate in self.form.gadgets:
                 x,y,w,h = self.form.geometry(candidate)
                 parent = self.form.parent_gadget(candidate)
-                pw,ph = (self.form.geometry(parent)[2],parent.height) if parent else (self.form.width,self.form.height)
+                pw,ph = self.form.geometry(parent)[2:] if parent else (self.form.width,self.form.height)
                 if x < -.001 or y < -.001 or x+w > pw+.001 or y+h > ph+.001:
                     raise ValueError('部品を親の領域内に収めてください。')
         except ValueError:
@@ -275,7 +275,7 @@ class Item(QGraphicsObject):
             if (self.gadget.width,self.gadget.height) != (width,height): self.resized.emit(old)
             event.accept(); return
         super().mouseReleaseEvent(event)
-        if self.gadget.layout_mode != 'ABSOLUTE': return
+        if self.gadget.layout_mode != 'ABSOLUTE' or self.form.is_tab_page(self.gadget): return
         ox, oy = preview_offset(self.form, self.gadget)
         self.gadget.x = round(self.pos().x() / SX - ox, 2)
         self.gadget.y = round(self.pos().y() / SY - oy, 2)
@@ -399,7 +399,21 @@ class Window(QMainWindow):
         self.view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         preview = QWidget(); preview_layout = QVBoxLayout(preview); preview_layout.setContentsMargins(0,0,0,0)
         self.preview_menu_bar = QMenuBar(); self.preview_menu_bar.setNativeMenuBar(False)
-        preview_layout.addWidget(self.preview_menu_bar); preview_layout.addWidget(self.view)
+        preview_layout.addWidget(self.preview_menu_bar)
+        self.tab_editor=QWidget();tab_layout=QHBoxLayout(self.tab_editor);tab_layout.setContentsMargins(0,0,0,0)
+        tab_layout.addWidget(QLabel('編集するタブ'))
+        self.tabset_picker=QComboBox();self.tabset_picker.currentIndexChanged.connect(self.change_tabset)
+        tab_layout.addWidget(self.tabset_picker)
+        self.page_tabs=QTabBar();self.page_tabs.setExpanding(False);self.page_tabs.setMovable(True)
+        self.page_tabs.currentChanged.connect(self.change_edit_page);self.page_tabs.tabMoved.connect(self.reorder_pages)
+        tab_layout.addWidget(self.page_tabs,1)
+        self.add_page_button=QPushButton('＋ タブ');self.add_page_button.clicked.connect(self.add_page)
+        tab_layout.addWidget(self.add_page_button)
+        self.edit_page_button=QPushButton('タブ設定');self.edit_page_button.clicked.connect(self.edit_page)
+        tab_layout.addWidget(self.edit_page_button)
+        self.delete_page_button=QPushButton('− タブ');self.delete_page_button.clicked.connect(self.delete_page)
+        tab_layout.addWidget(self.delete_page_button)
+        preview_layout.addWidget(self.tab_editor);preview_layout.addWidget(self.view)
         middle.addWidget(preview)
         self.code = QPlainTextEdit(); self.code.setReadOnly(True)
         self.code.setStyleSheet('font-family: monospace; font-size: 12px;')
@@ -1021,6 +1035,102 @@ class Window(QMainWindow):
             item.active_page = self.active_pages.get(item.gadget.name.lower(), '')
             item.setVisible(visible); item.update()
         self.scene.blockSignals(False)
+        self.form.sync_tabs()
+        for index,g in enumerate(self.form.gadgets):
+            self.objects.item(index).setHidden(self.form.is_tab_page(g))
+        self.sync_tab_editor()
+
+    def sync_tab_editor(self):
+        tabsets=[g for g in self.form.gadgets if g.kind=='frame' and g.frame_style=='TABSET']
+        chosen=self.tabset_picker.currentData()
+        current=self.form.gadgets[self.selected] if self.selected is not None and self.selected<len(self.form.gadgets) else None
+        if current is not None:chosen=None
+        seen=set()
+        while current and current.name.lower() not in seen:
+            seen.add(current.name.lower())
+            if current.kind=='frame' and current.frame_style=='TABSET':
+                chosen=current.name;break
+            current=self.form.parent_gadget(current)
+        self.tabset_picker.blockSignals(True);self.page_tabs.blockSignals(True)
+        self.tabset_picker.clear()
+        self.tabset_picker.addItem('フォーム直下',None)
+        for g in tabsets:self.tabset_picker.addItem(f'{g.label} (.{g.name})',g.name)
+        self.tabset_picker.setCurrentIndex(max(0,self.tabset_picker.findData(chosen)))
+        while self.page_tabs.count():self.page_tabs.removeTab(0)
+        tabset=next((g for g in tabsets if g.name==self.tabset_picker.currentData()),None)
+        if tabset:
+            for page in self.form.children(tabset.name):
+                index=self.page_tabs.addTab(page.label or page.name);self.page_tabs.setTabData(index,page.name)
+                self.page_tabs.setTabToolTip(index,f'.{page.name} 内に部品を配置')
+            active=self.active_pages.get(tabset.name.lower())
+            index=next((i for i in range(self.page_tabs.count()) if self.page_tabs.tabData(i).lower()==active),0)
+            self.page_tabs.setCurrentIndex(index)
+        self.tabset_picker.blockSignals(False);self.page_tabs.blockSignals(False)
+        self.tab_editor.setVisible(bool(tabsets))
+        self.add_page_button.setEnabled(tabset is not None)
+        self.edit_page_button.setEnabled(self.page_tabs.count()>0)
+        self.delete_page_button.setEnabled(self.page_tabs.count()>0)
+
+    def change_tabset(self,index):
+        if self.loading:return
+        name=self.tabset_picker.itemData(index)
+        selected=next((i for i,g in enumerate(self.form.gadgets) if g.name==name),None)
+        self.choose_row(selected if selected is not None else -1)
+
+    def change_edit_page(self,index):
+        name=self.page_tabs.tabData(index) if index>=0 else None
+        selected=next((i for i,g in enumerate(self.form.gadgets) if g.name==name),None)
+        if selected is not None:self.choose_row(selected)
+
+    def add_page(self):
+        name=self.tabset_picker.currentData()
+        index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name),None)
+        if index is None:return
+        self.selected=index;self.add('frame')
+
+    def edit_page(self):
+        name=self.page_tabs.tabData(self.page_tabs.currentIndex())
+        page=self.form.named(name) if name else None
+        if page is None:return
+        dialog=QDialog(self);dialog.setWindowTitle('タブ設定')
+        layout=QFormLayout(dialog);name_edit=QLineEdit(page.name);label_edit=QLineEdit(page.label)
+        layout.addRow('タブのオブジェクト名',name_edit);layout.addRow('タブの表示名',label_edit)
+        buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);layout.addRow(buttons)
+        if dialog.exec()==QDialog.Accepted:
+            self.update_page(name,name_edit.text(),label_edit.text())
+
+    def update_page(self,old_name,new_name,label):
+        from .names import rename
+        from .model import literal
+        index=next((i for i,g in enumerate(self.form.gadgets) if g.name==old_name and self.form.is_tab_page(g)),None)
+        if index is None:return
+        try:
+            literal(label);candidate=rename(self.form,'gadget',index,new_name)
+            candidate.gadgets[index].label=label;candidate.validate()
+        except ValueError as error:self.statusBar().showMessage(str(error));return
+        self.checkpoint();self.form=candidate;self.selected=index;self.refresh()
+
+    def reorder_pages(self,source,target):
+        if self.loading:return
+        names=[self.page_tabs.tabData(i) for i in range(self.page_tabs.count())]
+        positions=[i for i,g in enumerate(self.form.gadgets) if g.name in names]
+        pages={g.name:g for g in self.form.gadgets if g.name in names}
+        if len(positions)!=len(names):return
+        selected=self.form.gadgets[self.selected].name if self.selected is not None else None
+        self.checkpoint()
+        for index,name in zip(positions,names):self.form.gadgets[index]=pages[name]
+        self.selected=next((i for i,g in enumerate(self.form.gadgets) if g.name==selected),None)
+        self.refresh()
+
+    def delete_page(self):
+        name=self.page_tabs.tabData(self.page_tabs.currentIndex())
+        page=self.form.named(name) if name else None
+        if page is None:return
+        if self.form.descendants(name) and QMessageBox.question(self,'タブの削除','このタブ内の部品も削除します。続けますか？',QMessageBox.Yes|QMessageBox.No)!=QMessageBox.Yes:return
+        parent=page.parent;removed={name.lower(),*(child.lower() for child in self.form.descendants(name))}
+        self.checkpoint();self.form.gadgets=[g for g in self.form.gadgets if g.name.lower() not in removed]
+        self.selected=next((i for i,g in enumerate(self.form.gadgets) if g.name==parent),None);self.refresh()
 
     def choose_page(self, name):
         from PySide6.QtCore import QTimer
@@ -1146,7 +1256,7 @@ class Window(QMainWindow):
             if rebuild and self.choice_commands.toPlainText() != '\n'.join(g.item_commands): self.choice_commands.setPlainText('\n'.join(g.item_commands))
             self.choice_commands.setEnabled(g.kind == 'option')
             if self.body.toPlainText() != g.body: self.body.setPlainText(g.body)
-            self.props.setEnabled(True)
+            self.props.setEnabled(not self.form.is_tab_page(g))
             self.fields['value_type'].setEnabled(g.kind == 'text'); self.fields['initial'].setEnabled(g.kind in ('text','paragraph','toggle','rtoggle','option','combo','list') and not (g.kind == 'paragraph' and g.display_mode == 'PIXMAP'))
             self.choices.setEnabled(g.kind in ('option', 'list', 'combo'))
             self.fields['label'].setEnabled(g.kind != 'line'); self.fields['orientation'].setEnabled(g.kind == 'line'); self.fields['frame_style'].setEnabled(g.kind == 'frame'); self.fields['callback'].setEnabled(g.kind not in ('paragraph', 'line', 'frame', 'option')); self.fields['command'].setEnabled(g.kind in ('toggle', 'text', 'button')); self.fields['background'].setEnabled(g.kind in ('paragraph', 'button', 'list')); self.body.setEnabled(bool(g.callback))
@@ -1224,7 +1334,7 @@ class Window(QMainWindow):
             self.fields['label'].setEnabled(g.kind != 'line'); self.fields['orientation'].setEnabled(g.kind == 'line'); self.fields['frame_style'].setEnabled(g.kind == 'frame'); self.fields['callback'].setEnabled(g.kind not in ('paragraph', 'line', 'frame', 'option')); self.fields['command'].setEnabled(g.kind in ('toggle', 'text', 'button')); self.fields['background'].setEnabled(g.kind in ('paragraph', 'button', 'list')); self.body.setEnabled(bool(g.callback))
             self.sync_extra_editors(g)
         self.apply_page_visibility()
-        self.props.setEnabled(self.selected is not None); self.loading = False
+        self.props.setEnabled(self.selected is not None and not self.form.is_tab_page(self.form.gadgets[self.selected])); self.loading = False
 
     def move_committed(self):
         # Items mutate coordinates only on release. Capture previous UI values for undo.
@@ -1238,6 +1348,10 @@ class Window(QMainWindow):
 
     def add(self, kind, direction=None):
         container = self.form.gadgets[self.selected] if self.selected is not None else None
+        if container is None and self.tabset_picker.currentData():
+            tabset=self.form.named(self.tabset_picker.currentData())
+            if tabset:
+                container=next((page for page in tabset.tabs if page.name.lower()==self.active_pages.get(tabset.name.lower())),tabset)
         if container and container.kind != 'frame': container = self.form.parent_gadget(container)
         if direction == 'TOOLBAR':
             if self.form.form_type != 'MAIN':
@@ -1248,7 +1362,10 @@ class Window(QMainWindow):
         if self.form.form_type == 'MAIN' and not container and direction != 'TOOLBAR' and kind not in ('button','toggle','option','text','combo','slider'):
             self.statusBar().showMessage('MAIN フォームではツールバー対応部品を追加してください。');return
         if container and container.frame_style == 'TABSET' and kind != 'frame':
-            self.statusBar().showMessage('TABSET 内に FRAME を追加し、その FRAME 内に部品を作成してください。'); return
+            pages=self.form.children(container.name)
+            container=next((page for page in pages if page.name.lower()==self.active_pages.get(container.name.lower())),None)
+            if container is None:
+                self.statusBar().showMessage('「＋ タブ」でタブを追加してから部品を配置してください。');return
         if kind == 'rtoggle' and (not container or container.frame_style != 'FRAME'):
             self.statusBar().showMessage('ラジオボタンは通常 FRAME を選択して追加してください。'); return
         available = None
@@ -1259,7 +1376,7 @@ class Window(QMainWindow):
                 self.statusBar().showMessage('ツールバーに空きがありません。幅・高さを広げてください。');return
         self.checkpoint()
         name = self.unique_name(kind)
-        width_limit, height_limit = (container.width, container.height) if container else (self.form.width, self.form.height)
+        width_limit, height_limit = self.form.geometry(container)[2:] if container else (self.form.width, self.form.height)
         vertical = (kind == 'line' and direction == 'VERT') or (kind == 'slider' and direction == 'VERTICAL')
         height = min(5 if vertical or direction == 'PIXMAP' or kind in ('list', 'frame', 'view', 'commandline', 'container','textpane','selector') else 1, height_limit)
         g = Gadget(kind=kind, name=name, label={'textpane':'Notes','selector':'Owner','button':'Run','paragraph':'Message','text':'Name','toggle':'Enabled','option':'Mode','list':'Results','line':'','frame':'Group','slider':'Level','rtoggle':'Choice','combo':'Choice','view':'Model view','commandline':'Command line','container':'External control'}[kind],
@@ -1267,6 +1384,9 @@ class Window(QMainWindow):
                    x=0, y=0 if container else min(len(self.form.gadgets) * 1.5, height_limit-height),
                    parent=container.name if container else '')
         if kind == 'line' and direction: g.orientation = direction
+        if container and container.frame_style=='TABSET':
+            g.width=container.width;g.height=container.height;g.x=g.y=0
+            g.label=f'Tab {len(self.form.children(container.name))+1}'
         if kind == 'slider' and direction: g.slider_orientation = direction
         if direction == 'PIXMAP': g.display_mode = 'PIXMAP'
         if direction == 'TOOLBAR':

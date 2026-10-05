@@ -300,7 +300,7 @@ class ModelTests(unittest.TestCase):
         restored=Form.loads(f.dumps())
         pml=restored.pml(normalize=False)
         self.assertIn("  FRAME .tabs TABSET AT X 2 Y 3 'TABSET' WIDTH 50\n    FRAME .page1 'Page 1'\n      BUTTON .run AT X 1 Y 1 'Run' WIDTH 14\n    EXIT\n    FRAME .page2 'Page 2'\n    EXIT\n  EXIT\nexit",pml)
-        self.assertEqual(restored.offset(restored.gadgets[0]),(4,4)) # page default X=2, Y=1
+        self.assertEqual(restored.offset(restored.gadgets[0]),(2,3)) # Tabs inherit the TABSET origin.
         restored.gadgets[0].parent='tabs'
         with self.assertRaises(ValueError): restored.pml(normalize=False)
 

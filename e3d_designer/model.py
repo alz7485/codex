@@ -93,6 +93,7 @@ class Gadget:
     macro_path: str = ''
     macro_flag: str = ''
     macro_value: str = ''
+    tabs: list['Gadget'] = field(default_factory=list, repr=False)
 
     def __post_init__(self):
         if self.selection_mode == 'MULTI': self.selection_mode = 'MULTIPLE'
@@ -135,6 +136,30 @@ class Form:
 
     def parent_gadget(self, gadget):
         return next((g for g in self.gadgets if g.name.lower() == gadget.parent.lower()), None) if gadget.parent else None
+
+    def __post_init__(self):
+        # Materialize tab pages for the existing PML/reference/geometry engine.
+        # Persistence keeps those pages inside their owning TABSET.
+        pending=list(self.gadgets)
+        while pending:
+            owner=pending.pop(0)
+            if not isinstance(owner,Gadget):continue
+            if not isinstance(owner.tabs,list):raise ValueError('タブ情報は配列で指定してください。')
+            for page in owner.tabs:
+                if not isinstance(page,Gadget) or owner.kind!='frame' or owner.frame_style!='TABSET' or page.kind!='frame' or page.frame_style!='FRAME':
+                    raise ValueError('タブ情報は TABSET 内の通常 FRAME で指定してください。')
+                if page.parent and page.parent.lower()!=owner.name.lower():raise ValueError('タブの親が TABSET と一致しません。')
+                page.parent=owner.name
+                if not any(g is page for g in self.gadgets):self.gadgets.append(page);pending.append(page)
+        self.sync_tabs()
+
+    def is_tab_page(self,gadget):
+        parent=self.parent_gadget(gadget)
+        return bool(parent and parent.kind=='frame' and parent.frame_style=='TABSET')
+
+    def sync_tabs(self):
+        for g in self.gadgets:
+            if isinstance(g,Gadget):g.tabs=self.children(g.name) if g.kind=='frame' and g.frame_style=='TABSET' else []
 
     def named(self, name):
         return next((g for g in self.gadgets if g.name.lower() == name.lower()), None)
@@ -180,6 +205,10 @@ class Form:
         key = gadget.name.lower()
         if key in trail: raise ValueError('配置・幅の循環参照を解消してください。')
         trail.add(key)
+        parent = self.parent_gadget(gadget)
+        if parent and parent.frame_style=='TABSET':
+            _,_,width,height=self.geometry(parent,trail)
+            return 0,0,width,height
         dependencies = {g.name.lower(): self.geometry(g, trail) for g in self.layout_dependencies(gadget)}
         width,height = display_size(gadget)
         if gadget.width_ref: width = dependencies[gadget.width_ref.lower()][2]
@@ -332,7 +361,7 @@ class Form:
                     raise ValueError('座標とサイズには有限数を指定してください。')
             x, y, width, height = self.geometry(g)
             parent_width = self.geometry(parent)[2] if parent else self.width
-            parent_height = parent.height if parent else self.height
+            parent_height = self.geometry(parent)[3] if parent else self.height
             min_width,min_height = (1/CHAR_WIDTH,1/LINE_HEIGHT) if g.display_mode == 'PIXMAP' else (1,1)
             if g.width < 1 or g.height < 1 or x < -.001 or y < -.001 or width < min_width or height < min_height or x + width > parent_width + .001 or y + height > parent_height + .001:
                 raise ValueError(f'{g.name}: 部品を親コンテナ内に収めてください。')
@@ -459,18 +488,27 @@ class Form:
                     raise ValueError('複数列 LIST のメソッド名が不正、または他のメソッドと重複しています。')
                 methods.add(method.lower())
         self.initial_lines()
+        self.sync_tabs()
 
     def dumps(self):
         self.validate()
-        return json.dumps({'version': 1, 'form': asdict(self)}, ensure_ascii=False, indent=2)
+        raw=asdict(self)
+        raw['gadgets']=[value for g,value in zip(self.gadgets,raw['gadgets']) if not self.is_tab_page(g)]
+        return json.dumps({'version': 2, 'form': raw, 'gadget_order':[g.name for g in self.gadgets]}, ensure_ascii=False, indent=2)
 
     @classmethod
     def loads(cls, text):
         try:
             data = json.loads(text)
-            if data['version'] != 1: raise ValueError('未対応の設計ファイルです。')
+            if data['version'] not in (1,2): raise ValueError('未対応の設計ファイルです。')
             raw = dict(data['form'])
-            raw['gadgets'] = [Gadget(**g) for g in raw['gadgets']]
+            def read_gadget(value):
+                record=dict(value)
+                tabs=record.get('tabs',[])
+                if not isinstance(tabs,list):raise ValueError('タブ情報は配列で指定してください。')
+                record['tabs']=[read_gadget(page) for page in tabs]
+                return Gadget(**record)
+            raw['gadgets'] = [read_gadget(g) for g in raw['gadgets']]
             menus = []
             for value in raw.get('menus',[]):
                 menu = dict(value)
@@ -478,6 +516,11 @@ class Form:
                 menus.append(Menu(**menu))
             raw['menus'] = menus
             result = cls(**raw)
+            if 'gadget_order' in data:
+                order=data['gadget_order']
+                if not isinstance(order,list) or any(not isinstance(name,str) for name in order) or len(order)!=len(result.gadgets) or len(set(order))!=len(order) or set(order)!={g.name for g in result.gadgets}:
+                    raise ValueError('部品順の情報が不正です。')
+                by_name={g.name:g for g in result.gadgets};result.gadgets=[by_name[name] for name in order]
             result.validate()
             return result
         except (KeyError, TypeError, AttributeError) as e:

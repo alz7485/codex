@@ -2,6 +2,8 @@ import os
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 import tempfile
 import unittest
+import json
+from dataclasses import asdict
 from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
@@ -12,6 +14,31 @@ from e3d_designer.model import Form,Gadget,Menu,MenuItem
 
 
 class CloneRegressionTests(unittest.TestCase):
+    def test_tabset_owns_tab_information_roundtrip_and_legacy_import(self):
+        page=Gadget(kind='frame',name='settings',label='Settings',x=0,y=0,width=40,height=12)
+        tabs=Gadget(kind='frame',name='tabs',frame_style='TABSET',width=40,height=12,tabs=[page])
+        form=Form(gadgets=[tabs,Gadget(name='run',parent='settings',x=1,y=2)])
+        self.assertIs(tabs.tabs[0],form.named('settings'))
+        data=json.loads(form.dumps())
+        self.assertEqual(data['version'],2)
+        self.assertNotIn('settings',[g['name'] for g in data['form']['gadgets']])
+        self.assertEqual(data['form']['gadgets'][0]['tabs'][0]['name'],'settings')
+        restored=Form.loads(json.dumps(data))
+        self.assertEqual([g.name for g in restored.gadgets],[g.name for g in form.gadgets])
+        self.assertEqual(restored.dumps(),form.dumps())
+        self.assertEqual(restored.pml(),form.pml())
+        legacy=asdict(form)
+        for gadget in legacy['gadgets']:gadget.pop('tabs',None)
+        imported=Form.loads(json.dumps({'version':1,'form':legacy}))
+        self.assertEqual(imported.named('tabs').tabs[0].name,'settings')
+        self.assertEqual(imported.pml(),form.pml())
+        draft,index=clone_subtree(form,form,0)
+        self.assertEqual(len(draft.gadgets[index].tabs),1)
+        self.assertNotEqual(draft.gadgets[index].tabs[0].name,'settings')
+        self.assertEqual(Form.loads(draft.dumps()).pml(),draft.pml())
+        for bad in ('bad', [{'kind':'button','name':'bad'}]):
+            data['form']['gadgets'][0]['tabs']=bad
+            with self.assertRaises(ValueError):Form.loads(json.dumps(data))
     def test_callback_copy_is_independent_and_transactional(self):
         source=Form(gadgets=[Gadget(name='run',callback='clicked',body='!this.run.val = TRUE\n!this.clicked()')])
         before=source.dumps();draft,selected=clone_subtree(source,source,0)
@@ -163,6 +190,63 @@ class AuditGuiRegressionTests(unittest.TestCase):
                     self.w.form.validate()
                     self.assertIn('AT X 5 Y 4',self.w.form.pml(normalize=False))
                     self.w.undo();self.assertEqual((self.w.form.gadgets[-1].x,self.w.form.gadgets[-1].y),(2,1))
+
+    def test_tab_editor_switches_pages_and_adds_to_active_page(self):
+        w=self.w
+        self.load(Form(gadgets=[Gadget(kind='frame',name='tabs',frame_style='TABSET',width=40,height=12)]))
+        w.add_page_button.click()
+        first=w.form.gadgets[-1]
+        self.assertEqual((first.parent,first.x,first.y,first.width,first.height),('tabs',0,0,40,12))
+        w.add('button');button=w.form.gadgets[-1]
+        self.assertEqual(button.parent,first.name)
+        w.add_page_button.click();second=w.form.gadgets[-1]
+        self.assertTrue(w.objects.item(1).isHidden());self.assertTrue(w.objects.item(3).isHidden())
+        w.add('text');text=w.form.gadgets[-1]
+        self.assertEqual(text.parent,second.name)
+        def visible(name):
+            return next(item for item in w.scene.items() if isinstance(item,Item) and item.gadget.name==name).isVisible()
+        self.assertFalse(visible(button.name));self.assertTrue(visible(text.name))
+        original=w.form.dumps();history=len(w.history)
+        w.page_tabs.setCurrentIndex(0)
+        self.assertTrue(visible(button.name));self.assertFalse(visible(text.name))
+        self.assertEqual(w.form.dumps(),original);self.assertEqual(len(w.history),history)
+        w.choose_row(0);w.add('toggle')
+        self.assertEqual(w.form.gadgets[-1].parent,first.name)
+        w.form.validate()
+        w.undo();self.assertEqual(w.form.dumps(),original)
+        w.choose_row(4)
+        self.assertEqual(w.page_tabs.currentIndex(),1)
+        self.assertTrue(visible(text.name));self.assertFalse(visible(button.name))
+
+    def test_tab_settings_reorder_delete_and_undo(self):
+        w=self.w
+        self.load(Form(gadgets=[Gadget(kind='frame',name='tabs',frame_style='TABSET',width=40,height=12)]))
+        w.add_page_button.click();first=w.form.gadgets[-1].name
+        w.add_page_button.click();second=w.form.gadgets[-1].name
+        w.update_page(first,'settings','設定')
+        self.assertEqual(w.form.named('tabs').tabs[0].label,'設定')
+        original=w.form.dumps();history=len(w.history)
+        w.update_page('settings',second,'重複')
+        self.assertEqual(w.form.dumps(),original);self.assertEqual(len(w.history),history)
+        w.page_tabs.moveTab(0,1)
+        self.assertEqual([g.name for g in w.form.named('tabs').tabs],[second,'settings'])
+        w.undo();self.assertEqual(w.form.dumps(),original)
+        w.tabset_picker.setCurrentIndex(w.tabset_picker.findData('tabs'))
+        w.page_tabs.setCurrentIndex(1);w.delete_page_button.click()
+        self.assertEqual(len(w.form.named('tabs').tabs),1)
+        w.undo();self.assertEqual(w.form.dumps(),original)
+
+    def test_blank_selection_keeps_tab_placement_and_form_target_is_explicit(self):
+        w=self.w
+        self.load(Form(gadgets=[Gadget(kind='frame',name='tabs',frame_style='TABSET',width=40,height=12)]))
+        w.add_page_button.click();page=w.form.gadgets[-1].name
+        w.choose_row(-1);w.add('button')
+        self.assertEqual(w.form.gadgets[-1].parent,page)
+        w.tabset_picker.setCurrentIndex(0);w.add('button')
+        self.assertEqual(w.form.gadgets[-1].parent,'')
+        w.choose_row(0);w.fields['width'].setValue(50);w.fields['height'].setValue(14)
+        self.assertEqual(w.form.geometry(w.form.named(page)),(0,0,50,14))
+        w.form.validate()
 
 
 if __name__ == '__main__':unittest.main()
