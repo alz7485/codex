@@ -35,6 +35,43 @@ def preview_geometry(form, gadget):
     except ValueError: return gadget.x, gadget.y, gadget.width, gadget.height
 
 
+class PropertyLayout(QGridLayout):
+    """Two-column property cells, with full-width rows for long values."""
+    def __init__(self,parent):
+        super().__init__(parent)
+        self.entries = [];self.setContentsMargins(0,0,0,0)
+        self.setHorizontalSpacing(10);self.setVerticalSpacing(6)
+        self.setColumnStretch(0,1);self.setColumnStretch(1,1)
+
+    def addRow(self,label,editor=None,pair=None):
+        if editor is None: editor,label = label,None
+        cell = QWidget();layout = QVBoxLayout(cell)
+        layout.setContentsMargins(0,0,0,0);layout.setSpacing(2)
+        if label is not None:
+            caption = QLabel(label);caption.setWordWrap(True);layout.addWidget(caption)
+        layout.addWidget(editor)
+        self.entries.append([editor,cell,pair,True]);self.reflow()
+
+    def setRowVisible(self,editor,visible):
+        entry = next(entry for entry in self.entries if entry[0] is editor)
+        if entry[3] == visible: return
+        entry[3] = visible;self.reflow()
+
+    def reflow(self):
+        while self.count(): self.takeAt(0)
+        visible = [entry for entry in self.entries if entry[3]]
+        for _,cell,_,show in self.entries: cell.setVisible(show)
+        used = set();row = 0
+        for editor,cell,pair,_ in visible:
+            if id(editor) in used: continue
+            partner = next((entry for entry in visible if pair and entry[2] == pair and entry[0] is not editor),None)
+            if partner:
+                self.addWidget(cell,row,0);self.addWidget(partner[1],row,1)
+                used.add(id(partner[0]))
+            else: self.addWidget(cell,row,0,1,2)
+            used.add(id(editor));row += 1
+
+
 def preview_offset(form, gadget):
     try: return form.offset(gadget)
     except ValueError: return 0, 0
@@ -352,8 +389,15 @@ class Window(QMainWindow):
         self.default_body.textChanged.connect(self.update_default_body)
         rl.addWidget(QLabel('DEFAULT メソッドの処理')); rl.addWidget(self.default_body)
         rl.addWidget(QLabel('選択部品のプロパティ'))
-        self.props = QWidget(); self.prop_layout = QFormLayout(self.props)
+        self.props = QWidget(); self.prop_layout = PropertyLayout(self.props)
         self.fields = {}
+        pairs = {}
+        for first,second in (('name','label'),('x','y'),('width','height'),('value_type','initial'),
+                ('orientation','background'),('parent','frame_style'),('layout_mode','path'),
+                ('halign','valign'),('hgap','vgap'),('xref','yref'),('xedge','yedge'),('xanchor','width_ref'),
+                ('xoffset','yoffset'),('selection_mode','list_mode'),('slider_min','slider_max'),
+                ('slider_step','slider_value'),('off_value','on_value'),('view_type','view_aspect')):
+            pairs[first] = pairs[second] = first
         for key, label in [('name', '部品名'), ('label', '表示文字'), ('x', 'X'), ('y', 'Y'), ('width', '幅'), ('height', '高さ / 行数'), ('value_type', '入力型'), ('initial', '初期値'), ('callback', 'メソッド名'), ('command', 'CALL コマンド'), ('background', 'BACKGROUND (空欄＝背景色)'), ('orientation', 'LINE の向き'), ('frame_style', 'FRAME 形式'), ('parent', '親コンテナ'), ('layout_mode', '配置方式'), ('path', '配置方向'), ('halign', '水平整列'), ('valign', '垂直整列'), ('hgap', '横間隔'), ('vgap', '縦間隔'), ('xref', 'X 基準部品'), ('xedge', 'X 基準辺'), ('xanchor', '自部品の X 辺'), ('xoffset', 'X オフセット'), ('yref', 'Y 基準部品'), ('yedge', 'Y 基準辺'), ('yoffset', 'Y オフセット'), ('width_ref', '幅を揃える部品'),
                 ('selection_mode','LIST 選択方式'), ('list_mode','LIST 表示方式'), ('table_method','表の設定メソッド名'), ('combo_keyword','COMBO 定義キーワード'),
                 ('slider_orientation','SLIDER の向き'), ('slider_min','最小値'), ('slider_max','最大値'), ('slider_step','刻み'), ('slider_value','スライダー初期値'),
@@ -370,7 +414,10 @@ class Window(QMainWindow):
                 w = QComboBox()
                 w.addItems({'value_type': ['STRING', 'REAL'], 'orientation': ['HORIZ', 'VERT'], 'frame_style': ['FRAME','TABSET'], 'layout_mode': ['ABSOLUTE','AUTO','RELATIVE'], 'path': ['DOWN','RIGHT','UP','LEFT'], 'halign': ['LEFT','CENTRE','RIGHT'], 'valign': ['TOP','CENTRE','BOTTOM'], 'xedge': ['XMIN','XMAX'], 'yedge': ['YMIN','YMAX'], 'xanchor': ['LEFT','RIGHT'], 'list_mode':['SIMPLE','TABLE'], 'selection_mode':['SINGLE','MULTIPLE'], 'combo_keyword':['COMBO','COMBOBOX'], 'slider_orientation':['HORIZONTAL','VERTICAL'], 'view_type':['ALPHA','AREA','PLOT','VOLUME'], 'channels':['NONE','REQUESTS','COMMANDS','BOTH']}[key])
             else: w = QLineEdit()
-            self.fields[key] = w; self.prop_layout.addRow(label, w); self.connect_field(w, self.update_gadget)
+            if isinstance(w,QComboBox):
+                w.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+                w.setMinimumContentsLength(8)
+            self.fields[key] = w; self.prop_layout.addRow(label, w,pairs.get(key)); self.connect_field(w, self.update_gadget)
         self.choices = QPlainTextEdit(); self.choices.setMaximumHeight(100)
         self.prop_layout.addRow('選択肢 (1行1項目)', self.choices)
         self.choices.textChanged.connect(self.update_gadget)
