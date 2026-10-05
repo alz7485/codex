@@ -22,27 +22,33 @@ class WorkflowUiTests(unittest.TestCase):
     def tearDown(self):
         self.app.clipboard().clear();self.w.dirty=False;self.w.close();self.app.processEvents();self.temp.cleanup()
 
-    def test_view_switches_do_not_change_design_or_history(self):
-        w=self.w;original=w.form.dumps()
-        self.assertEqual(w.current_workflow,'form');self.assertEqual(w.inspector_tabs.currentIndex(),0)
-        for stage in ('layout','action','output','form'):
-            w.workflow_buttons[stage].click();self.app.processEvents()
-            self.assertEqual(w.current_workflow,stage)
-            self.assertEqual(w.workspace_tabs.currentIndex(),1 if stage=='output' else 0)
-            self.assertEqual(w.library_panel.isVisible(),stage!='output')
-            self.assertEqual(w.inspector_tabs.isVisible(),stage!='output')
-            self.assertTrue(w.workflow_buttons[stage].isChecked())
+    def test_separate_code_window_preserves_canvas_panels_and_design(self):
+        w=self.w;original=w.form.dumps();rect=w.view.geometry();sizes=w.columns.sizes()
+        self.assertFalse(hasattr(w,'workflow_buttons'));self.assertFalse(hasattr(w,'workspace_tabs'))
+        self.assertFalse(w.output_dialog.isVisible())
+        for _ in range(2):
+            w.code_action.trigger();self.app.processEvents()
+            self.assertTrue(w.output_dialog.isWindow());self.assertTrue(w.output_dialog.isVisible())
+            self.assertEqual(w.output_dialog.windowModality(),Qt.NonModal)
+            self.assertTrue(w.library_panel.isVisible());self.assertTrue(w.inspector_tabs.isVisible())
+            self.assertEqual(w.view.geometry(),rect);self.assertEqual(w.columns.sizes(),sizes)
+            self.assertIs(w.code.window(),w.output_dialog)
+            w.output_dialog.close();self.app.processEvents()
+            self.assertTrue(w.isVisible());self.assertEqual(w.view.geometry(),rect)
         self.assertEqual(w.form.dumps(),original);self.assertEqual(w.history,[]);self.assertFalse(w.dirty)
-        w.workspace_tabs.setCurrentIndex(1);self.assertEqual(w.current_workflow,'output')
-        w.workspace_tabs.setCurrentIndex(0);self.assertEqual(w.current_workflow,'layout')
         self.assertGreater(w.view.viewport().height(),500)
         self.assertTrue(all(button.isVisible() for button in w.palette_buttons.values()))
+
+    def test_code_window_updates_while_editing_and_closes_with_main(self):
+        w=self.w;w.show_code();w.add('button');w.fields['label'].setText('UpdatedLabel');w.update_gadget()
+        self.assertIn("'UpdatedLabel'",w.code.toPlainText());self.assertTrue(w.output_dialog.isVisible())
+        w.dirty=False;w.close();self.assertFalse(w.output_dialog.isVisible())
 
     def test_actual_form_tab_parts_action_save_export_workflow(self):
         w=self.w
         w.fname.selectAll();QTest.keyClicks(w.fname,'DEMO')
         w.ftitle.selectAll();QTest.keyClicks(w.ftitle,'Equipment')
-        w.workflow_buttons['layout'].click()
+        w.set_workflow('layout')
         QTest.mouseClick(w.palette_buttons['tabset'],Qt.LeftButton)
         tabs=next(g for g in w.form.gadgets if g.frame_style=='TABSET')
         self.assertEqual(len(tabs.tabs),2)
@@ -52,12 +58,12 @@ class WorkflowUiTests(unittest.TestCase):
         w.fields['initial'].setFocus();QTest.keyClicks(w.fields['initial'],'P-101')
         QTest.mouseClick(w.palette_buttons['button'],Qt.LeftButton)
         button=w.form.gadgets[w.selected]
-        w.workflow_buttons['action'].click();self.assertEqual(w.props.currentIndex(),3)
+        w.set_workflow('action');self.assertEqual(w.props.currentIndex(),3)
         w.fields['callback'].setFocus();w.fields['callback'].selectAll();QTest.keyClicks(w.fields['callback'],'RUN')
         self.assertTrue(w.edit_method_button.isVisible());w.edit_method_button.click()
         self.assertEqual(w.inspector_tabs.currentIndex(),1)
         w.body.setPlainText('$p |Run|')
-        w.workflow_buttons['output'].click()
+        w.show_code()
         self.assertIn('問題なし',w.output_validation.text())
         self.assertIn('未保存の変更',w.output_summary.text())
         target=self.folder/'demo.json'
@@ -69,7 +75,7 @@ class WorkflowUiTests(unittest.TestCase):
         output=self.folder/'demo.mac';w.output_folder.setText(str(self.folder))
         with patch('e3d_designer.app.QFileDialog.getSaveFileName',return_value=(str(output),'')):w.export()
         self.assertEqual(output.read_bytes(),restored.pml().replace('\n','\r\n').encode('cp932'))
-        w.workflow_buttons['layout'].click();self.assertTrue(w.inspector_tabs.isVisible())
+        w.set_workflow('layout');self.assertTrue(w.inspector_tabs.isVisible())
 
     def test_tab_palette_is_one_undo_and_each_page_has_own_parts(self):
         w=self.w;before=w.form.dumps();w.palette_buttons['tabset'].click()
@@ -93,7 +99,7 @@ class WorkflowUiTests(unittest.TestCase):
     def test_action_selection_routes_to_part_actions_without_data_changes(self):
         w=self.w;w.form=Form(gadgets=[Gadget(name='run',callback='run'),Gadget(name='stop',x=30,callback='stop')])
         w.selected=0;w.refresh();before=w.form.dumps()
-        w.workflow_buttons['action'].click();w.choose_row(1)
+        w.set_workflow('action');w.choose_row(1)
         self.assertEqual(w.current_workflow,'action');self.assertEqual(w.props.currentIndex(),3)
         self.assertEqual(w.fields['callback'].text(),'stop')
         self.assertEqual(w.form.dumps(),before);self.assertFalse(w.dirty)

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
     QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
-    QGridLayout, QTabBar, QDialog, QDialogButtonBox, QTabWidget, QInputDialog, QToolButton, QButtonGroup, QStackedWidget)
+    QGridLayout, QTabBar, QDialog, QDialogButtonBox, QTabWidget, QInputDialog, QToolButton, QStackedWidget)
 from .form_item import FormItem
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
@@ -459,6 +459,8 @@ class Window(QMainWindow):
             a.triggered.connect(fn)
             (edit_menu if label in ('元に戻す','やり直す','複製','削除') else file_menu).addAction(a)
             if label not in ('名前を付けて保存','複製','削除'):toolbar.addAction(a)
+        self.code_action=QAction('コードを表示',self);self.code_action.setShortcut(QKeySequence('Ctrl+Shift+C'))
+        self.code_action.triggered.connect(self.show_code);toolbar.addAction(self.code_action);file_menu.addAction(self.code_action)
         names_action = QAction('変数・名前管理',self)
         names_action.setShortcut(QKeySequence('Ctrl+M'));names_action.triggered.connect(self.manage_names)
         edit_menu.addAction(names_action)
@@ -470,14 +472,6 @@ class Window(QMainWindow):
         recovery_action=file_menu.addAction('作業を復元');recovery_action.triggered.connect(self.recover_work)
         self.refresh_recent_menu()
         root = QWidget(); outer = QVBoxLayout(root)
-        workflow_row=QHBoxLayout();self.workflow_buttons={};self.workflow_group=QButtonGroup(self)
-        for step,label in (('form','① フォーム設定'),('layout','② 部品を配置'),('action','③ 動作を設定'),('output','④ 確認・出力')):
-            button=QPushButton(label);button.setCheckable(True)
-            button.setStyleSheet('QPushButton { padding: 7px 14px; } QPushButton:checked { background: #185fa8; color: white; border: 1px solid #185fa8; border-radius: 4px; }')
-            button.clicked.connect(lambda checked=False,s=step:self.set_workflow(s))
-            self.workflow_group.addButton(button);self.workflow_buttons[step]=button;workflow_row.addWidget(button)
-        workflow_row.addStretch();outer.addLayout(workflow_row)
-        self.workflow_hint=QLabel();outer.addWidget(self.workflow_hint)
         columns = QSplitter();self.columns=columns
         left = QWidget();self.library_panel=left;ll = QVBoxLayout(left)
         ll.addWidget(QLabel('部品を追加'))
@@ -518,7 +512,6 @@ class Window(QMainWindow):
         self.objects.itemDoubleClicked.connect(lambda item:self.request_object_label(self.form.gadgets[item.data(Qt.UserRole)].name))
         self.objects.setToolTip('ドラッグで部品の順序を変更します（親コンテナは変わりません）。')
         left.setMinimumWidth(220); columns.addWidget(left)
-        middle = QTabWidget();self.workspace_tabs=middle;middle.setStyleSheet(INSPECTOR_STYLE)
         self.scene = Scene(self); self.scene.selectionChanged.connect(self.selection_changed)
         self.view = QGraphicsView(self.scene)
         self.view.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -549,7 +542,7 @@ class Window(QMainWindow):
         self.delete_page_button=QPushButton('− タブ');self.delete_page_button.clicked.connect(self.delete_page)
         tab_layout.addWidget(self.delete_page_button)
         preview_layout.addWidget(self.tab_editor);preview_layout.addWidget(self.view)
-        middle.addTab(preview,'配置キャンバス')
+        columns.addWidget(preview)
         self.code = QPlainTextEdit(); self.code.setReadOnly(True)
         self.code.setStyleSheet('font-family: monospace; font-size: 12px;')
         code_panel=QWidget();code_layout=QVBoxLayout(code_panel);code_layout.setContentsMargins(0,0,0,0);code_layout.setSpacing(3)
@@ -569,7 +562,10 @@ class Window(QMainWindow):
         legend=QLabel('  '.join(f'<span style="color:{COLORS[kind]}">{label}</span>' for kind,label in (('command','コマンド'),('object','オブジェクト'),('variable','変数'),('string','文字列'),('number','数値・論理値'),('method','メソッド'),('comment','コメント'))))
         legend.setWordWrap(True);code_layout.addWidget(legend);code_layout.addWidget(self.code)
         code_layout.addWidget(QLabel('出力形式: .mac / SJIS（CP932）/ CRLF  •  E3Dで読み込みと動作を確認してください。'))
-        middle.addTab(code_panel,'生成コード・出力');columns.addWidget(middle)
+        self.output_dialog=QDialog(self,Qt.Window);self.output_dialog.setWindowTitle('生成コード・MAC出力')
+        self.output_dialog.resize(1000,760)
+        output_layout=QVBoxLayout(self.output_dialog);output_layout.addWidget(code_panel)
+        close_code=QPushButton('閉じる');close_code.clicked.connect(self.output_dialog.close);output_layout.addWidget(close_code)
         right = QTabWidget();self.inspector_tabs=right
         right.setStyleSheet(INSPECTOR_STYLE)
         form_page=QWidget();rl=QVBoxLayout(form_page)
@@ -773,34 +769,24 @@ class Window(QMainWindow):
             highlighter=PmlHighlighter(editor.document());editor.pml_highlighter=highlighter
             self.pml_highlighters.append(highlighter)
         self.refresh()
-        self.workspace_tabs.currentChanged.connect(self.workspace_changed)
         self.set_workflow('form')
         if self.settings.error:self.statusBar().showMessage('設定JSONを読み込めません: '+self.settings.error)
         self.backup_timer.start()
 
+    def show_code(self):
+        self.sync_output_summary()
+        self.output_dialog.show();self.output_dialog.raise_();self.output_dialog.activateWindow()
+
     def set_workflow(self,step):
-        previous=self.current_workflow
-        if step=='output' and previous!='output':self.design_sizes=self.columns.sizes()
-        self.current_workflow=step;self.workflow_buttons[step].setChecked(True)
-        self.workspace_tabs.setCurrentIndex(1 if step=='output' else 0)
-        self.library_panel.setVisible(step!='output');self.inspector_tabs.setVisible(step!='output')
-        if previous=='output' and step!='output':self.columns.setSizes(getattr(self,'design_sizes',[220,780,380]))
+        # Internal focus routing; the canvas and its panels always remain visible.
+        if step=='output':self.show_code();return
+        self.current_workflow=step
         if step=='form':
             self.choose_row(-1);self.inspector_tabs.setCurrentIndex(0)
         elif step=='layout':self.inspector_tabs.setCurrentIndex(0)
         elif step=='action':
             self.inspector_tabs.setCurrentIndex(0)
             if self.props.isTabEnabled(3):self.props.setCurrentIndex(3)
-        hints={'form':'フォーム名は設定済みです。そのまま配置を始められます。タイトル・表示形式・管理用の名前は必要に応じて変更します。',
-               'layout':'追加先を確認 → 部品を追加 → ドラッグとハンドルで配置。ダブルクリックで設定を編集できます。',
-               'action':'処理名は自動設定します。部品の動作を設定し、「処理コードを編集」から処理内容を追加します。',
-               'output':'設計JSONを保存し、生成コードを確認してMACを出力します。プレビューは概略表示です。'}
-        self.workflow_hint.setText(hints[step])
-        if step=='action':self.sync_context_hints()
-
-    def workspace_changed(self,index):
-        if index==1 and self.current_workflow!='output':self.set_workflow('output')
-        elif index==0 and self.current_workflow=='output':self.set_workflow('layout')
 
     def show_method_editor(self):
         if self.selected is None:return
@@ -1441,19 +1427,13 @@ class Window(QMainWindow):
 
     def sync_context_hints(self):
         g=self.form.gadgets[self.selected] if self.selected is not None and self.selected<len(self.form.gadgets) else None
-        if self.current_workflow=='action':
-            if g and g.action_mode=='MACRO':
-                self.workflow_hint.setText('外部マクロを選択します。分岐変数・値は自動設定し、必要なら「分岐マクロのひな形を保存」で処理を作成できます。')
-            elif not g:
-                self.workflow_hint.setText('部品を選ぶとその動作を設定できます。フォーム全体の追加処理は右側の「処理」で編集します。')
-            else:self.workflow_hint.setText('処理名は自動設定します。部品の動作を設定し、「処理コードを編集」から処理内容を追加します。')
         if g:
             parent=self.form.parent_gadget(g)
             location=f'{parent.label} (.{parent.name})' if parent else 'フォーム直下'
             self.selection_hint.setText(f'{gadget_title(g)}  .{g.name}\n所属: {location}')
             self.method_target.setText(f'対象: {g.label} (.{g.name})\n処理名: {g.callback or "メソッドなし"}')
         else:
-            self.selection_hint.setText('部品を選択してください。\nダブルクリックで表示名を変更できます。')
+            self.selection_hint.setText('部品を選択してください。\nダブルクリックで設定を編集できます。')
             self.method_target.setText('キャンバスまたは部品一覧で、処理を編集する部品を選択してください。')
         target=g if g and g.kind=='frame' else self.form.parent_gadget(g) if g else self.form.named(self.tabset_picker.currentData()) if self.tabset_picker.currentData() else None
         if target and target.frame_style=='TABSET':
@@ -2074,7 +2054,6 @@ class Window(QMainWindow):
         if folder:self.output_folder.setText(folder);self.save_output_folder()
 
     def export(self):
-        self.set_workflow('output')
         try:
             if self.variable_error: raise ValueError('変数欄を修正してください。')
             data = self.form.pml().replace('\n', '\r\n').encode('cp932')
@@ -2096,7 +2075,7 @@ class Window(QMainWindow):
         if self.confirm_discard():
             self.clear_backup();self.backup_timer.stop()
             self._closing = True
-            self.menu_dialog.close()
+            self.menu_dialog.close();self.output_dialog.close()
             self.scene.blockSignals(True)
             event.accept()
         else: event.ignore()
