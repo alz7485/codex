@@ -1,0 +1,54 @@
+E3D PML Form Designer — Windows EXE化手順（onedir）
+
+Windows上でビルドしてください。Python 3.12（64bit）を使用します。
+ZIPを展開し、このテキストと run_designer.py があるフォルダーを
+PowerShellで開いて、以下を上から順に実行してください。
+
+1. ビルド用仮想環境の作成と依存パッケージのインストール
+
+py -3.12 -m venv .venv-build
+.\.venv-build\Scripts\python.exe -m pip install --upgrade pip
+.\.venv-build\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv-build\Scripts\python.exe -m pip install "pyinstaller>=6.16,<7"
+
+2. onedir形式でEXEを作成
+
+.\.venv-build\Scripts\python.exe -m PyInstaller --onedir --windowed --clean --noconfirm --name E3DFormDesigner run_designer.py
+
+3. サンプルとこの手順書を配布フォルダーにコピー
+
+Copy-Item -Path .\examples -Destination .\dist\E3DFormDesigner\examples -Recurse -Force
+Copy-Item -Path .\EXE_BUILD_ONEDIR.txt -Destination .\dist\E3DFormDesigner\EXE_BUILD_ONEDIR.txt -Force
+
+4. 起動
+
+.\dist\E3DFormDesigner\E3DFormDesigner.exe
+
+出力先と配布方法
+
+dist\E3DFormDesigner\
+  E3DFormDesigner.exe
+  _internal\              Python・PySide6・Qtなどの実行用ファイル
+  examples\               JSON設計ファイルとPMLサンプル
+  EXE_BUILD_ONEDIR.txt
+
+dist\E3DFormDesigner フォルダー全体をZIPにして配布してください。
+EXEだけをコピーすると起動できません。配布先でPythonを別途
+インストールする必要はありません。
+
+起動後、「開く」で examples\gadgets.json を選ぶと追加部品を試せます。
+設計の保存先とPMLの出力先は、書き込み可能な場所を選んでください。
+
+起動に失敗する場合（コンソールでエラーを確認）
+
+.\.venv-build\Scripts\python.exe -m PyInstaller --onedir --console --clean --noconfirm --name E3DFormDesignerDebug run_designer.py
+.\dist\E3DFormDesignerDebug\E3DFormDesignerDebug.exe
+
+補足
+
+・仮想環境の有効化（Activate.ps1）は不要です。
+・run_designer.py はEXE化用の起動ファイルです。パッケージ内の
+  e3d_designer\__main__.py を直接ビルドする代わりに使用します。
+・この手順はWindows向けです。Windows EXEのビルド・起動確認は
+  クラウド環境では未実施です。
+・E3D本体や、CONTAINERで使う外部DLLはこのEXEには含まれません。

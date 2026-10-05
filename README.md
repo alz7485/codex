@@ -18,6 +18,8 @@ py -3.12 -m venv .venv
 
 Linux では `python3 -m venv .venv`、`.venv/bin/python -m pip install -r requirements.txt`、`.venv/bin/python -m e3d_designer` を使用します。画面操作にはデスクトップ環境が必要です。
 
+Windowsで `onedir` 形式のEXEを作成するコマンドは、同梱の [EXE_BUILD_ONEDIR.txt](EXE_BUILD_ONEDIR.txt) に記載しています。PyInstallerの起動ファイルには `run_designer.py` を使います。配布時は `dist/E3DFormDesigner` フォルダー全体を含めてください。
+
 ## 使い方
 
 1. 左のボタンで部品を追加し、キャンバスをドラッグして配置します。
