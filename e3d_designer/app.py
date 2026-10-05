@@ -319,8 +319,10 @@ class Scene(QGraphicsScene):
 
 
 class Window(QMainWindow):
-    def __init__(self):
+    def __init__(self, settings_path=None):
         super().__init__()
+        from .settings import Settings
+        self.settings=Settings(settings_path)
         self.form, self.path, self.selected = Form(), None, None
         self.project_key = uuid.uuid4().hex
         self.selected_menu = None
@@ -334,7 +336,7 @@ class Window(QMainWindow):
         self.setWindowTitle('E3D PML Form Designer — E3D 4.0 想定')
         toolbar = self.addToolBar('ファイル')
         for label, fn, shortcut in [('新規', self.new, 'Ctrl+N'), ('開く', self.open, 'Ctrl+O'),
-                ('保存', self.save, 'Ctrl+S'), ('PML 出力', self.export, 'Ctrl+E'),
+                ('保存', self.save, 'Ctrl+S'), ('MAC 出力', self.export, 'Ctrl+E'),
                 ('元に戻す', self.undo, 'Ctrl+Z'), ('やり直す', self.redo, 'Ctrl+Shift+Z'),
                 ('複製', self.duplicate, 'Ctrl+D'), ('削除', self.delete, None)]:
             a = QAction(label, self)
@@ -400,6 +402,12 @@ class Window(QMainWindow):
         self.code = QPlainTextEdit(); self.code.setReadOnly(True)
         self.code.setStyleSheet('font-family: monospace; font-size: 12px;')
         code_panel=QWidget();code_layout=QVBoxLayout(code_panel);code_layout.setContentsMargins(0,0,0,0);code_layout.setSpacing(3)
+        output_row=QHBoxLayout();output_row.addWidget(QLabel('出力先フォルダ'))
+        self.output_folder=QLineEdit(str(self.settings.output_folder));self.output_folder.editingFinished.connect(self.save_output_folder)
+        self.output_folder.setToolTip('初期値はアプリと同じフォルダ。変更すると settings.json に保存します。')
+        output_row.addWidget(self.output_folder,1)
+        browse_output=QPushButton('📁');browse_output.setToolTip('出力先フォルダを選択');browse_output.clicked.connect(self.choose_output_folder);output_row.addWidget(browse_output)
+        code_layout.addLayout(output_row)
         legend=QLabel('  '.join(f'<span style="color:{COLORS[kind]}">{label}</span>' for kind,label in (('command','コマンド'),('object','オブジェクト'),('variable','変数'),('string','文字列'),('number','数値・論理値'),('method','メソッド'),('comment','コメント'))))
         legend.setWordWrap(True);code_layout.addWidget(legend);code_layout.addWidget(self.code)
         middle.addWidget(code_panel); middle.setSizes([550, 230]); columns.addWidget(middle)
@@ -472,6 +480,9 @@ class Window(QMainWindow):
         self.prop_layout.addRow(self.macro_browse)
         self.macro_template=QPushButton('📄 分岐マクロのひな形を保存');self.macro_template.clicked.connect(self.save_macro_template)
         self.prop_layout.addRow(self.macro_template)
+        self.gadget_comment=QPlainTextEdit();self.gadget_comment.setFixedHeight(64)
+        self.gadget_comment.setPlaceholderText('部品の用途や注意点。出力時に -- コメントとして付けます。')
+        self.gadget_comment.textChanged.connect(self.update_gadget);self.prop_layout.addRow('部品のコメント',self.gadget_comment)
         self.browse_image = QPushButton('📁 画像ファイルを選択');self.browse_image.clicked.connect(self.choose_image)
         self.prop_layout.addRow(self.browse_image)
         self.fixed_font = QCheckBox('FIXCHARS：等幅フォント');self.fixed_font.toggled.connect(self.update_gadget)
@@ -556,6 +567,7 @@ class Window(QMainWindow):
             highlighter=PmlHighlighter(editor.document());editor.pml_highlighter=highlighter
             self.pml_highlighters.append(highlighter)
         self.refresh()
+        if self.settings.error:self.statusBar().showMessage('設定JSONを読み込めません: '+self.settings.error)
 
     @staticmethod
     def number(low, high):
@@ -607,9 +619,13 @@ class Window(QMainWindow):
         from .macro_actions import branch_template
         try:text=branch_template(self.form,self.form.gadgets[self.selected].macro_path)
         except ValueError as error:self.statusBar().showMessage(str(error));return
-        filename,_=QFileDialog.getSaveFileName(self,'分岐マクロのひな形を保存','code1.txt','マクロ (*.txt *.mac);;すべて (*)')
+        filename,_=QFileDialog.getSaveFileName(self,'分岐マクロのひな形を保存',str(self.settings.output_folder/'CODE1.mac'),'マクロ (*.mac)')
         if not filename:return
-        try:atomic_write(Path(filename),text.replace('\n','\r\n').encode('cp932'))
+        try:
+            data=text.replace('\n','\r\n').encode('cp932')
+            path=self.mac_output_path(filename)
+            if path is None:return
+            atomic_write(path,data)
         except (OSError,UnicodeError) as error:self.statusBar().showMessage(str(error));return
         self.statusBar().showMessage('分岐マクロのひな形を保存しました。各分岐の処理をファイルで編集してください。')
 
@@ -901,6 +917,7 @@ class Window(QMainWindow):
         if self.prop_layout.pending: self.prop_layout.reflow()
 
     def sync_extra_editors(self, gadget, rebuild=True):
+        if self.gadget_comment.toPlainText()!=gadget.comment:self.gadget_comment.setPlainText(gadget.comment)
         if rebuild:
             for editor, value in ((self.item_values,'\n'.join(gadget.item_values)), (self.view_code,gadget.view_code)):
                 if editor.toPlainText() != value: editor.setPlainText(value)
@@ -996,6 +1013,7 @@ class Window(QMainWindow):
     def update_gadget(self):
         if self.loading or self.selected is None: return
         self.checkpoint(); g = self.form.gadgets[self.selected]
+        g.comment = self.gadget_comment.toPlainText()
         old_action = g.action_mode
         old_mode = g.list_mode
         old_name = g.name
@@ -1329,17 +1347,44 @@ class Window(QMainWindow):
             QMessageBox.warning(self, '保存エラー', str(e)); return False
         self.path = path; self.dirty = False; self.refresh(); return True
 
+    def mac_output_path(self,filename):
+        selected=Path(filename);path=selected.with_suffix('.mac')
+        if path!=selected and path.exists():
+            answer=QMessageBox.question(self,'上書き確認',f'{path} は存在します。上書きしますか？',QMessageBox.Yes|QMessageBox.No,QMessageBox.No)
+            if answer!=QMessageBox.Yes:return None
+        return path
+
+    def save_output_folder(self):
+        text=self.output_folder.text().strip()
+        folder=Path(text).expanduser() if text else self.settings.app_directory
+        if not folder.is_absolute():folder=self.settings.app_directory/folder
+        try:self.settings.save_output_folder(folder)
+        except (OSError,ValueError) as error:
+            self.statusBar().showMessage('出力先の設定を保存できません: '+str(error));return False
+        self.output_folder.setText(str(self.settings.output_folder))
+        self.statusBar().showMessage('出力先フォルダを settings.json に保存しました。');return True
+
+    def choose_output_folder(self):
+        folder=QFileDialog.getExistingDirectory(self,'出力先フォルダを選択',self.output_folder.text())
+        if folder:self.output_folder.setText(folder);self.save_output_folder()
+
     def export(self):
         try:
             if self.variable_error: raise ValueError('変数欄を修正してください。')
             data = self.form.pml().replace('\n', '\r\n').encode('cp932')
         except (ValueError, UnicodeError) as e:
             QMessageBox.warning(self, '出力エラー', str(e)); return
-        name, _ = QFileDialog.getSaveFileName(self, 'PML を出力', self.form.name.lower() + '.pmlfrm', 'PML form (*.pmlfrm)')
+        folder=Path(self.output_folder.text().strip() or str(self.settings.app_directory)).expanduser()
+        if not folder.is_absolute():folder=self.settings.app_directory/folder
+        if not folder.is_dir():
+            QMessageBox.warning(self,'出力エラー','出力先には存在するフォルダを指定してください。');return
+        name, _ = QFileDialog.getSaveFileName(self, 'MAC テキストを出力', str(folder/(self.form.name.upper()+'.mac')), 'マクロ (*.mac)')
         if not name: return
-        try: atomic_write(Path(name), data)
+        path=self.mac_output_path(name)
+        if path is None:return
+        try: atomic_write(path, data)
         except OSError as e: QMessageBox.warning(self, '出力エラー', str(e)); return
-        self.statusBar().showMessage('PML 出力完了。E3D 4.0 で読み込みと動作を確認してください。')
+        self.statusBar().showMessage('MAC テキスト出力完了。E3D 4.0 で読み込みと動作を確認してください。')
 
     def closeEvent(self, event):
         if self.confirm_discard():

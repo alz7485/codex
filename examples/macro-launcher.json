@@ -14,6 +14,7 @@
         "kind": "button",
         "name": "buttonA",
         "label": "Button A",
+        "comment": "ボタンAから共通マクロを実行。分岐値は A。",
         "x": 2,
         "y": 2,
         "width": 20,
@@ -72,7 +73,7 @@
         "database": "OWNERS",
         "button_role": "NORMAL",
         "action_mode": "MACRO",
-        "macro_path": "C:/Macros/code1.txt",
+        "macro_path": "C:/Macros/CODE1.mac",
         "macro_flag": "buttonFlag",
         "macro_value": "A"
       },
@@ -80,6 +81,7 @@
         "kind": "button",
         "name": "buttonB",
         "label": "Button B",
+        "comment": "ボタンBから共通マクロを実行。分岐値は B。",
         "x": 2,
         "y": 4,
         "width": 20,
@@ -138,7 +140,7 @@
         "database": "OWNERS",
         "button_role": "NORMAL",
         "action_mode": "MACRO",
-        "macro_path": "C:/Macros/code1.txt",
+        "macro_path": "C:/Macros/CODE1.mac",
         "macro_flag": "buttonFlag",
         "macro_value": "B"
       }

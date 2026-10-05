@@ -78,6 +78,6 @@ class MacroGuiTests(unittest.TestCase):
         self.assertEqual(w.form.gadgets[0].macro_path,'C:/shared.txt')
         w.form.gadgets[1].macro_path='C:/shared.txt';w.refresh()
         with tempfile.TemporaryDirectory() as folder:
-            path=Path(folder)/'code1.txt'
+            path=Path(folder)/'code1.mac'
             with patch('e3d_designer.app.QFileDialog.getSaveFileName',return_value=(str(path),'')):w.save_macro_template()
             self.assertIn("Elseif (!!BUTTONFLAG Eq 'B') Then",path.read_text())

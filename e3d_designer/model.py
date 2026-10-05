@@ -31,6 +31,7 @@ class Gadget:
     kind: str = 'button'
     name: str = 'button1'
     label: str = 'Run'
+    comment: str = ''
     x: float = 2
     y: float = 1
     width: float = 14
@@ -249,7 +250,7 @@ class Form:
         if not isinstance(self.gadgets, list) or any(not isinstance(g,Gadget) for g in self.gadgets):
             raise ValueError('部品は配列で指定してください。')
         for g in self.gadgets:
-            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method','display_mode','pixmap_path','popup_menu','database','button_role','action_mode','macro_path','macro_flag','macro_value'):
+            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method','display_mode','pixmap_path','popup_menu','database','button_role','action_mode','macro_path','macro_flag','macro_value','comment'):
                 if not isinstance(getattr(g,key),str): raise ValueError(f'部品の {key} は文字列で指定してください。')
             for key in ('items','item_commands','item_values','headings','pane_lines'):
                 value = getattr(g,key)
@@ -436,6 +437,7 @@ class Form:
                 callbacks[key] = g.body
         methods = {self.name.lower(),'default',*callbacks}
         for g in self.gadgets:
+            if '\x00' in g.comment:raise ValueError('部品コメントに NUL は使用できません。')
             if g.action_mode not in ('CODE','MACRO'):raise ValueError('ボタンの処理方式が不正です。')
             if g.action_mode != 'MACRO':continue
             if g.kind != 'button' or g.button_role not in ('NORMAL','APPLY','RESET'):
@@ -545,6 +547,7 @@ class Form:
                           f'  member .{g.name}Control is {g.control_type}']
         def render(g, depth):
             indent = '  '*depth
+            for comment in g.comment.splitlines():lines.append(indent+'-- '+comment)
             position = f'AT X {n(g.x)} Y {n(g.y)}'
             if g.layout_mode == 'RELATIVE':
                 delta = lambda value: ('+' if value > 0 else '') + n(value) if value else ''

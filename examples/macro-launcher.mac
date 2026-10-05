@@ -4,7 +4,9 @@ Kill !!MACROLAUNCHER
 -- Target: E3D 4.0 (runtime compatibility not yet verified)
 Setup Form !!MACROLAUNCHER Dialog Dock Right
   Title 'SHARED MACRO'
+  -- ボタンAから共通マクロを実行。分岐値は A。
   Button .BUTTONA At X 2 Y 2 'BUTTON A' Call '!THIS.MACRO_BUTTONA()' Width 20
+  -- ボタンBから共通マクロを実行。分岐値は B。
   Button .BUTTONB At X 2 Y 4 'BUTTON B' Call '!THIS.MACRO_BUTTONB()' Width 20
 Exit
 
@@ -19,10 +21,10 @@ Endmethod
 
 Define Method .MACRO_BUTTONA()
   !!BUTTONFLAG = 'A'
-  $M "C:/MACROS/CODE1.TXT"
+  $M "C:/MACROS/CODE1.MAC"
 Endmethod
 
 Define Method .MACRO_BUTTONB()
   !!BUTTONFLAG = 'B'
-  $M "C:/MACROS/CODE1.TXT"
+  $M "C:/MACROS/CODE1.MAC"
 Endmethod

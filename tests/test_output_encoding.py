@@ -20,7 +20,7 @@ class OutputEncodingTests(unittest.TestCase):
         self.assertFalse(hasattr(self.window,'encoding'))
         self.window.form=Form(title='設備設定')
         with tempfile.TemporaryDirectory() as folder:
-            path=Path(folder)/'form.pmlfrm'
+            path=Path(folder)/'form.mac'
             with patch('e3d_designer.app.QFileDialog.getSaveFileName',return_value=(str(path),'')):self.window.export()
             data=path.read_bytes();self.assertIn('設備設定',data.decode('cp932'))
             self.assertIn(b'\r\n',data);self.assertNotIn(b'\n',data.replace(b'\r\n',b''))
@@ -32,7 +32,7 @@ class OutputEncodingTests(unittest.TestCase):
     def test_macro_template_cp932_and_encoding_failure_preserves_file(self):
         self.window.form=Form(variables={'flag':''},gadgets=[Gadget(label='実行',action_mode='MACRO',macro_path='C:/code1.txt',macro_flag='flag',macro_value='開始')]);self.window.selected=0;self.window.refresh()
         with tempfile.TemporaryDirectory() as folder:
-            path=Path(folder)/'code1.txt'
+            path=Path(folder)/'code1.mac'
             with patch('e3d_designer.app.QFileDialog.getSaveFileName',return_value=(str(path),'')):self.window.save_macro_template()
             data=path.read_bytes();self.assertIn('開始',data.decode('cp932'));self.assertIn('実行',data.decode('cp932'))
             self.assertIn(b'\r\n',data)

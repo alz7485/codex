@@ -4,7 +4,7 @@
 
 - [エディタ全体](editor.png)
 - [配置したフォームのプレビュー](equipmenttool-preview.png)
-- [対応する生成PMLコード](equipmenttool.pmlfrm)
+- [対応する生成PMLコード](equipmenttool.mac)
 - [編集用JSON](../../examples/equipmenttool.json)
 
 プレビューはエディタでの概略表示です。E3D実機の画面ではありません。
@@ -17,8 +17,10 @@
 
 ![初期値の設定](initial-defaults.png)
 
-[編集用JSON](../../examples/initial-defaults.json) / [生成PML](../../examples/initial-defaults.pmlfrm)
+[編集用JSON](../../examples/initial-defaults.json) / [生成PML](../../examples/initial-defaults.mac)
 
 ![外部マクロと分岐フラグの設定](macro-actions.png)
 
-[外部マクロを呼び出すサンプル](../../examples/macro-launcher.json) / [分岐マクロのひな形](../../examples/macro-code1.txt)
+[外部マクロを呼び出すサンプル](../../examples/macro-launcher.json) / [分岐マクロのひな形](../../examples/macro-code1.mac)
+
+![MAC出力先フォルダと部品コメント](output-comments.png)
