@@ -59,7 +59,7 @@ class OutputSettingsTests(unittest.TestCase):
     def test_mac_output_default_folder_extension_and_overwrite_guard(self):
         w=self.window;w.output_folder.setText(str(self.folder));w.save_output_folder()
         with patch('e3d_designer.app.QFileDialog.getSaveFileName',return_value=(str(self.folder/'sample'),'')) as dialog:w.export()
-        self.assertEqual(Path(dialog.call_args.args[2]),self.folder/'USERFORM.mac')
+        self.assertEqual(Path(dialog.call_args.args[2]),self.folder/'userform.mac')
         self.assertEqual(dialog.call_args.args[3],'マクロ (*.mac)')
         self.assertTrue((self.folder/'sample.mac').exists())
         (self.folder/'other.mac').write_bytes(b'original')
@@ -89,6 +89,6 @@ class OutputSettingsTests(unittest.TestCase):
     def test_nested_comments_are_not_executable_and_nul_rejected(self):
         form=Form(gadgets=[Gadget(kind='frame',name='frame',width=30,height=10,comment='Frame'),Gadget(name='run',parent='frame',comment='first\r\nSHOW !!other')])
         code=form.pml()
-        self.assertIn('    -- SHOW !!other\n    Button .RUN',code)
+        self.assertIn('    -- SHOW !!other\n    Button .run',code)
         form.gadgets[1].comment='\x00'
         with self.assertRaises(ValueError):form.validate()

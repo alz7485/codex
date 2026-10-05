@@ -140,7 +140,7 @@ class WorkflowUiTests(unittest.TestCase):
         w.fields['macro_path'].setText('CODE1.MAC');w.update_gadget()
         gadget=w.form.gadgets[0]
         self.assertIn(gadget.macro_flag,w.form.variables);self.assertEqual(gadget.macro_value,gadget.name)
-        w.form.validate();self.assertIn('Var !!BUTTONFLAG',w.form.pml())
+        w.form.validate();self.assertIn('Var !!buttonFlag',w.form.pml())
 
     def test_legacy_part_gets_method_on_edit_without_typing_a_name(self):
         w=self.w;w.form=Form(gadgets=[Gadget(name='legacy')]);w.selected=0;w.refresh()

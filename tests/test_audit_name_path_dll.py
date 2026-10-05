@@ -113,11 +113,11 @@ class AuditFixTests(unittest.TestCase):
             from dataclasses import asdict
             with self.assertRaises(ValueError):Form.loads(json.dumps({'version':1,'form':asdict(form)}))
 
-    def test_external_namespace_and_type_preserved_with_pml_names_uppercase(self):
+    def test_external_namespace_type_and_pml_names_preserved(self):
         form=Form(gadgets=[Gadget(kind='container',name='host',assembly='Widget.dll',namespace='Vendor.Widgets',control_type='MyControl')],default_body="!this.hostControl = object MyControl()")
         code=form.pml()
         self.assertIn("Using Namespace 'Vendor.Widgets'",code)
-        self.assertIn('Member .HOSTCONTROL Is MyControl',code)
-        self.assertIn('!THIS.HOSTCONTROL = Object MyControl()',code)
+        self.assertIn('Member .hostControl Is MyControl',code)
+        self.assertIn('!this.hostControl = Object MyControl()',code)
         self.assertNotIn('MYCONTROL()',code)
         self.assertEqual(Form.loads(form.dumps()).pml(),code)

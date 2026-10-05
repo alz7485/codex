@@ -80,4 +80,4 @@ class MacroGuiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'code1.mac'
             with patch('e3d_designer.app.QFileDialog.getSaveFileName',return_value=(str(path),'')):w.save_macro_template()
-            self.assertIn("Elseif (!!BUTTONFLAG Eq 'B') Then",path.read_text())
+            self.assertIn("Elseif (!!buttonFlag Eq 'b') Then",path.read_text())

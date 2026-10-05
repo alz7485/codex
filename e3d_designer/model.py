@@ -573,6 +573,13 @@ class Form:
 
     def pml(self, normalize=True):
         self.validate()
+        protected = {}
+        def user_code(value):
+            if not normalize:return value
+            import uuid
+            marker = '__user_code_'+uuid.uuid4().hex+'__'
+            protected[marker]=value
+            return marker
         def has_code(body):
             return any(line.strip() and not line.lstrip().startswith(('--','$*')) for line in body.splitlines())
         initial_lines = self.initial_lines()
@@ -673,7 +680,7 @@ class Form:
                 if view_type == 'ALPHA':
                     for channel in ('REQUESTS','COMMANDS'):
                         if g.channels in (channel,'BOTH'): line += '\n  CHANNEL '+channel
-                if g.view_code: line += '\n'+'\n'.join('  '+row for row in g.view_code.split('\n'))
+                if g.view_code: line += '\n'+user_code('\n'.join('  '+row for row in g.view_code.split('\n')))
                 line += '\nEXIT'
             elif g.kind == 'container':
                 line = f'CONTAINER .{g.name} {position} PMLNETCONTROL {width_clause} HEIGHT {n(g.height)}'
@@ -700,7 +707,7 @@ class Form:
         for g in self.ordered_children(''): render(g, 1)
         lines.extend(['exit', ''])
         lines += [f'SHOW !!{self.name}', '']
-        if self.after_show_code: lines += [self.after_show_code, '']
+        if self.after_show_code: lines += [user_code(self.after_show_code), '']
         lines.append(f'define method .{self.name}()')
         for menu in self.menus:
             if menu.popup:
@@ -742,7 +749,7 @@ class Form:
                 for column, cell in enumerate(cells,1): lines.append(f'  !ROWS[{row}][{column}] = {literal(cell)}')
             lines += [f'  !THIS.{g.name}.setrows(!ROWS)', 'endmethod', '']
         if 'default' in active_methods:
-            lines += ['DEFINE METHOD .DEFAULT()', *initial_lines, *([default_code] if has_code(default_code) else []), 'ENDMETHOD', '']
+            lines += ['DEFINE METHOD .DEFAULT()', *initial_lines, *([user_code(default_code)] if has_code(default_code) else []), 'ENDMETHOD', '']
         for g in self.gadgets:
             if g.action_mode == 'MACRO':
                 lines += [f'define method .macro_{g.name}()']
@@ -753,7 +760,9 @@ class Form:
             if active_callback(g) and g.callback.lower() not in seen:
                 seen.add(g.callback.lower())
                 signature = '(!gad is GADGET, !event is STRING)' if g.kind == 'slider' else '()'
-                lines += [f'define method .{g.callback}{signature}', g.body, 'endmethod', '']
+                lines += [f'define method .{g.callback}{signature}', user_code(g.body), 'endmethod', '']
         from .formatting import canonical_pml
         text='\n'.join(lines)
-        return canonical_pml(text,external_types={g.control_type for g in self.gadgets if g.kind=='container' and g.assembly}) if normalize else text
+        if normalize:text=canonical_pml(text,external_types={g.control_type for g in self.gadgets if g.kind=='container' and g.assembly})
+        for marker,value in protected.items():text=text.replace(marker,value)
+        return text

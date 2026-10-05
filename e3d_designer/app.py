@@ -2048,7 +2048,7 @@ class Window(QMainWindow):
         if not folder.is_absolute():folder=self.settings.app_directory/folder
         if not folder.is_dir():
             QMessageBox.warning(self,'出力エラー','出力先には存在するフォルダを指定してください。');return
-        name, _ = QFileDialog.getSaveFileName(self, 'MAC テキストを出力', str(folder/(self.form.name.upper()+'.mac')), 'マクロ (*.mac)')
+        name, _ = QFileDialog.getSaveFileName(self, 'MAC テキストを出力', str(folder/(self.form.name+'.mac')), 'マクロ (*.mac)')
         if not name: return
         path=self.mac_output_path(name)
         if path is None:return

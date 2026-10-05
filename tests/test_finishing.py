@@ -66,7 +66,7 @@ class FinishingTests(unittest.TestCase):
         for item in w.scene.items():
             if isinstance(item,Item):self.assertEqual(item.pixmap.toImage().pixelColor(0,0),QColor('blue'))
         self.assertEqual(w.form.dumps(),before)
-        self.assertIn("'SAMPLE.PNG'",w.form.pml())
+        self.assertIn("'sample.png'",w.form.pml())
 
     def test_icon_and_sample_image_load_from_other_working_directory(self):
         self.assertFalse(self.w.windowIcon().isNull())

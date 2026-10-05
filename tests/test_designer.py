@@ -608,7 +608,7 @@ class GuiTests(unittest.TestCase):
             self.assertEqual(Form.loads(self.w.path.read_text()).gadgets[0].item_values,['/P-1','/T-1'])
         self.w.selected=None;self.w.refresh();self.w.add('view')
         self.w.view_code.setPlainText('LIMITS AUTO')
-        self.assertIn(canonical_pml('LIMITS AUTO'),self.w.code.toPlainText())
+        self.assertIn('LIMITS AUTO',self.w.code.toPlainText())
         self.assertFalse(self.w.item_values.isEnabled())
 
     def test_relative_controls_preview_and_rename(self):

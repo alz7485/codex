@@ -372,20 +372,16 @@ PMLファイルと分岐マクロのひな形は、SJIS（Windows拡張の CP932
 
 ### コードの大文字・小文字
 
-生成PMLと外部マクロのひな形は、コマンドを先頭1文字だけ大文字、オブジェクト名・変数名・メソッド名・プロパティ名・文字列値を大文字に統一します。手入力の処理も出力時に変換します。コメントはそのまま残し、編集用JSONと入力欄の内容は保持します。名前管理の「PML名」は出力に合わせて大文字で表示します。
+自動生成するPMLのキーワードは先頭1文字を大文字に整えます。ユーザーが入力したオブジェクト名・変数名・メソッド名・表示名・値・コマンド・パスは入力どおりの大文字小文字で出力します。メソッド本文、DEFAULT本文、表示後のプログラム、ビューの処理も表記を変更しません。名前管理の「PML名」も実際の出力と同じ表記です。
 
 ```text
-Var !!BUTTONFLAG ''
-Setup Form !!USERFORM Dialog Dock Right
-Button .RUN At X 2 Y 3 'RUN' Call '!THIS.MACRO_RUN()' Width 14
-Show !!USERFORM
-Define Method .MACRO_RUN()
-  !!BUTTONFLAG = 'A'
-  $M "C:/MACROS/CODE1.TXT"
-Endmethod
+Var !!buttonFlag ''
+Setup Form !!MyForm Dialog Dock Right
+Button .RunButton At X 2 Y 3 'Run' Call 'SaVeWoRk' Width 14
+Show !!MyForm
 ```
 
-表示文字・ファイルパスも大文字になります。DLLの型名と `Using Namespace` の名前空間は、大文字小文字を区別する外部APIとの互換性のため元の表記を保持します。PML側の部品・変数・メソッド・生成メンバー名は大文字に統一します。E3D実機検証は未実施です。
+外部マクロの分岐値も入力どおり保持し、`modeA` と `ModeA` を別の値として扱います。E3D実機検証は未実施です。
 
 ### 出力フォルダと部品コメント
 

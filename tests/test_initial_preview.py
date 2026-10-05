@@ -34,7 +34,7 @@ class InitialPreviewTests(unittest.TestCase):
                 w.initial_choice.setCurrentIndex(w.initial_choice.findData(value))
                 self.assertEqual(w.form.named(name).initial,value)
                 self.assertEqual(Form.loads(w.form.dumps()).named(name).initial,value)
-                if value and kind=='toggle':self.assertIn('.VAL = '+value,w.form.pml())
+                if value and kind=='toggle':self.assertIn('.val = '+value,w.form.pml())
                 w.undo();self.assertEqual(w.form.named(name).initial,previous)
                 w.choose_row(next(i for i,g in enumerate(w.form.gadgets) if g.name==name))
             w.dirty=False
