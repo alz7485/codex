@@ -6,7 +6,7 @@ from shiboken6 import isValid
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QRectF, Signal, QMimeData
-from PySide6.QtGui import QAction, QColor, QPainter, QPen, QKeySequence, QPainterPath, QPixmap, QFont
+from PySide6.QtGui import QAction, QColor, QPainter, QPen, QKeySequence, QPainterPath, QPixmap, QFont, QIcon
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QFormLayout, QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
@@ -162,7 +162,7 @@ class Item(QGraphicsObject):
     pageChosen = Signal(str)
     labelEditRequested = Signal(str)
 
-    def __init__(self, gadget, form):
+    def __init__(self, gadget, form, image_directories=()):
         super().__init__()
         self.gadget, self.form = gadget, form
         self._resize = None
@@ -170,6 +170,8 @@ class Item(QGraphicsObject):
         self._move_pos = None
         self._sync_geometry = False
         image_path = gadget.pixmap_path if gadget.kind != 'option' else (gadget.items[0] if gadget.items else '')
+        if image_path and not Path(image_path).is_absolute():
+            image_path = next((str(folder/image_path) for folder in image_directories if (folder/image_path).is_file()), image_path)
         self.pixmap = QPixmap(image_path) if gadget.display_mode == 'PIXMAP' and image_path else QPixmap()
         self.setAcceptHoverEvents(True)
         self.setFlags(QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
@@ -408,6 +410,7 @@ class Window(QMainWindow):
         super().__init__()
         from .settings import Settings
         self.settings=Settings(settings_path)
+        self.setWindowIcon(QIcon(str(Path(__file__).parent/'assets'/'app-icon.ico')))
         self.form, self.path, self.selected = Form(), None, None
         self.project_key = uuid.uuid4().hex
         self.selected_menu = None
@@ -421,11 +424,12 @@ class Window(QMainWindow):
         self.setWindowTitle('E3D PML Form Designer — E3D 4.0 想定')
         toolbar = self.addToolBar('ファイル')
         for label, fn, shortcut in [('新規', self.new, 'Ctrl+N'), ('開く', self.open, 'Ctrl+O'),
-                ('保存', self.save, 'Ctrl+S'), ('MAC 出力', self.export, 'Ctrl+E'),
+                ('保存', self.save, 'Ctrl+S'), ('名前を付けて保存', self.save_as, 'Ctrl+Shift+S'), ('MAC 出力', self.export, 'Ctrl+E'),
                 ('元に戻す', self.undo, 'Ctrl+Z'), ('やり直す', self.redo, 'Ctrl+Shift+Z'),
                 ('複製', self.duplicate, 'Ctrl+D'), ('削除', self.delete, None)]:
             a = QAction(label, self)
-            if shortcut: a.setShortcut(QKeySequence(shortcut))
+            if shortcut:
+                a.setShortcut(QKeySequence(shortcut));a.setToolTip(f'{label} ({shortcut})')
             a.triggered.connect(fn)
             toolbar.addAction(a)
         names_action = QAction('変数・名前管理',self)
@@ -1391,8 +1395,9 @@ class Window(QMainWindow):
             self.objects.item(index).setData(Qt.UserRole,index)
         self.scene.blockSignals(True); self.scene.clear()
         self.scene.setSceneRect(0, 0, self.form.width * SX, self.form.height * SY)
+        image_directories = ((self.path.resolve().parent,) if self.path else ()) + (self.settings.app_directory,)
         for index, g in enumerate(self.form.gadgets):
-            item = Item(g, self.form); item.setData(0, index)
+            item = Item(g, self.form, image_directories); item.setData(0, index)
             item.pageChosen.connect(self.choose_page)
             item.labelEditRequested.connect(self.request_object_label)
             item.resizing.connect(self.resize_preview); item.resized.connect(self.resize_committed)
@@ -1690,21 +1695,30 @@ class Window(QMainWindow):
         self.project_key = uuid.uuid4().hex
         self.variable_error = False; self.form = form; self.path = Path(name); self.selected = None; self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
 
-    def save(self):
+    def save_as(self):
+        return self.save(force_dialog=True)
+
+    def save(self, *, force_dialog=False):
         try:
             if self.variable_error: raise ValueError('変数欄を修正してください。')
             data = self.form.dumps()
         except ValueError as e:
             QMessageBox.warning(self, '保存エラー', str(e)); return False
         path = self.path
-        if path is None:
-            name, _ = QFileDialog.getSaveFileName(self, '設計を保存', self.form.name + '.json', '設計 (*.json)')
+        if path is None or force_dialog:
+            initial = str(path) if path else str(self.settings.app_directory/(self.form.name+'.json'))
+            name, _ = QFileDialog.getSaveFileName(self, '名前を付けて保存' if force_dialog else '設計を保存', initial, '設計 (*.json)')
             if not name: return False
             path = Path(name)
+            if path.suffix.lower() != '.json':
+                path = path.with_suffix('.json')
+                if path.exists() and QMessageBox.question(self,'上書き確認',f'{path} は存在します。上書きしますか？',QMessageBox.Yes|QMessageBox.No,QMessageBox.No)!=QMessageBox.Yes:
+                    return False
         try: atomic_write(path, data.encode('utf-8'))
         except OSError as e:
             QMessageBox.warning(self, '保存エラー', str(e)); return False
-        self.path = path; self.dirty = False; self.refresh(); return True
+        self.path = path; self.dirty = False; self.refresh()
+        self.statusBar().showMessage(f'設計を保存しました: {path}');return True
 
     def mac_output_path(self,filename):
         selected=Path(filename);path=selected.with_suffix('.mac')
@@ -1743,7 +1757,7 @@ class Window(QMainWindow):
         if path is None:return
         try: atomic_write(path, data)
         except OSError as e: QMessageBox.warning(self, '出力エラー', str(e)); return
-        self.statusBar().showMessage('MAC テキスト出力完了。E3D 4.0 で読み込みと動作を確認してください。')
+        self.statusBar().showMessage(f'MAC テキストを出力しました: {path}')
 
     def closeEvent(self, event):
         if self.confirm_discard():
@@ -1767,6 +1781,9 @@ def atomic_write(path, data):
 
 
 def main():
+    if sys.platform == 'win32':
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('E3DFormDesigner.Desktop')
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     window = Window(); window.show()

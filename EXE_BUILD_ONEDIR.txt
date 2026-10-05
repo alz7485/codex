@@ -13,12 +13,18 @@ py -3.12 -m venv .venv-build
 
 2. onedir形式でEXEを作成
 
-.\.venv-build\Scripts\python.exe -m PyInstaller --onedir --windowed --clean --noconfirm --name E3DFormDesigner run_designer.py
+.\.venv-build\Scripts\python.exe -m PyInstaller --onedir --windowed --clean --noconfirm --name E3DFormDesigner --icon .\e3d_designer\assets\app-icon.ico --add-data "e3d_designer\assets;e3d_designer\assets" run_designer.py
 
-3. サンプルとこの手順書を配布フォルダーにコピー
+3. サンプル・使い方・この手順書を配布フォルダーにコピー
 
 Copy-Item -Path .\examples -Destination .\dist\E3DFormDesigner\examples -Recurse -Force
 Copy-Item -Path .\EXE_BUILD_ONEDIR.txt -Destination .\dist\E3DFormDesigner\EXE_BUILD_ONEDIR.txt -Force
+
+New-Item -ItemType Directory -Path .\dist\E3DFormDesigner\e3d_designer -Force | Out-Null
+Copy-Item -Path .\e3d_designer\assets -Destination .\dist\E3DFormDesigner\e3d_designer\assets -Recurse -Force
+Copy-Item -Path .\USER_GUIDE.txt -Destination .\dist\E3DFormDesigner\USER_GUIDE.txt -Force
+Copy-Item -Path .\README.md -Destination .\dist\E3DFormDesigner\README.md -Force
+Copy-Item -Path .\docs -Destination .\dist\E3DFormDesigner\docs -Recurse -Force
 
 4. 起動
 
@@ -31,6 +37,9 @@ dist\E3DFormDesigner\
   _internal\              Python・PySide6・Qtなどの実行用ファイル
   examples\               JSON設計ファイルとPMLサンプル
   EXE_BUILD_ONEDIR.txt
+  e3d_designer\assets\     アイコンPNG・ICO
+  USER_GUIDE.txt            基本操作とショートカット
+  README.md / docs\        詳細説明と画面例
 
 dist\E3DFormDesigner フォルダー全体をZIPにして配布してください。
 EXEだけをコピーすると起動できません。配布先でPythonを別途
@@ -39,14 +48,14 @@ EXEだけをコピーすると起動できません。配布先でPythonを別�
 起動後、「開く」で examples\gadgets.json を選ぶと追加部品を試せます。
 examples\extra-features.json は画像・複数行入力・DBセレクタ・
 ポップアップのサンプル、examples\toolbar.json はMAINのツールバー例です。
-サンプル画像は examples\assets に含まれます。相対パスの画像表示を
-試す場合は E3DFormDesigner フォルダーを作業ディレクトリにして起動するか、
-プロパティで画像を選び直してください。E3Dへは画像ファイルも別途配置します。
+サンプル画像は examples\assets に含まれます。相対パスの画像は
+設計JSONのフォルダー、次にEXEのフォルダーから探します。
+E3Dへは画像ファイルも別途配置します。
 設計の保存先とPMLの出力先は、書き込み可能な場所を選んでください。
 
 起動に失敗する場合（コンソールでエラーを確認）
 
-.\.venv-build\Scripts\python.exe -m PyInstaller --onedir --console --clean --noconfirm --name E3DFormDesignerDebug run_designer.py
+.\.venv-build\Scripts\python.exe -m PyInstaller --onedir --console --clean --noconfirm --name E3DFormDesignerDebug --icon .\e3d_designer\assets\app-icon.ico --add-data "e3d_designer\assets;e3d_designer\assets" run_designer.py
 .\dist\E3DFormDesignerDebug\E3DFormDesignerDebug.exe
 
 補足

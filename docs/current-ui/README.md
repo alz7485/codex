@@ -1,6 +1,8 @@
 # 現在のUIと配置サンプル
 
-現在のPySide6アプリで `examples/equipmenttool.json` を開いて撮影した画面です。
+最新の編集画面は [仕上げ後の画面](finished-editor.png) です。別名保存・コンパクトな部品設定・追加先表示を確認できます。
+
+以下の過去の画面例は、PySide6アプリで `examples/equipmenttool.json` を開いて撮影した画面です。
 
 - [エディタ全体](editor.png)
 - [配置したフォームのプレビュー](equipmenttool-preview.png)
