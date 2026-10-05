@@ -141,8 +141,8 @@ class ExtraGuiTests(unittest.TestCase):
     def test_toolbar_image_height_and_full_width_noop(self):
         self.w.docking.setCurrentIndex(2);self.w.palette_buttons['toolbar'].click()
         self.w.palette_buttons['image_option'].click();self.w.form.validate()
-        self.assertEqual(self.w.form.gadgets[1].height,3)
-        self.w.fields['width'].setValue(69);self.w.form.validate()
+        self.assertEqual(self.w.form.gadgets[1].height,78)
+        self.w.fields['width'].setValue(690);self.w.form.validate()
         before=self.w.form.dumps();history=len(self.w.history);self.w.dirty=False
         self.w.add('button')
         self.assertEqual(self.w.form.dumps(),before);self.assertEqual(len(self.w.history),history);self.assertFalse(self.w.dirty)

@@ -1,5 +1,6 @@
 import copy
 import json
+import uuid
 import sys
 from shiboken6 import isValid
 from pathlib import Path
@@ -12,7 +13,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
     QScrollArea, QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
     QGridLayout)
-from .model import Form, Gadget, Menu, MenuItem, KINDS
+from .model import Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size
 
 LABELS = {'textpane':'複数行テキスト (TEXTPANE)','selector':'DB セレクタ (SELECTOR)','button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
           'toggle': 'チェックボックス', 'option': 'ドロップダウン', 'list': 'リスト', 'line': '線 (LINE)', 'frame': '枠 (FRAME)', 'slider':'スライダー', 'rtoggle':'ラジオボタン', 'combo':'コンボボックス', 'view':'ビュー', 'commandline':'コマンド欄 (ALPHA)', 'container':'外部部品 (CONTAINER)'}
@@ -27,13 +28,13 @@ PALETTE = {
     'textpane': ('📄','複数行入力'),'selector': ('🗃️','DB セレクタ'),
 }
 # Independent character-width and line-height scales; approximate preview only.
-SX, SY = 10, 26
+SX, SY = CHAR_WIDTH, LINE_HEIGHT
 GADGET_MIME = 'application/x-e3d-designer-gadgets'
 
 
 def preview_geometry(form, gadget):
     try: return form.geometry(gadget)
-    except ValueError: return gadget.x, gadget.y, gadget.width, gadget.height
+    except ValueError: return gadget.x, gadget.y, *display_size(gadget)
 
 
 class PropertyLayout(QGridLayout):
@@ -154,8 +155,12 @@ class Item(QGraphicsObject):
         handle, origin, width, height, _ = self._resize
         delta = event.scenePos()-origin; g = self.gadget
         old_width, old_height = g.width,g.height
-        if handle in ('width','both'): g.width = max(1,round((width+delta.x()/SX)*2)/2)
-        if handle in ('height','both'): g.height = max(1,round((height+delta.y()/SY)*2)/2)
+        if g.display_mode == 'PIXMAP':
+            if handle in ('width','both'): g.width = max(1,round(width+delta.x()))
+            if handle in ('height','both'): g.height = max(1,round(height+delta.y()))
+        else:
+            if handle in ('width','both'): g.width = max(1,round((width+delta.x()/SX)*2)/2)
+            if handle in ('height','both'): g.height = max(1,round((height+delta.y()/SY)*2)/2)
         try:
             for candidate in self.form.gadgets:
                 x,y,w,h = self.form.geometry(candidate)
@@ -316,6 +321,7 @@ class Window(QMainWindow):
     def __init__(self):
         super().__init__()
         self.form, self.path, self.selected = Form(), None, None
+        self.project_key = uuid.uuid4().hex
         self.selected_menu = None
         self.preview_menus = []
         self.history, self.future = [], []
@@ -565,7 +571,11 @@ class Window(QMainWindow):
     def update_menu_popup(self,checked):
         menu = self.current_menu()
         if self.loading or menu is None: return
-        self.checkpoint();menu.popup = checked;self.refresh(rebuild=False)
+        self.checkpoint();menu.popup = checked
+        if not checked:
+            for gadget in self.form.gadgets:
+                if gadget.popup_menu.lower() == menu.name.lower(): gadget.popup_menu = ''
+        self.refresh(rebuild=False)
 
     def choose_image(self):
         if self.selected is None: return
@@ -768,6 +778,11 @@ class Window(QMainWindow):
     def enable_layout_fields(self, gadget):
         mode = gadget.layout_mode
         self.fields['layout_mode'].setEnabled(True)
+        for key in ('width','height'):
+            pixel = gadget.display_mode == 'PIXMAP'
+            self.fields[key].setMaximum(8192 if pixel else 300)
+            self.fields[key].setDecimals(0 if pixel else 2)
+            self.fields[key].setSingleStep(1 if pixel else .5)
         for key in ('x','y'): self.fields[key].setEnabled(mode == 'ABSOLUTE')
         for key in ('path','halign','valign','hgap','vgap'): self.fields[key].setEnabled(mode == 'AUTO')
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): self.fields[key].setEnabled(mode == 'RELATIVE')
@@ -826,6 +841,8 @@ class Window(QMainWindow):
         self.choices.setPlaceholderText('画像のファイルパスを1行1件で指定' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢の表示文字を1行1件で指定')
         self.prop_layout.setCaption(self.choices,'画像ファイル (1行1画像)' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢 (1行1項目)')
         self.prop_layout.setCaption(self.item_values,'RTEXT 実値 (1行1項目)')
+        self.prop_layout.setCaption(self.fields['width'],'幅 (px)' if gadget.display_mode == 'PIXMAP' else '幅')
+        self.prop_layout.setCaption(self.fields['height'],'高さ (px)' if gadget.display_mode == 'PIXMAP' else '高さ / 行数')
         self.browse_image.setText('📁 画像ファイルを追加' if gadget.kind == 'option' else '📁 画像ファイルを選択')
         self.prop_layout.batching = False
         if self.prop_layout.pending: self.prop_layout.reflow()
@@ -930,9 +947,15 @@ class Window(QMainWindow):
         old_name = g.name
         old_role = g.button_role
         old_display = g.display_mode
+        from .names import actual_name,code_slots,read_slot,write_slot,rewrite_code
+        old_actual = actual_name(g)
         for key, w in self.fields.items():
             value = w.currentData() if key in ('parent','xref','yref','width_ref','popup_menu') else w.value() if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
             setattr(g, key, value)
+        if old_display != g.display_mode:
+            if g.display_mode == 'PIXMAP': g.width *= SX;g.height *= SY
+            else: g.width = max(1,g.width/SX);g.height = max(1,g.height/SY)
+            if g.kind == 'option' and g.display_mode == 'PIXMAP': g.name = g.name.lstrip('_')
         if g.button_role != old_role and g.button_role in ('OK','CANCEL','HELP'):
             g.callback = '';g.command = ''
         if g.kind == 'option' and old_display == 'PIXMAP' and g.display_mode == 'TEXT':
@@ -962,6 +985,9 @@ class Window(QMainWindow):
             commands = self.choice_commands.toPlainText().split('\n')
             g.item_commands = (commands if self.choice_commands.toPlainText() else [])
             if len(g.item_commands) < len(g.items): g.item_commands += [''] * (len(g.items) - len(g.item_commands))
+        if g.kind == 'option' and old_display != g.display_mode:
+            for _,owner,key in code_slots(self.form):
+                write_slot(owner,key,rewrite_code(read_slot(owner,key),self.form.name,self.form.name,{old_actual:actual_name(g)}))
         self.refresh(rebuild=table_changed)
 
     def refresh(self, rebuild=True):
@@ -1114,7 +1140,7 @@ class Window(QMainWindow):
             self.statusBar().showMessage('ラジオボタンは通常 FRAME を選択して追加してください。'); return
         available = None
         if container and container.frame_style == 'TOOLBAR':
-            occupied = 1+sum(child.width+1 for child in self.form.children(container.name))
+            occupied = 1+sum(self.form.geometry(child)[2]+1 for child in self.form.children(container.name))
             available = container.width-occupied
             if available < 1 or container.height < 2:
                 self.statusBar().showMessage('ツールバーに空きがありません。幅・高さを広げてください。');return
@@ -1137,6 +1163,7 @@ class Window(QMainWindow):
             g.height = min(g.height,container.height-1)
         if kind in ('option', 'list', 'combo'): g.items = ['Item A', 'Item B']
         if direction == 'PIXMAP' and kind == 'option': g.items = []
+        if direction == 'PIXMAP': g.width *= SX;g.height *= SY
         self.form.gadgets.append(g); self.selected = len(self.form.gadgets) - 1; self.refresh()
 
     def unique_name(self, base):
@@ -1146,25 +1173,19 @@ class Window(QMainWindow):
 
     def duplicate(self):
         if self.selected is None: return
-        self.checkpoint(); original = self.form.gadgets[self.selected]
-        subtree = {original.name.lower(), *(n.lower() for n in self.form.descendants(original.name))}
-        copies = [copy.deepcopy(g) for g in self.form.gadgets if g.name.lower() in subtree]
-        mapping = {}
-        for g in copies:
-            old = g.name; g.name = self.unique_name(g.kind); mapping[old.lower()] = g.name
-            if g.kind == 'list' and g.list_mode == 'TABLE': g.table_method = ''
-            self.form.gadgets.append(g)
-        for g in copies:
-            for key in ('parent','xref','yref','width_ref'):
-                if getattr(g,key).lower() in mapping: setattr(g,key,mapping[getattr(g,key).lower()])
-        self.selected = next(i for i,g in enumerate(self.form.gadgets) if g.name == mapping[original.name.lower()])
-        self.refresh()
+        from .clipboard import clone_subtree
+        try:
+            self.form.validate()
+            draft,selected = clone_subtree(self.form,self.form,self.selected)
+        except ValueError as error:
+            self.statusBar().showMessage(f'複製できません: {error}');return
+        self.checkpoint();self.form,self.selected = draft,selected;self.refresh()
 
-    def copy_gadget(self):
+    def copy_gadget(self,cut=False):
         if self.selected is None: return False
         try:
             self.form.validate()
-            payload = json.dumps({'form':self.form.dumps(),'root':self.selected},ensure_ascii=False)
+            payload = json.dumps({'form':self.form.dumps(),'root':self.selected,'cut':bool(cut),'project':self.project_key},ensure_ascii=False)
         except ValueError as error:
             self.statusBar().showMessage(f'コピーできません: {error}');return False
         data = QMimeData();data.setData(GADGET_MIME,payload.encode('utf-8'))
@@ -1173,7 +1194,7 @@ class Window(QMainWindow):
         return True
 
     def cut_gadget(self):
-        if self.copy_gadget(): self.delete()
+        if self.copy_gadget(cut=True): self.delete()
 
     def paste_gadget(self):
         data = QApplication.clipboard().mimeData()
@@ -1182,51 +1203,14 @@ class Window(QMainWindow):
             payload = json.loads(bytes(data.data(GADGET_MIME)).decode('utf-8'))
             source = Form.loads(payload['form']);index = payload['root']
             if type(index) is not int or not 0 <= index < len(source.gadgets): raise ValueError('コピー元の部品が不正です。')
-            root = source.gadgets[index]
-            subtree = {root.name.lower(),*(name.lower() for name in source.descendants(root.name))}
-            draft = copy.deepcopy(self.form);mapping = {};copies = []
-            used = {g.name.lower() for g in draft.gadgets}|{m.name.lower() for m in draft.menus}
-            for original in source.gadgets:
-                if original.name.lower() not in subtree: continue
-                gadget = copy.deepcopy(original);number = 1
-                while (gadget.kind+str(number)).lower() in used: number += 1
-                gadget.name = gadget.kind+str(number);used.add(gadget.name.lower())
-                mapping[original.name.lower()] = gadget.name
-                if gadget.kind == 'list' and gadget.list_mode == 'TABLE': gadget.table_method = ''
-                copies.append((original,gadget))
-            for original,gadget in copies:
-                for key in ('parent','xref','yref','width_ref'):
-                    value = getattr(gadget,key)
-                    if value.lower() in mapping: setattr(gadget,key,mapping[value.lower()])
-                # Keep external placement links only when their targets exist in this project.
-                existing = {g.name.lower() for g in draft.gadgets}
-                if original.parent and original.parent.lower() not in subtree and original.parent.lower() not in existing:
-                    gadget.parent = ''
-                if gadget.layout_mode == 'AUTO' or any(name.lower() not in existing|{value.lower() for value in mapping.values()} for name in (gadget.xref,gadget.yref,gadget.width_ref) if name):
-                    x,y,width,height = source.geometry(original)
-                    gadget.x,gadget.y,gadget.width,gadget.height = x,y,width,height
-                    gadget.layout_mode = 'ABSOLUTE';gadget.xref = gadget.yref = gadget.width_ref = ''
-                draft.gadgets.append(gadget)
-            from .names import code_slots,read_slot,write_slot,actual_name,reference_pattern
-            substitutions = [(reference_pattern(source,'gadget',actual_name(original)),actual_name(gadget)) for original,gadget in copies]
-            copied_ids = {id(gadget) for _,gadget in copies}|{id(gadget.item_commands) for _,gadget in copies}
-            for _,owner,key in code_slots(draft):
-                if id(owner) not in copied_ids: continue
-                value = read_slot(owner,key)
-                matches = []
-                for pattern,target in substitutions:
-                    for match in pattern.finditer(value):
-                        prefix = match.group(0).rsplit('.',1)[0]
-                        if prefix.lower() != '!this': prefix = '!!'+draft.name
-                        matches.append((match.start(),match.end(),prefix+'.'+target))
-                for start,end,target in sorted(matches,reverse=True): value = value[:start]+target+value[end:]
-                write_slot(owner,key,value)
-            draft.validate()
+            from .clipboard import clone_subtree
+            restore = payload.get('cut') is True and payload.get('project') == self.project_key
+            draft,selected = clone_subtree(self.form,source,index,restore_names=restore)
         except (ValueError,KeyError,TypeError,UnicodeError) as error:
             self.statusBar().showMessage(f'貼り付けできません: {error}');return
         self.checkpoint();self.form = draft
-        self.selected = next(i for i,g in enumerate(draft.gadgets) if g.name == mapping[root.name.lower()])
-        self.refresh();self.statusBar().showMessage('部品を貼り付けました。名前は重複しない名前に変更しました。')
+        self.selected = selected
+        self.refresh();self.statusBar().showMessage('部品を貼り付けました。')
 
     def delete(self):
         if self.selected is None: return
@@ -1251,6 +1235,7 @@ class Window(QMainWindow):
 
     def new(self):
         if not self.confirm_discard(): return
+        self.project_key = uuid.uuid4().hex
         self.variable_error = False; self.form = Form(); self.path = None; self.selected = None; self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
 
     def open(self):
@@ -1262,6 +1247,7 @@ class Window(QMainWindow):
             form = Form.loads(text)
         except (OSError, ValueError) as e:
             QMessageBox.warning(self, '読込エラー', str(e)); return
+        self.project_key = uuid.uuid4().hex
         self.variable_error = False; self.form = form; self.path = Path(name); self.selected = None; self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
 
     def save(self):

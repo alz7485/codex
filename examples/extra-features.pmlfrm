@@ -5,8 +5,8 @@ setup form !!featuredemo DIALOG DOCK RIGHT
   title 'Additional gadgets'
   menu .modelPopup POPUP
   exit
-  PARAGRAPH .pumpImage AT X 2 Y 1 PIXMAP WIDTH 18 HEIGHT 5
-  OPTION .pumpChoice AT X 24 Y 1 'Pump' PIXMAP WIDTH 18 HEIGHT 5
+  PARAGRAPH .pumpImage AT X 2 Y 1 PIXMAP WIDTH 180 HEIGHT 130
+  OPTION .pumpChoice AT X 24 Y 1 'Pump' PIXMAP WIDTH 180 HEIGHT 130
   TEXTPANE .notes 'Notes' FIXCHARS AT X 2 Y 8 WIDTH 30 HEIGHT 7
   SELECTOR .owners AT X 36 Y 8 'Database owners' SINGLE WIDTH 30 HEIGHT 7 DATABASE OWNERS
   VIEW .model AT X 2 Y 16 VOLUME

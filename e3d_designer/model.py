@@ -5,6 +5,15 @@ import re
 
 KINDS = ('button', 'paragraph', 'text', 'toggle', 'option', 'list', 'line', 'frame', 'slider', 'rtoggle', 'combo', 'view', 'commandline', 'container', 'textpane', 'selector')
 IDENTIFIER = re.compile(r'[A-Za-z][A-Za-z0-9_]*\Z')
+CHAR_WIDTH, LINE_HEIGHT = 10, 26
+
+
+def display_size(gadget):
+    return (gadget.width/CHAR_WIDTH,gadget.height/LINE_HEIGHT) if gadget.display_mode == 'PIXMAP' else (gadget.width,gadget.height)
+
+
+def native_size(gadget,width,height):
+    return (width*CHAR_WIDTH,height*LINE_HEIGHT) if gadget.display_mode == 'PIXMAP' else (width,height)
 
 
 def literal(value, allow_expansion=False):
@@ -163,14 +172,14 @@ class Form:
         if key in trail: raise ValueError('配置・幅の循環参照を解消してください。')
         trail.add(key)
         dependencies = {g.name.lower(): self.geometry(g, trail) for g in self.layout_dependencies(gadget)}
-        width = dependencies[gadget.width_ref.lower()][2] if gadget.width_ref else gadget.width
-        height = gadget.height
+        width,height = display_size(gadget)
+        if gadget.width_ref: width = dependencies[gadget.width_ref.lower()][2]
         x, y = gadget.x, gadget.y
         parent = self.parent_gadget(gadget)
         if parent and parent.frame_style == 'TOOLBAR':
             siblings = self.children(parent.name)
             index = next(i for i,g in enumerate(siblings) if g is gadget)
-            return 1+sum(g.width+1 for g in siblings[:index]),1,width,height
+            return 1+sum(display_size(g)[0]+1 for g in siblings[:index]),1,width,height
         if gadget.layout_mode == 'RELATIVE':
             xr, yr = dependencies[gadget.xref.lower()], dependencies[gadget.yref.lower()]
             x = xr[0] + (xr[2] if gadget.xedge == 'XMAX' else 0) + gadget.xoffset
@@ -313,7 +322,8 @@ class Form:
             x, y, width, height = self.geometry(g)
             parent_width = self.geometry(parent)[2] if parent else self.width
             parent_height = parent.height if parent else self.height
-            if x < -.001 or y < -.001 or width < 1 or height < 1 or x + width > parent_width + .001 or y + height > parent_height + .001:
+            min_width,min_height = (1/CHAR_WIDTH,1/LINE_HEIGHT) if g.display_mode == 'PIXMAP' else (1,1)
+            if g.width < 1 or g.height < 1 or x < -.001 or y < -.001 or width < min_width or height < min_height or x + width > parent_width + .001 or y + height > parent_height + .001:
                 raise ValueError(f'{g.name}: 部品を親コンテナ内に収めてください。')
             if g.background:
                 if g.kind not in ('paragraph', 'button', 'list') or not re.fullmatch(r'[0-9]+', g.background):

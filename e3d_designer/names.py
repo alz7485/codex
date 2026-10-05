@@ -31,6 +31,21 @@ def actual_name(g):
     return '_'+g.name.lstrip('_') if g.kind == 'option' and g.display_mode == 'TEXT' else g.name
 
 
+def rewrite_code(value, source_form, target_form, members, methods=None):
+    """Replace qualified symbols in one pass, without cascading replacements."""
+    members = {key.lower():name for key,name in members.items()}
+    methods = {key.lower():name for key,name in (methods or {}).items()}
+    pattern = re.compile(r'(!this|!!'+re.escape(source_form)+r')\.([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_])',re.I)
+    def replace(match):
+        key = match.group(2).lower()
+        method_call = value[match.end():].lstrip().startswith('(')
+        target = methods.get(key) if method_call else members.get(key,methods.get(key))
+        if target is None: return match.group(0)
+        prefix = match.group(1) if match.group(1).lower() == '!this' else '!!'+target_form
+        return prefix+'.'+target
+    return pattern.sub(replace,value)
+
+
 def reference_pattern(form, kind, name):
     if kind in ('variable','form'):
         return re.compile(r'!!'+re.escape(name)+r'(?![A-Za-z0-9_])',re.I)
