@@ -105,6 +105,16 @@ class WorkflowUiTests(unittest.TestCase):
         self.assertIn('名前=初期値',w.output_validation.text())
         w.variables.setPlainText('mode=A');self.assertIn('問題なし',w.output_validation.text())
 
+    def test_combo_scroll_inspector_and_undo(self):
+        w=self.w;w.add('combo');g=w.form.gadgets[w.selected]
+        self.assertTrue(w.fields['combo_scroll'].isEnabled())
+        self.assertEqual(w.fields['combo_scroll'].text(),'20')
+        w.fields['combo_scroll'].setText('10');w.update_gadget()
+        self.assertIn('Scroll 10 Width',w.code.toPlainText())
+        self.assertEqual(Form.loads(w.form.dumps()).gadgets[w.selected].combo_scroll,'10')
+        w.undo();self.assertEqual(w.form.named(g.name).combo_scroll,'20')
+        w.add('button');self.assertFalse(w.fields['combo_scroll'].isEnabled())
+
     def test_new_parts_export_without_editing_any_symbol_name(self):
         w=self.w
         for kind in ('button','text','toggle','list','combo','slider','selector'):

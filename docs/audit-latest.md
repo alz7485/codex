@@ -1,3 +1,12 @@
+# COMBOのSCROLL設定（2026-10-05）
+
+- COMBO／COMBOBOXにSCROLL（表示量）を追加し、WIDTHまたはWIDTH参照指定の直前に出力。内容プロパティとミニ編集で入力できます。初期値20、空欄なら指定を省略します。
+- JSON保存・復元・Undoに対応し、旧JSONには初期値を補います。不正な整数やコードを混ぜた入力を拒否します。
+- 既存212件と追加3件のテストが成功。追加テストで出力順序・旧JSON・値の検証・ミニ編集・Undoを確認。
+- 公開例の `combobox .colour tagwidth 6 |Colour| scroll 20 width 10` に合わせました。E3D実機は未検証です。
+
+---
+
 # COMBOコールバック修正（2026-10-05）
 
 - COMBO / COMBOBOX宣言行のCALLBACKを削除し、コンストラクタ内に `.callback = '!this.Method('` を設定。呼び出し先は `(!gad is GADGET, !event is STRING)` の引数で生成します。

@@ -107,6 +107,19 @@ class ModelTests(unittest.TestCase):
         self.assertNotIn('AT ',line)
         self.assertIn("'Results' SINGLE WIDTH.base HEIGHT 3",line)
 
+    def test_combo_scroll_precedes_width_and_is_saved(self):
+        for keyword in ('COMBO','COMBOBOX'):
+            form=Form(gadgets=[Gadget(kind='combo',name='Choice',combo_keyword=keyword,combo_scroll='12',width=18)])
+            self.assertIn("SCROLL 12 WIDTH 18",Form.loads(form.dumps()).pml(normalize=False))
+            form.gadgets[0].combo_scroll=''
+            self.assertNotIn('SCROLL',form.pml(normalize=False))
+            for value in ('0','-1','1.5','bad','12 EXIT'):
+                form.gadgets[0].combo_scroll=value
+                with self.assertRaises(ValueError):form.validate()
+        raw=json.loads(Form(gadgets=[Gadget(kind='combo',name='Choice')]).dumps())
+        del raw['form']['gadgets'][0]['combo_scroll']
+        self.assertEqual(Form.loads(json.dumps(raw)).gadgets[0].combo_scroll,'20')
+
     def test_combo_callback_is_assigned_in_constructor_with_matching_arguments(self):
         for keyword in ('COMBO','COMBOBOX'):
             form=Form(gadgets=[Gadget(kind='combo',name='Choice',combo_keyword=keyword,callback='OnChoice',body="if !event.eq('SELECT') then\n  q var !gad\nendif",items=['Item'],item_values=['Value'])])

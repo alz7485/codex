@@ -32,6 +32,13 @@ class QuickEditorTests(unittest.TestCase):
         d.add_column();d.add_row();d.table.setItem(2,2,QTableWidgetItem('Cell'));d.accept()
         self.assertEqual(d.gadget.rows[1][2],'Cell');self.assertEqual(len(d.gadget.headings),3)
         self.assertIn('setrows',Form(gadgets=[d.gadget]).pml().lower());d.deleteLater()
+    def test_combo_scroll_in_compact_editor_and_validation(self):
+        f=Form(gadgets=[Gadget(kind='combo',name='Choice')]);d=MiniProperties(None,f,0)
+        d.fields['combo_scroll'].setText('8');d.accept()
+        self.assertIn('Scroll 8 Width',d.result_form.pml());self.assertEqual(f.gadgets[0].combo_scroll,'20');d.deleteLater()
+        d=MiniProperties(None,f,0);d.fields['combo_scroll'].setText('-1');d.accept()
+        self.assertIsNone(d.result_form);self.assertTrue(d.error.text());d.reject();d.deleteLater()
+
     def test_invalid_name_and_outer_cancel(self):
         f=Form(gadgets=[Gadget(name='one'),Gadget(name='two')]);d=MiniProperties(None,f,0)
         d.fields['name'].setText('two');d.accept();self.assertIsNone(d.result_form);self.assertTrue(d.error.text())

@@ -127,6 +127,7 @@ class MiniProperties(QDialog):
             row=QHBoxLayout();widget=QLineEdit(g.background);self.fields['background']=widget;row.addWidget(widget)
             button=QPushButton('色を選ぶ');button.clicked.connect(self.choose_color);row.addWidget(button);fields.addRow('色番号',row)
         sized=g.kind not in ('toggle','rtoggle','option','frame') or g.display_mode=='PIXMAP' or (g.kind=='frame' and g.frame_style in ('TABSET','TOOLBAR'))
+        if g.kind=='combo':text('combo_scroll','SCROLL（表示量）')
         if sized:number('width','WIDTH')
         if g.kind in ('line','list','view','alpha','container','textpane','selector') or (g.kind=='slider' and g.slider_orientation=='VERTICAL') or g.display_mode=='PIXMAP' or (g.kind=='frame' and g.frame_style=='TOOLBAR'):number('height','HEIGHT')
         self.error=QLabel();self.error.setWordWrap(True);layout.addWidget(self.error)
