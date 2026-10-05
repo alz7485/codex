@@ -1053,7 +1053,17 @@ class Window(QMainWindow):
 
     def request_object_label(self,name):
         from PySide6.QtCore import QTimer
-        QTimer.singleShot(0,lambda:self.edit_object_label(name))
+        QTimer.singleShot(0,lambda:self.edit_object_properties(name))
+
+    def edit_object_properties(self,name):
+        from .quick_editor import MiniProperties
+        index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name),None)
+        if index is None or self._closing:return
+        dialog=MiniProperties(self,self.form,index)
+        if dialog.exec()==QDialog.Accepted and dialog.result_form is not None:
+            if dialog.result_form.dumps()!=self.form.dumps():
+                self.checkpoint();self.form=dialog.result_form;self.selected=index;self.refresh()
+        dialog.deleteLater()
 
     def edit_object_label(self,name):
         index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name),None)

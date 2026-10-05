@@ -248,19 +248,22 @@ class AuditGuiRegressionTests(unittest.TestCase):
         self.assertEqual(w.form.geometry(w.form.named(page)),(0,0,50,14))
         w.form.validate()
 
+    def quick_label(self,dialog,label):
+        dialog.fields['label'].setText(label);dialog.accept();return 1
+
     def test_double_click_canvas_and_list_changes_label_only(self):
         w=self.w
         self.load(Form(gadgets=[Gadget(name='first',x=2,y=2),Gadget(name='second',x=20,y=2)],default_body='!this.first.val = 1'))
         item=next(item for item in w.scene.items() if isinstance(item,Item) and item.gadget.name=='first')
         point=w.view.mapFromScene(item.mapToScene(item.boundingRect().center()))
-        with patch('e3d_designer.app.QInputDialog.getText',return_value=('renamed',True)) as dialog:
+        with patch('e3d_designer.quick_editor.MiniProperties.exec',autospec=True,side_effect=lambda d:self.quick_label(d,'renamed')) as dialog:
             QTest.mouseDClick(w.view.viewport(),Qt.LeftButton,Qt.NoModifier,point)
             self.app.processEvents();dialog.assert_called_once()
         self.assertEqual(w.form.gadgets[0].label,'renamed')
         self.assertEqual(w.form.gadgets[0].name,'first')
         self.assertEqual(w.form.default_body,'!this.first.val = 1')
         point=w.objects.visualItemRect(w.objects.item(0)).center()
-        with patch('e3d_designer.app.QInputDialog.getText',return_value=('listed',True)) as dialog:
+        with patch('e3d_designer.quick_editor.MiniProperties.exec',autospec=True,side_effect=lambda d:self.quick_label(d,'listed')) as dialog:
             QTest.mouseClick(w.objects.viewport(),Qt.LeftButton,Qt.NoModifier,point)
             QTest.mouseDClick(w.objects.viewport(),Qt.LeftButton,Qt.NoModifier,point)
             self.app.processEvents();dialog.assert_called_once()
@@ -318,16 +321,16 @@ class AuditGuiRegressionTests(unittest.TestCase):
         original=w.form.dumps()
         for x,name,label in ((8,'first','First'),(30,'second','Second')):
             point=w.view.mapFromScene((2+x)*SX,SY+12)
-            with patch('e3d_designer.app.QInputDialog.getText',return_value=('Changed',True)) as dialog:
+            with patch('e3d_designer.quick_editor.MiniProperties.exec',autospec=True,side_effect=lambda d:self.quick_label(d,'Changed')) as dialog:
                 QTest.mouseDClick(w.view.viewport(),Qt.LeftButton,Qt.NoModifier,point)
                 self.app.processEvents();dialog.assert_called_once()
-                self.assertEqual(dialog.call_args.args[4],label)
+                self.assertEqual(dialog.call_args.args[0].gadget.label,label)
             self.assertEqual(w.form.named(name).label,'Changed')
             self.assertEqual(w.form.named('tabs').label,'Tabs')
             w.undo();self.assertEqual(w.form.dumps(),original)
         point=w.view.mapFromScene(10*SX,SY+12)
         history=len(w.history)
-        with patch('e3d_designer.app.QInputDialog.getText',return_value=('Ignored',False)):
+        with patch('e3d_designer.quick_editor.MiniProperties.exec',return_value=0):
             QTest.mouseDClick(w.view.viewport(),Qt.LeftButton,Qt.NoModifier,point)
             self.app.processEvents()
         self.assertEqual(w.form.dumps(),original);self.assertEqual(len(w.history),history)

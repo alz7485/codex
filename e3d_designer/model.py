@@ -437,9 +437,10 @@ class Form:
             for item in g.items: literal(item)
             for item in g.item_values: literal(item)
             if g.item_values:
-                if (g.kind not in ('list','combo') and not (g.kind == 'option' and g.display_mode == 'PIXMAP')) or len(g.item_values) != len(g.items):
+                if g.kind not in ('list','combo','option') or len(g.item_values) != len(g.items):
                     raise ValueError('LIST / COMBO / 画像 OPTION の表示項目と実値の行数を揃えてください。')
             if g.kind == 'option' and g.display_mode == 'TEXT':
+                if g.item_values and g.item_commands:raise ValueError('OPTION の実値とコマンドはどちらか一方を指定してください。')
                 if g.item_commands and len(g.item_commands) != len(g.items):
                     raise ValueError('OPTION の選択肢とコマンドの行数を揃えてください。')
                 for command in g.item_commands: literal(command, allow_expansion=True)
@@ -634,12 +635,14 @@ class Form:
                     line = f'OPTION .{g.name} {position} {label} PIXMAP {width_clause} HEIGHT {n(g.height)}'+callback
                 else:
                     object_name = '_' + g.name.lstrip('_')
-                    line = f"OPTION {object_name} {position} {label} CALL '$${object_name}'"
-                    line += f'\nVAR LIST {object_name} PAIRS'
-                    commands = g.item_commands or [''] * len(g.items)
-                    for display, command in zip(g.items, commands):
-                        line += '\n' + literal(display) + ' ' + literal(command, allow_expansion=True)
-                    line += '\nEXIT'
+                    line = f"OPTION {object_name} {position} {label}"
+                    if not g.item_values:
+                        line += f" CALL '$${object_name}'"
+                        line += f'\nVAR LIST {object_name} PAIRS'
+                        commands = g.item_commands or [''] * len(g.items)
+                        for display, command in zip(g.items, commands):
+                            line += '\n' + literal(display) + ' ' + literal(command, allow_expansion=True)
+                        line += '\nEXIT'
             elif g.kind == 'list':
                 selection = 'MULTIPLE' if g.selection_mode == 'MULTI' else g.selection_mode
                 background = f'BACKGROUND {int(g.background)} ' if g.background else ''
@@ -710,15 +713,16 @@ class Form:
             if g.kind == 'container' and g.assembly:
                 lines += [f'  !this.{g.name}Control = object {g.control_type}()',
                           f'  !this.{g.name}.Control = !this.{g.name}Control.handle()']
-            if (g.kind in ('list','combo') or (g.kind == 'option' and g.display_mode == 'PIXMAP')) and g.items and not (g.kind == 'list' and g.list_mode == 'TABLE'):
+            if (g.kind in ('list','combo') or (g.kind == 'option' and (g.display_mode == 'PIXMAP' or g.item_values))) and g.items and not (g.kind == 'list' and g.list_mode == 'TABLE'):
                 lines.append('  !choices = object ARRAY()')
                 for i, item in enumerate(g.items, 1):
                     lines.append(f'  !choices[{i}] = {literal(item)}')
-                lines.append(f'  !this.{g.name}.dtext = !choices')
+                target = '_'+g.name.lstrip('_') if g.kind=='option' and g.display_mode=='TEXT' else g.name
+                lines.append(f'  !this.{target}.dtext = !choices')
                 if g.item_values:
                     lines.append('  !values = object ARRAY()')
                     for i, value in enumerate(g.item_values,1): lines.append(f'  !values[{i}] = {literal(value)}')
-                    lines.append(f'  !this.{g.name}.rtext = !values')
+                    lines.append(f'  !this.{target}.rtext = !values')
         initial_lines = self.initial_lines()
         if initial_lines: lines.append('  !this.DEFAULT()')
         lines.extend(['endmethod', ''])
