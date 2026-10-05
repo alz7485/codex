@@ -2,8 +2,8 @@
 import copy
 from PySide6.QtCore import Qt,Signal
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QLabel,QLineEdit,QTabWidget,
-    QTableWidget,QTableWidgetItem,QHeaderView,QPushButton,QCheckBox,QInputDialog)
-from .names import actual_name,reference_locations,rename
+    QTableWidget,QTableWidgetItem,QHeaderView,QPushButton,QCheckBox,QInputDialog,QSpinBox,QAbstractItemView)
+from .names import actual_name,reference_locations,rename,rename_many
 
 
 class ValueEditor(QLineEdit):
@@ -26,7 +26,7 @@ class NameManager(QDialog):
         self.objects = self.make_table(['種類','オブジェクト名','PML名','親','参照箇所'])
         self.tabs.addTab(self.variables,'グローバル変数');self.tabs.addTab(self.objects,'オブジェクト')
         buttons = QHBoxLayout()
-        for text,handler in (('+ 変数',self.add_variable),('変数削除',self.delete_variable),('名前変更',self.rename_selected)):
+        for text,handler in (('+ 変数',self.add_variable),('変数削除',self.delete_variable),('名前変更',self.rename_selected),('一括リネーム',self.bulk_rename),('表示行を全選択',self.select_visible)):
             button=QPushButton(text);button.clicked.connect(handler);buttons.addWidget(button)
         layout.addLayout(buttons)
         self.update_code=QCheckBox('コード内の !!変数 / !!フォーム / !THIS.部品 の参照も更新')
@@ -42,6 +42,8 @@ class NameManager(QDialog):
     def make_table(self, headers):
         table=QTableWidget(0,len(headers));table.setHorizontalHeaderLabels(headers)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         return table
 
     def locations(self, kind, name):
@@ -109,6 +111,32 @@ class NameManager(QDialog):
         name,ok=QInputDialog.getText(self,'名前変更','新しい名前',text=old)
         if ok:self.rename_entry(kind,key,name)
 
+    def select_visible(self):
+        table=self.tabs.currentWidget()
+        table.clearSelection()
+        for row in range(table.rowCount()):
+            if not table.isRowHidden(row):
+                for col in range(table.columnCount()):
+                    item=table.item(row,col)
+                    if item:item.setSelected(True)
+
+    def selected_entries(self):
+        table=self.tabs.currentWidget()
+        rows=sorted({item.row() for item in table.selectedItems() if not table.isRowHidden(item.row())})
+        if table is self.variables:
+            return [('variable',table.item(row,0).text(),table.item(row,0).text()) for row in rows]
+        return [(*self.object_keys[row],table.item(row,1).text()) for row in rows]
+
+    def bulk_rename(self):
+        entries=self.selected_entries()
+        if not entries:
+            self.status.setText('変更する行を選択してください。Ctrl / Shift で複数選択できます。');return
+        dialog=BulkRenameDialog(self,entries)
+        if dialog.exec()==QDialog.Accepted:
+            self.draft=dialog.result_form
+            self.rebuild();self.status.setText('一括リネームの候補を反映しました。「適用」でプロジェクトに反映します。')
+        dialog.deleteLater()
+
     def rename_entry(self, kind, key, name):
         try:self.draft=rename(self.draft,kind,key,name,self.update_code.isChecked())
         except ValueError as error:self.status.setText(str(error));return False
@@ -120,3 +148,61 @@ class NameManager(QDialog):
         if self.owner.form!=self.draft:
             self.owner.checkpoint();self.owner.form=copy.deepcopy(self.draft);self.owner.refresh()
         self.status.setText('適用しました。保存はメイン画面の「保存」で行います。');return True
+
+
+class BulkRenameDialog(QDialog):
+    """Editable rename preview; the manager and project remain unchanged until accepted."""
+    def __init__(self, manager, entries):
+        super().__init__(manager)
+        self.source=copy.deepcopy(manager.draft);self.entries=entries
+        self.update_code=manager.update_code.isChecked();self.result_form=None
+        self.setWindowTitle('一括リネーム');self.resize(820,580)
+        layout=QVBoxLayout(self)
+        note=QLabel('選択した行を上から順に処理します。候補は表で直接編集できます。\n「候補を生成」は手入力した候補を置き換えます。');note.setWordWrap(True);layout.addWidget(note)
+        self.prefix=QLineEdit();self.suffix=QLineEdit();self.find=QLineEdit();self.replacement=QLineEdit()
+        for labels,editors in ((('接頭辞','接尾辞'),(self.prefix,self.suffix)),(('置換する文字','置換後の文字'),(self.find,self.replacement))):
+            row=QHBoxLayout()
+            for label,editor in zip(labels,editors):row.addWidget(QLabel(label));row.addWidget(editor)
+            layout.addLayout(row)
+        row=QHBoxLayout();self.numbered=QCheckBox('連番にする');self.base=QLineEdit('item')
+        self.start=QSpinBox();self.start.setRange(0,999999);self.start.setValue(1)
+        self.digits=QSpinBox();self.digits.setRange(1,6);self.digits.setValue(2)
+        for widget in (self.numbered,QLabel('基本名'),self.base,QLabel('開始'),self.start,QLabel('桁数'),self.digits):row.addWidget(widget)
+        layout.addLayout(row)
+        generate=QPushButton('候補を生成');generate.clicked.connect(self.generate);layout.addWidget(generate)
+        self.table=QTableWidget(len(entries),3);self.table.setHorizontalHeaderLabels(['種類','現在の名前','変更後の名前'])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        for row,(kind,key,name) in enumerate(entries):
+            for col,value in enumerate((kind,name,name)):
+                item=QTableWidgetItem(value)
+                if col<2:item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                self.table.setItem(row,col,item)
+        layout.addWidget(self.table);self.status=QLabel();self.status.setWordWrap(True);layout.addWidget(self.status)
+        footer=QHBoxLayout();footer.addStretch()
+        self.confirm=QPushButton('管理画面へ反映');self.confirm.clicked.connect(self.accept)
+        cancel=QPushButton('キャンセル');cancel.clicked.connect(self.reject)
+        footer.addWidget(self.confirm);footer.addWidget(cancel);layout.addLayout(footer)
+        self.table.itemChanged.connect(self.validate_preview);self.validate_preview()
+
+    def generate(self):
+        self.table.blockSignals(True)
+        for row,(_,_,old) in enumerate(self.entries):
+            name=(self.base.text()+str(self.start.value()+row).zfill(self.digits.value())) if self.numbered.isChecked() else old
+            if self.find.text():name=name.replace(self.find.text(),self.replacement.text())
+            self.table.item(row,2).setText(self.prefix.text()+name+self.suffix.text())
+        self.table.blockSignals(False);self.validate_preview()
+
+    def validate_preview(self, *args):
+        changes=[(kind,key,self.table.item(row,2).text()) for row,(kind,key,_) in enumerate(self.entries)]
+        self.result_form=None
+        try:
+            result=rename_many(self.source,changes,self.update_code)
+        except ValueError as error:
+            self.status.setText('反映できません: '+str(error));self.confirm.setEnabled(False);return
+        count=sum(name!=old for (_,_,name),(_,_,old) in zip(changes,self.entries))
+        self.result_form=result;self.confirm.setEnabled(count>0)
+        self.status.setText(f'{count} 件の名前を変更します。参照の更新: '+('有効' if self.update_code else '無効'))
+
+    def accept(self):
+        self.validate_preview()
+        if self.confirm.isEnabled():super().accept()

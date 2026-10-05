@@ -69,43 +69,70 @@ def reference_locations(form, kind, name):
     return locations
 
 
-def rename(form, kind, key, new_name, update_code=True):
-    """Return a validated new form; keep the supplied form untouched on failure."""
+def rename_many(form, changes, update_code=True):
+    """Rename symbols simultaneously, including swaps; validate before returning."""
     result = copy.deepcopy(form)
-    if kind == 'variable': old = key
-    elif kind == 'form': old = result.name
-    elif kind == 'gadget': old = result.gadgets[key].name
-    elif kind == 'menu': old = result.menus[key].name
-    else: raise ValueError('名前の種類が不正です。')
-    valid = re.fullmatch(r'_?[A-Za-z][A-Za-z0-9_]*',new_name) if kind == 'gadget' and result.gadgets[key].kind == 'option' else IDENTIFIER.fullmatch(new_name)
-    if not valid: raise ValueError('名前は英字で始まる英数字・_ にしてください。')
-    if kind == 'variable':
-        if any(name.lower()==new_name.lower() and name!=old for name in result.variables):
-            raise ValueError('変数名が重複しています。')
-        result.variables = {new_name if name==old else name:value for name,value in result.variables.items()}
-    elif kind == 'form': result.name = new_name
-    elif kind == 'menu':
-        result.menus[key].name = new_name
-        for g in result.gadgets:
-            if g.popup_menu.lower() == old.lower(): g.popup_menu = new_name
-    else:
-        result.gadgets[key].name = new_name
-        for g in result.gadgets:
-            for attribute in ('parent','xref','yref','width_ref'):
-                if getattr(g,attribute).lower()==old.lower(): setattr(g,attribute,new_name)
+    globals_map, gadgets_map, menus_map, members, methods = {}, {}, {}, {}, {}
+    selected = set()
+    for kind, key, new_name in changes:
+        if (kind,key) in selected: raise ValueError('同じ名前が複数回指定されています。')
+        selected.add((kind,key))
+        if kind == 'variable':
+            if key not in form.variables: raise ValueError('変数が見つかりません。')
+            old = key
+        elif kind == 'form': old = form.name
+        elif kind in ('gadget','menu'):
+            collection = form.gadgets if kind == 'gadget' else form.menus
+            if not isinstance(key,int) or not 0 <= key < len(collection):
+                raise ValueError('オブジェクトが見つかりません。')
+            old = collection[key].name
+        else: raise ValueError('名前の種類が不正です。')
+        valid = re.fullmatch(r'_?[A-Za-z][A-Za-z0-9_]*',new_name) if kind == 'gadget' and form.gadgets[key].kind == 'option' else IDENTIFIER.fullmatch(new_name)
+        if not valid: raise ValueError('名前は英字で始まる英数字・_ にしてください。')
+        if kind == 'variable': globals_map[old.lower()] = new_name
+        elif kind == 'form':
+            globals_map[old.lower()] = new_name
+            result.name = new_name
+        elif kind == 'menu':
+            result.menus[key].name = new_name
+            menus_map[old.lower()] = new_name
+            members[old.lower()] = new_name
+        else:
+            result.gadgets[key].name = new_name
+            gadgets_map[old.lower()] = new_name
+            members[actual_name(form.gadgets[key]).lower()] = actual_name(result.gadgets[key])
+            if form.gadgets[key].kind == 'container': members[(old+'Control').lower()] = new_name+'Control'
+            g = form.gadgets[key]
+            if g.kind == 'list' and g.list_mode == 'TABLE' and not g.table_method:
+                methods[('populate_'+old).lower()] = 'populate_'+new_name
+    variable_names = [globals_map.get(name.lower(),name) for name in form.variables]
+    if len({name.lower() for name in variable_names}) != len(variable_names):
+        raise ValueError('変数名が重複しています。')
+    result.variables = dict(zip(variable_names,form.variables.values()))
+    for g in result.gadgets:
+        for attribute in ('parent','xref','yref','width_ref'):
+            old = getattr(g,attribute)
+            setattr(g,attribute,gadgets_map.get(old.lower(),old))
+        g.popup_menu = menus_map.get(g.popup_menu.lower(),g.popup_menu)
     if update_code:
-        replacements = [(old,new_name)]
-        if kind == 'gadget':
-            old_gadget,new_gadget = form.gadgets[key],result.gadgets[key]
-            replacements = [(actual_name(old_gadget),actual_name(new_gadget))]
-            if old_gadget.kind == 'container': replacements.append((old+'Control',new_name+'Control'))
-        for source,target in replacements:
-            pattern = reference_pattern(form,kind,source)
-            for _,owner,attribute in code_slots(result):
-                write_slot(owner,attribute,pattern.sub(lambda match: match.group(0)[:-len(source)]+target,read_slot(owner,attribute)))
-        if kind == 'gadget' and form.gadgets[key].kind == 'list' and form.gadgets[key].list_mode == 'TABLE' and not form.gadgets[key].table_method:
-            pattern = re.compile(r'((?:!this|!!'+re.escape(form.name)+r')\.)populate_'+re.escape(old)+r'(?![A-Za-z0-9_])',re.I)
-            for _,owner,attribute in code_slots(result):
-                write_slot(owner,attribute,pattern.sub(lambda match:match.group(1)+'populate_'+new_name,read_slot(owner,attribute)))
+        # Consume qualified references and globals together so swaps cannot cascade.
+        pattern = re.compile(r'(!this|!![A-Za-z][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?',re.I)
+        for _,owner,attribute in code_slots(result):
+            value = read_slot(owner,attribute)
+            def replace(match):
+                prefix,member = match.groups()
+                own = prefix.lower() in ('!this','!!'+form.name.lower())
+                target_prefix = prefix if prefix.lower() == '!this' else '!!'+globals_map.get(prefix[2:].lower(),prefix[2:])
+                if member is None: return target_prefix
+                target_member = member
+                if own:
+                    method_call = value[match.end():].lstrip().startswith('(')
+                    target_member = methods.get(member.lower(),member) if method_call else members.get(member.lower(),methods.get(member.lower(),member))
+                return target_prefix+'.'+target_member
+            write_slot(owner,attribute,pattern.sub(replace,value))
     result.validate()
     return result
+
+
+def rename(form, kind, key, new_name, update_code=True):
+    return rename_many(form,[(kind,key,new_name)],update_code)
