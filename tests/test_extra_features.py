@@ -84,6 +84,17 @@ class ExtraGuiTests(unittest.TestCase):
         self.app.clipboard().clear()
         self.w.dirty=False;self.w.close();self.app.processEvents()
 
+    def test_menu_palette_opens_editor_and_supports_undo(self):
+        self.w.palette_buttons['menubar'].click();self.app.processEvents()
+        self.assertEqual(len(self.w.form.menus),1)
+        self.assertEqual(self.w.selected_menu,0)
+        self.assertEqual(self.w.menu_name.text(),'menu1')
+        self.assertEqual(len(self.w.form.gadgets),0)
+        self.w.add_menu_item()
+        self.assertIn('menu .menu1',self.w.form.pml().lower())
+        self.w.undo();self.w.undo()
+        self.assertEqual(self.w.form.menus,[])
+
     def test_image_picker_preview_save_and_undo(self):
         self.w.palette_buttons['image'].click();self.assertEqual(self.w.form.gadgets[0].display_mode,'PIXMAP')
         with tempfile.TemporaryDirectory() as folder:

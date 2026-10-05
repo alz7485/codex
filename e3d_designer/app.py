@@ -360,12 +360,16 @@ class Window(QMainWindow):
             elif kind == 'slider':
                 entries += [('slider_horiz',kind,'HORIZONTAL','🎚️','横スライダー'),('slider_vert',kind,'VERTICAL','🎚️','縦スライダー')]
             else: entries.append((kind,kind,None,*PALETTE[kind]))
-        entries += [('image','paragraph','PIXMAP','🖼️','画像'),('image_option','option','PIXMAP','🖼️','画像選択'),('toolbar','frame','TOOLBAR','🛠️','ツールバー')]
+        entries += [('image','paragraph','PIXMAP','🖼️','画像'),('image_option','option','PIXMAP','🖼️','画像選択'),('toolbar','frame','TOOLBAR','🛠️','ツールバー'),('menubar',None,None,'📑','メニューバー')]
         for index,(key,kind,direction,icon,label) in enumerate(entries):
             b = QPushButton(f'{icon} {label}'); b.setFixedHeight(28)
             b.setStyleSheet('font-size: 12px; padding: 2px 4px;')
-            b.setToolTip(f'{LABELS[kind]} を追加' + (f' ({direction})' if direction else ''))
-            b.clicked.connect(lambda checked=False, k=kind, d=direction: self.add(k,d))
+            if key == 'menubar':
+                b.setToolTip('メニューバーにメニューを追加し、編集欄を表示します。')
+                b.clicked.connect(self.add_palette_menu)
+            else:
+                b.setToolTip(f'{LABELS[kind]} を追加' + (f' ({direction})' if direction else ''))
+                b.clicked.connect(lambda checked=False, k=kind, d=direction: self.add(k,d))
             palette_layout.addWidget(b,index//2,index%2); self.palette_buttons[key] = b
         palette_layout.setColumnStretch(0,1); palette_layout.setColumnStretch(1,1)
         ll.addWidget(palette)
@@ -533,6 +537,7 @@ class Window(QMainWindow):
         rl.addWidget(QLabel('text / toggle / option の高さは E3D 側で決まります。\n選択肢は OPTION / LIST / COMBO 用です。\n処理コードの構文は E3D で確認してください。'))
         rl.addStretch()
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(right); scroll.setMinimumWidth(320)
+        self.property_scroll = scroll
         columns.addWidget(scroll); columns.setSizes([220, 780, 360])
         outer.addWidget(columns, 1); self.setCentralWidget(root)
         self.refresh()
@@ -652,6 +657,12 @@ class Window(QMainWindow):
         self.loading = True
         self.refresh_menus()
         self.loading = False
+
+    def add_palette_menu(self):
+        self.add_menu()
+        self.property_scroll.ensureWidgetVisible(self.menu_group,0,0)
+        self.menu_name.setFocus()
+        self.menu_name.selectAll()
 
     def add_menu(self):
         self.checkpoint()
