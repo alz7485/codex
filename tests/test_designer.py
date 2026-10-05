@@ -543,7 +543,9 @@ class GuiTests(unittest.TestCase):
 
     def test_new_gadgets_add_edit_undo_and_render(self):
         self.w.add('rtoggle')
-        self.assertEqual(len(self.w.form.gadgets),0)
+        self.assertEqual(len(self.w.form.gadgets),2)
+        self.assertEqual(self.w.form.gadgets[1].parent,self.w.form.gadgets[0].name)
+        self.w.undo();self.assertEqual(len(self.w.form.gadgets),0)
         self.w.add('frame');group=self.w.form.gadgets[0]
         self.w.add('rtoggle');radio=self.w.form.gadgets[1]
         self.assertEqual(radio.parent,group.name)

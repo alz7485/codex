@@ -124,7 +124,7 @@ def preview_offset(form, gadget):
 
 
 class Item(QGraphicsObject):
-    moved = Signal()
+    moved = Signal(object,str,float,float)
     resizing = Signal()
     resized = Signal(object)
     pageChosen = Signal(str)
@@ -134,6 +134,8 @@ class Item(QGraphicsObject):
         super().__init__()
         self.gadget, self.form = gadget, form
         self._resize = None
+        self._move_start = None
+        self._move_pos = None
         self._sync_geometry = False
         image_path = gadget.pixmap_path if gadget.kind != 'option' else (gadget.items[0] if gadget.items else '')
         self.pixmap = QPixmap(image_path) if gadget.display_mode == 'PIXMAP' and image_path else QPixmap()
@@ -166,10 +168,17 @@ class Item(QGraphicsObject):
             if pages:
                 index = min(len(pages)-1, max(0,int(event.pos().x() / (self._width * SX / len(pages)))))
                 self.pageChosen.emit(pages[index].name); event.accept(); return
+        for item in self.scene().selectedItems():
+            if item is not self:item.setSelected(False)
+        # This editor moves one object at a time; Qt otherwise drags every selected item.
+        event.setModifiers(event.modifiers() & ~(Qt.ControlModifier|Qt.ShiftModifier))
+        if self.flags() & QGraphicsItem.ItemIsMovable:
+            self._move_start=copy.deepcopy(self.form);self._move_pos=self.pos()
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self,event):
         if event.button()==Qt.LeftButton:
+            self._move_start=None
             self.renameRequested.emit(self.gadget.name);event.accept();return
         super().mouseDoubleClickEvent(event)
 
@@ -302,10 +311,8 @@ class Item(QGraphicsObject):
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemPositionChange and self.scene() and not self._sync_geometry:
             g = self.gadget
-            ox, oy = preview_offset(self.form, g); parent = self.form.parent_gadget(g)
-            width, height = preview_geometry(self.form,parent)[2:] if parent else (self.form.width, self.form.height)
-            value.setX(ox * SX + max(0, min(round((value.x()/SX - ox)*2)/2, width-self._width))*SX)
-            value.setY(oy * SY + max(0, min(round((value.y()/SY - oy)*2)/2, height-self._height))*SY)
+            value.setX(max(0,min(round(value.x()/SX*2)/2,self.form.width-self._width))*SX)
+            value.setY(max(0,min(round(value.y()/SY*2)/2,self.form.height-self._height))*SY)
         return super().itemChange(change, value)
 
     def mouseReleaseEvent(self, event):
@@ -314,11 +321,9 @@ class Item(QGraphicsObject):
             if (self.gadget.width,self.gadget.height) != (width,height): self.resized.emit(old)
             event.accept(); return
         super().mouseReleaseEvent(event)
-        if self.gadget.layout_mode != 'ABSOLUTE' or self.form.is_tab_page(self.gadget): return
-        ox, oy = preview_offset(self.form, self.gadget)
-        self.gadget.x = round(self.pos().x() / SX - ox, 2)
-        self.gadget.y = round(self.pos().y() / SY - oy, 2)
-        self.moved.emit()
+        old=self._move_start;self._move_start=None
+        if old is None or self.pos()==self._move_pos:return
+        self.moved.emit(old,self.gadget.name,round(self.pos().x()/SX,2),round(self.pos().y()/SY,2))
 
 
 class ObjectList(QListWidget):
@@ -1009,6 +1014,9 @@ class Window(QMainWindow):
         self.prop_layout.setCaption(self.item_values,'RTEXT 実値 (1行1項目)')
         self.prop_layout.setCaption(self.fields['width'],'幅 (px)' if gadget.display_mode == 'PIXMAP' else '幅')
         self.prop_layout.setCaption(self.fields['height'],'高さ (px)' if gadget.display_mode == 'PIXMAP' else '高さ / 行数')
+        basis='フレーム基準' if gadget.parent else 'フォーム基準'
+        self.prop_layout.setCaption(self.fields['x'],f'X ({basis})')
+        self.prop_layout.setCaption(self.fields['y'],f'Y ({basis})')
         self.browse_image.setText('📁 画像ファイルを追加' if gadget.kind == 'option' else '📁 画像ファイルを選択')
         self.prop_layout.batching = False
         if self.prop_layout.pending: self.prop_layout.reflow()
@@ -1405,14 +1413,39 @@ class Window(QMainWindow):
         self.props.setEnabled(self.selected is not None and not self.form.is_tab_page(self.form.gadgets[self.selected])); self.loading = False
         self.props.setVisible(self.selected is not None and not self.form.is_tab_page(self.form.gadgets[self.selected]))
 
-    def move_committed(self):
-        # Items mutate coordinates only on release. Capture previous UI values for undo.
-        old = copy.deepcopy(self.form)
-        if self.selected is not None:
-            g = old.gadgets[self.selected]
-            g.x, g.y = self.fields['x'].value(), self.fields['y'].value()
-        self.history.append(old); self.future.clear(); self.dirty = True
+    def move_committed(self,old,name,x,y):
         from PySide6.QtCore import QTimer
+        index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name),None)
+        if index is None:return
+        candidate=copy.deepcopy(self.form);g=candidate.gadgets[index]
+        _,_,width,height=candidate.geometry(g)
+        excluded={name.lower(),*(child.lower() for child in candidate.descendants(name))}
+        visible={item.gadget.name.lower() for item in self.scene.items() if isinstance(item,Item) and item.isVisible()}
+        targets=[]
+        for frame in candidate.gadgets:
+            if frame.kind!='frame' or frame.frame_style!='FRAME' or frame.name.lower() in excluded or frame.name.lower() not in visible:continue
+            fx,fy,fw,fh=candidate.geometry(frame);ox,oy=candidate.offset(frame);fx+=ox;fy+=oy
+            if x>=fx-.001 and y>=fy-.001 and x+width<=fx+fw+.001 and y+height<=fy+fh+.001:
+                depth=0;parent=candidate.parent_gadget(frame);seen={frame.name.lower()}
+                while parent and parent.name.lower() not in seen:
+                    seen.add(parent.name.lower());depth+=1;parent=candidate.parent_gadget(parent)
+                targets.append((depth,-fw*fh,frame.name))
+        parent=candidate.named(max(targets)[2]) if targets else None
+        if g.kind=='rtoggle' and parent is None:
+            message='ラジオボタン全体がFRAME内に収まる位置へ配置してください。'
+            QTimer.singleShot(0,lambda:(self.refresh(),self.statusBar().showMessage(message)));return
+        changed_parent=g.parent.lower()!=(parent.name.lower() if parent else '')
+        g.parent=parent.name if parent else ''
+        if changed_parent:
+            g.width,g.height=native_size(g,width,height)
+            g.xref=g.yref=g.width_ref=''
+        ox,oy=candidate.offset(g);g.x=round(x-ox,2);g.y=round(y-oy,2)
+        try:candidate.validate()
+        except ValueError as error:
+            message=str(error)
+            QTimer.singleShot(0,lambda:(self.refresh(),self.statusBar().showMessage(message)));return
+        self.form=candidate;self.selected=index
+        self.history.append(old);self.history=self.history[-100:];self.future.clear();self.dirty=True
         QTimer.singleShot(0, self.refresh)
 
     def add(self, kind, direction=None):
@@ -1435,8 +1468,6 @@ class Window(QMainWindow):
             container=next((page for page in pages if page.name.lower()==self.active_pages.get(container.name.lower())),None)
             if container is None:
                 self.statusBar().showMessage('「＋ タブ」でタブを追加してから部品を配置してください。');return
-        if kind == 'rtoggle' and (not container or container.frame_style != 'FRAME'):
-            self.statusBar().showMessage('ラジオボタンは通常 FRAME を選択して追加してください。'); return
         available = None
         if container and container.frame_style == 'TOOLBAR':
             occupied = 1+sum(self.form.geometry(child)[2]+1 for child in self.form.children(container.name))
@@ -1444,6 +1475,11 @@ class Window(QMainWindow):
             if available < 1 or container.height < 2:
                 self.statusBar().showMessage('ツールバーに空きがありません。幅・高さを広げてください。');return
         self.checkpoint()
+        if kind=='rtoggle' and container is None:
+            container=Gadget(kind='frame',name=self.unique_name('radioGroup'),label='Radio group',
+                             x=0,y=min(len(self.form.gadgets)*1.5,max(0,self.form.height-6)),
+                             width=min(30,self.form.width),height=min(6,self.form.height))
+            self.form.gadgets.append(container)
         name = self.unique_name(kind)
         width_limit, height_limit = self.form.geometry(container)[2:] if container else (self.form.width, self.form.height)
         vertical = (kind == 'line' and direction == 'VERT') or (kind == 'slider' and direction == 'VERTICAL')
@@ -1466,6 +1502,14 @@ class Window(QMainWindow):
         if kind in ('option', 'list', 'combo'): g.items = ['Item A', 'Item B']
         if direction == 'PIXMAP' and kind == 'option': g.items = []
         if direction == 'PIXMAP': g.width *= SX;g.height *= SY
+        if container and container.frame_style=='FRAME':
+            rectangles=[preview_geometry(self.form,child) for child in self.form.children(container.name)]
+            gw,gh=display_size(g)
+            xs=sorted({0,*(x+w+1 for x,y,w,h in rectangles)})
+            ys=sorted({0,*(y+h+.5 for x,y,w,h in rectangles)})
+            position=next(((x,y) for y in ys for x in xs if x+gw<=width_limit and y+gh<=height_limit
+                           and all(x+gw<=rx or x>=rx+rw or y+gh<=ry or y>=ry+rh for rx,ry,rw,rh in rectangles)),None)
+            if position:g.x,g.y=position
         self.form.gadgets.append(g); self.selected = len(self.form.gadgets) - 1; self.refresh()
 
     def unique_name(self, base):

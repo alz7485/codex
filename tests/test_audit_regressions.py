@@ -176,9 +176,8 @@ class AuditGuiRegressionTests(unittest.TestCase):
                     item.setPos((ox+5)*SX,(oy+6)*SY)
                     self.assertEqual(item.pos().y(),(oy+6)*SY)
                     self.assertEqual(item.pos().x(),(ox+5)*SX)
-                    parent_height=12 if nested else self.w.form.height
                     item.setPos(item.pos().x(),10000)
-                    self.assertAlmostEqual(item.pos().y(),(oy+parent_height)*SY-50)
+                    self.assertAlmostEqual(item.pos().y(),self.w.form.height*SY-50)
                     item.setPos((ox+2)*SX,(oy+1)*SY)
                     start=self.w.view.mapFromScene(item.mapToScene(item.boundingRect().center()))
                     end=start+type(start)(SX*3,SY*3)
@@ -295,6 +294,78 @@ class AuditGuiRegressionTests(unittest.TestCase):
                 w.add(kind);self.app.processEvents()
                 self.assertLessEqual(w.height(),880)
                 self.assertLess(w.inspector_tabs.minimumSizeHint().height(),750)
+
+    def drag_object(self,name,x,y):
+        w=self.w
+        item=next(item for item in w.scene.items() if isinstance(item,Item) and item.gadget.name==name)
+        start=w.view.mapFromScene(item.mapToScene(item.boundingRect().center()))
+        end=start+type(start)(round(x*SX-item.pos().x()),round(y*SY-item.pos().y()))
+        QTest.mousePress(w.view.viewport(),Qt.LeftButton,Qt.NoModifier,start)
+        QTest.mouseMove(w.view.viewport(),end,30)
+        QTest.mouseRelease(w.view.viewport(),Qt.LeftButton,Qt.NoModifier,end)
+        self.app.processEvents()
+
+    def test_drag_changes_parent_and_rebases_local_coordinates_with_undo(self):
+        w=self.w
+        self.load(Form(gadgets=[Gadget(kind='frame',name='group',x=10,y=3,width=20,height=10),
+                               Gadget(name='run',x=2,y=1,width=8)]),1)
+        original=w.form.dumps()
+        self.drag_object('run',12,5)
+        g=w.form.named('run')
+        self.assertEqual((g.parent,g.x,g.y),('group',2,2))
+        self.assertIn("BUTTON .run AT X 2 Y 2",w.form.pml(normalize=False))
+        inside=w.form.dumps()
+        self.drag_object('run',45,15)
+        g=w.form.named('run');self.assertEqual((g.parent,g.x,g.y),('',45,15))
+        w.undo();self.assertEqual(w.form.dumps(),inside)
+        w.undo();self.assertEqual(w.form.dumps(),original)
+        self.drag_object('run',25,5)
+        self.assertEqual(w.form.named('run').parent,'') # Center is inside, right edge is outside.
+
+    def test_slider_drag_moves_only_pressed_object_even_with_stale_multi_selection(self):
+        w=self.w
+        self.load(Form(gadgets=[Gadget(kind='slider',name='level',x=2,y=2,width=8),Gadget(name='run',x=20,y=2,width=8)]))
+        for item in w.scene.items():
+            if isinstance(item,Item):item.setSelected(True)
+        self.app.processEvents()
+        self.assertEqual(len(w.scene.selectedItems()),2)
+        original=w.form.dumps();history=len(w.history)
+        self.drag_object('level',5,5)
+        self.assertEqual((w.form.named('level').x,w.form.named('level').y),(5,5))
+        self.assertEqual((w.form.named('run').x,w.form.named('run').y),(20,2))
+        self.assertEqual(len(w.history),history+1)
+        w.undo();self.assertEqual(w.form.dumps(),original)
+
+    def test_radio_auto_group_and_reject_root_drop(self):
+        w=self.w;w.add('rtoggle')
+        self.assertEqual(len(w.form.gadgets),2)
+        group,radio=w.form.gadgets
+        self.assertEqual(radio.parent,group.name)
+        self.assertIn('RTOGGLE .'+radio.name,w.form.pml(normalize=False))
+        self.drag_object(radio.name,2,2)
+        original=w.form.dumps();history=len(w.history)
+        self.drag_object(radio.name,40,15)
+        self.assertEqual(w.form.dumps(),original);self.assertEqual(len(w.history),history)
+        w.undo();w.undo();self.assertEqual(w.form.gadgets,[])
+
+    def test_new_slider_button_and_radios_do_not_overlap_when_frame_has_space(self):
+        w=self.w
+        self.load(Form(gadgets=[Gadget(kind='frame',name='group',x=4,y=2,width=30,height=10)]))
+        for kind in ('button','slider','rtoggle','rtoggle'):w.add(kind)
+        children=w.form.children('group')
+        self.assertEqual([g.y for g in children],[0,1.5,3,4.5])
+        self.assertEqual([g.parent for g in children],['group']*4)
+        w.form.validate()
+
+    def test_nested_frame_drop_uses_deepest_frame_origin(self):
+        w=self.w
+        self.load(Form(gadgets=[Gadget(kind='frame',name='outer',x=10,y=2,width=30,height=15),
+                               Gadget(kind='frame',name='inner',parent='outer',x=3,y=4,width=20,height=8),
+                               Gadget(name='run',x=1,y=1,width=5)]),2)
+        self.drag_object('run',15,8)
+        g=w.form.named('run')
+        self.assertEqual((g.parent,g.x,g.y),('inner',2,2))
+        self.assertEqual(w.form.offset(g),(13,6))
 
 
 if __name__ == '__main__':unittest.main()
