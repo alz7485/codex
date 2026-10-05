@@ -355,7 +355,7 @@ GUI に CONTAINER を追加するときは、配置だけでなく import、名�
 
 ## 更新内容と未実装の区別
 
-今回追加したのは調査資料です。SLIDER、RTOGGLE、VIEW、ALPHA コマンド欄、COMBO、CONTAINER の GUI 部品はまだ実装していません。LIST は基本部品のみで、複数選択・複数列・実値編集は未対応です。公開例とユーザー情報を今後の仕様検討に使います。
+2026-10-05 更新: SLIDER、RTOGGLE、VIEW、ALPHA コマンド欄、COMBO、CONTAINER の GUI 編集・概略プレビュー・PML 出力を実装しました。LIST の SINGLE / MULTI と LIST / COMBO の表示名・実値編集にも対応しました。複数列 LIST、VIEW の drawlist 管理、外部 DLL の配布・イベント接続・終了処理は未対応です。E3D 4.0 実機での構文・動作検証は未実施です。詳細は [README](../README.md#追加ガジェット) と [サンプル](../examples/gadgets.pmlfrm) を参照してください。
 
 ## 15. 座標以外の配置: PATH / ALIGN / 相対参照
 

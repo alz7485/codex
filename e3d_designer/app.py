@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from .model import Form, Gadget, KINDS
 
 LABELS = {'button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
-          'toggle': 'チェックボックス', 'option': 'ドロップダウン', 'list': 'リスト', 'line': '線 (LINE)', 'frame': '枠 (FRAME)'}
+          'toggle': 'チェックボックス', 'option': 'ドロップダウン', 'list': 'リスト', 'line': '線 (LINE)', 'frame': '枠 (FRAME)', 'slider':'スライダー', 'rtoggle':'ラジオボタン', 'combo':'コンボボックス', 'view':'ビュー', 'commandline':'コマンド欄 (ALPHA)', 'container':'外部部品 (CONTAINER)'}
 # Independent character-width and line-height scales; approximate preview only.
 SX, SY = 10, 26
 
@@ -77,6 +77,20 @@ class Item(QGraphicsObject):
                     painter.setBrush(QColor('#d8eaff' if page.name.lower() == getattr(self, 'active_page', '') else '#edf1f5'))
                     painter.drawRect(tab)
                     painter.drawText(tab.adjusted(6, 0, -6, 0), Qt.AlignVCenter, page.label)
+        elif g.kind == 'slider':
+            vertical = g.slider_orientation == 'VERTICAL'
+            fraction = max(0,min(1,(g.slider_value-g.slider_min)/(g.slider_max-g.slider_min))) if g.slider_max > g.slider_min else 0
+            if vertical:
+                painter.drawLine(r.center().x(),r.top()+8,r.center().x(),r.bottom()-8)
+                knob = QRectF(r.center().x()-6,r.bottom()-8-fraction*max(0,r.height()-16)-5,12,10)
+            else:
+                painter.drawLine(r.left()+8,r.center().y(),r.right()-8,r.center().y())
+                knob = QRectF(r.left()+8+fraction*max(0,r.width()-16)-5,r.center().y()-6,10,12)
+            painter.setBrush(QColor('#77a9dd')); painter.drawRoundedRect(knob,2,2)
+        elif g.kind in ('view','commandline'):
+            painter.setBrush(QColor('#15283b')); painter.drawRect(r.adjusted(1,1,-1,-1))
+        elif g.kind == 'container':
+            painter.setPen(QPen(QColor('#7f91a5'),1,Qt.DashLine)); painter.drawRect(r.adjusted(1,1,-1,-1))
         elif g.kind == 'line':
             if g.orientation == 'HORIZ':
                 painter.drawLine(r.left(), r.center().y(), r.right(), r.center().y())
@@ -93,7 +107,13 @@ class Item(QGraphicsObject):
         if g.kind == 'paragraph' and g.background: text += f' [BG {g.background}]'
         if g.kind == 'text': text += '  [' + g.initial + ']'
         if g.kind == 'toggle': text = '☐ ' + text
-        if g.kind == 'option': text += '  ▾'
+        if g.kind in ('option','combo'): text += '  ▾'
+        if g.kind == 'rtoggle': text = '○ '+text
+        if g.kind == 'slider': text = ''
+        if g.kind in ('view','commandline'):
+            painter.setPen(QColor('#d7e7f7'))
+            text = ('ALPHA\n> ' if g.kind == 'commandline' or g.view_type == 'ALPHA' else g.view_type+'\n') + g.label
+        if g.kind == 'container': text = 'PML.NET\n'+(g.control_type or g.label)
         if g.kind == 'list': text = '\n'.join(g.items) or g.label
         painter.drawText(r.adjusted(7, 2, -7, -2), Qt.AlignLeft | (Qt.AlignTop if g.kind == 'frame' else Qt.AlignVCenter), text)
         if self.isSelected():
@@ -152,8 +172,11 @@ class Window(QMainWindow):
         columns = QSplitter()
         left = QWidget(); ll = QVBoxLayout(left)
         ll.addWidget(QLabel('部品を追加'))
+        palette = QWidget(); palette_layout = QVBoxLayout(palette)
         for kind in KINDS:
-            b = QPushButton('+ ' + LABELS[kind]); b.clicked.connect(lambda checked=False, k=kind: self.add(k)); ll.addWidget(b)
+            b = QPushButton('+ ' + LABELS[kind]); b.clicked.connect(lambda checked=False, k=kind: self.add(k)); palette_layout.addWidget(b)
+        palette_scroll = QScrollArea(); palette_scroll.setWidgetResizable(True); palette_scroll.setWidget(palette)
+        palette_scroll.setMaximumHeight(290); ll.addWidget(palette_scroll)
         ll.addWidget(QLabel('部品一覧'))
         self.objects = QListWidget(); self.objects.currentRowChanged.connect(self.choose_row); ll.addWidget(self.objects)
         left.setMinimumWidth(180); columns.addWidget(left)
@@ -193,14 +216,21 @@ class Window(QMainWindow):
         rl.addWidget(QLabel('選択部品のプロパティ'))
         self.props = QWidget(); self.prop_layout = QFormLayout(self.props)
         self.fields = {}
-        for key, label in [('name', '部品名'), ('label', '表示文字'), ('x', 'X'), ('y', 'Y'), ('width', '幅'), ('height', '高さ / 行数'), ('value_type', '入力型'), ('initial', '初期値'), ('callback', 'メソッド名'), ('command', 'CALL コマンド'), ('background', 'BACKGROUND (空欄＝背景色)'), ('orientation', 'LINE の向き'), ('frame_style', 'FRAME 形式'), ('parent', '親コンテナ'), ('layout_mode', '配置方式'), ('path', '配置方向'), ('halign', '水平整列'), ('valign', '垂直整列'), ('hgap', '横間隔'), ('vgap', '縦間隔'), ('xref', 'X 基準部品'), ('xedge', 'X 基準辺'), ('xanchor', '自部品の X 辺'), ('xoffset', 'X オフセット'), ('yref', 'Y 基準部品'), ('yedge', 'Y 基準辺'), ('yoffset', 'Y オフセット'), ('width_ref', '幅を揃える部品')]:
-            if key in ('x','y','width','height','hgap','vgap','xoffset','yoffset'):
+        for key, label in [('name', '部品名'), ('label', '表示文字'), ('x', 'X'), ('y', 'Y'), ('width', '幅'), ('height', '高さ / 行数'), ('value_type', '入力型'), ('initial', '初期値'), ('callback', 'メソッド名'), ('command', 'CALL コマンド'), ('background', 'BACKGROUND (空欄＝背景色)'), ('orientation', 'LINE の向き'), ('frame_style', 'FRAME 形式'), ('parent', '親コンテナ'), ('layout_mode', '配置方式'), ('path', '配置方向'), ('halign', '水平整列'), ('valign', '垂直整列'), ('hgap', '横間隔'), ('vgap', '縦間隔'), ('xref', 'X 基準部品'), ('xedge', 'X 基準辺'), ('xanchor', '自部品の X 辺'), ('xoffset', 'X オフセット'), ('yref', 'Y 基準部品'), ('yedge', 'Y 基準辺'), ('yoffset', 'Y オフセット'), ('width_ref', '幅を揃える部品'),
+                ('selection_mode','LIST 選択方式'), ('combo_keyword','COMBO 定義キーワード'),
+                ('slider_orientation','SLIDER の向き'), ('slider_min','最小値'), ('slider_max','最大値'), ('slider_step','刻み'), ('slider_value','スライダー初期値'),
+                ('off_value','ラジオ OFF 実値'), ('on_value','ラジオ ON 実値'),
+                ('view_type','VIEW 形式'), ('channels','ALPHA チャンネル'),
+                ('assembly','CONTAINER アセンブリ'), ('namespace','名前空間'), ('control_type','コントロール型')]:
+            if key in ('slider_min','slider_max','slider_step','slider_value'):
+                w = self.number(-1e9, 1e9)
+            elif key in ('x','y','width','height','hgap','vgap','xoffset','yoffset'):
                 w = self.number(-300 if key in ('xoffset','yoffset') else 0 if key in ('x','y','hgap','vgap') else 1, 300)
             elif key in ('parent','xref','yref','width_ref'):
                 w = QComboBox(); w.addItem('(フォーム直下)', '')
-            elif key in ('value_type','orientation','frame_style','layout_mode','path','halign','valign','xedge','yedge','xanchor'):
+            elif key in ('value_type','orientation','frame_style','layout_mode','path','halign','valign','xedge','yedge','xanchor','selection_mode','combo_keyword','slider_orientation','view_type','channels'):
                 w = QComboBox()
-                w.addItems({'value_type': ['STRING', 'REAL'], 'orientation': ['HORIZ', 'VERT'], 'frame_style': ['FRAME','TABSET'], 'layout_mode': ['ABSOLUTE','AUTO','RELATIVE'], 'path': ['DOWN','RIGHT','UP','LEFT'], 'halign': ['LEFT','CENTRE','RIGHT'], 'valign': ['TOP','CENTRE','BOTTOM'], 'xedge': ['XMIN','XMAX'], 'yedge': ['YMIN','YMAX'], 'xanchor': ['LEFT','RIGHT']}[key])
+                w.addItems({'value_type': ['STRING', 'REAL'], 'orientation': ['HORIZ', 'VERT'], 'frame_style': ['FRAME','TABSET'], 'layout_mode': ['ABSOLUTE','AUTO','RELATIVE'], 'path': ['DOWN','RIGHT','UP','LEFT'], 'halign': ['LEFT','CENTRE','RIGHT'], 'valign': ['TOP','CENTRE','BOTTOM'], 'xedge': ['XMIN','XMAX'], 'yedge': ['YMIN','YMAX'], 'xanchor': ['LEFT','RIGHT'], 'selection_mode':['SINGLE','MULTI'], 'combo_keyword':['COMBO','COMBOBOX'], 'slider_orientation':['HORIZONTAL','VERTICAL'], 'view_type':['ALPHA','AREA','PLOT','VOLUME'], 'channels':['NONE','REQUESTS','COMMANDS','BOTH']}[key])
             else: w = QLineEdit()
             self.fields[key] = w; self.prop_layout.addRow(label, w); self.connect_field(w, self.update_gadget)
         self.choices = QPlainTextEdit(); self.choices.setMaximumHeight(100)
@@ -210,13 +240,23 @@ class Window(QMainWindow):
         self.choice_commands.setPlaceholderText('選択肢と同じ行順で実行コマンドを指定')
         self.prop_layout.addRow('OPTION コマンド (1行1項目)', self.choice_commands)
         self.choice_commands.textChanged.connect(self.update_gadget)
+        self.item_values = QPlainTextEdit(); self.item_values.setMaximumHeight(100)
+        self.item_values.setPlaceholderText('表示名と同じ行順で実値を指定。空欄なら rtext を省略')
+        self.prop_layout.addRow('LIST / COMBO 実値 (1行1項目)', self.item_values)
+        self.item_values.textChanged.connect(self.update_gadget)
+        self.view_code = QPlainTextEdit(); self.view_code.setMaximumHeight(120)
+        self.view_code.setPlaceholderText('LIMITS AUTO など。VIEW の外枠・EXIT は不要')
+        self.prop_layout.addRow('VIEW 内の追加 PML', self.view_code)
+        self.view_code.textChanged.connect(self.update_gadget)
+        self.container_hint = QLabel('外部 DLL が必要です。未設定時は DEFAULT で Control を接続してください。')
+        self.container_hint.setWordWrap(True); self.prop_layout.addRow(self.container_hint)
         self.body = QPlainTextEdit(); self.body.setPlaceholderText('メソッド内の PML コード。自動実行はしません。')
         self.body.setMinimumHeight(110); self.prop_layout.addRow('処理コード', self.body)
         self.body.textChanged.connect(self.update_gadget)
         rl.addWidget(self.props)
         self.encoding = QComboBox(); self.encoding.addItems(['utf-8', 'cp932'])
         rl.addWidget(QLabel('PML 出力文字コード')); rl.addWidget(self.encoding)
-        rl.addWidget(QLabel('text / toggle / option の高さは E3D 側で決まります。\n選択肢は option / list 用です。\n処理コードの構文は E3D で確認してください。'))
+        rl.addWidget(QLabel('text / toggle / option の高さは E3D 側で決まります。\n選択肢は OPTION / LIST / COMBO 用です。\n処理コードの構文は E3D で確認してください。'))
         rl.addStretch()
         scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(right); scroll.setMinimumWidth(320)
         columns.addWidget(scroll); columns.setSizes([180, 820, 360])
@@ -291,8 +331,46 @@ class Window(QMainWindow):
         for key in ('x','y'): self.fields[key].setEnabled(mode == 'ABSOLUTE')
         for key in ('path','halign','valign','hgap','vgap'): self.fields[key].setEnabled(mode == 'AUTO')
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): self.fields[key].setEnabled(mode == 'RELATIVE')
-        self.fields['width_ref'].setEnabled(gadget.kind not in ('toggle','option'))
+        self.fields['width_ref'].setEnabled(gadget.kind not in ('toggle','option','rtoggle'))
         self.fields['width'].setEnabled(not gadget.width_ref)
+
+    def enable_gadget_fields(self, gadget):
+        for key in ('selection_mode',): self.fields[key].setEnabled(gadget.kind == 'list')
+        self.fields['combo_keyword'].setEnabled(gadget.kind == 'combo')
+        for key in ('slider_orientation','slider_min','slider_max','slider_step','slider_value'):
+            self.fields[key].setEnabled(gadget.kind == 'slider')
+        for key in ('off_value','on_value'): self.fields[key].setEnabled(gadget.kind == 'rtoggle')
+        self.fields['view_type'].setEnabled(gadget.kind == 'view')
+        self.fields['channels'].setEnabled(gadget.kind == 'commandline' or (gadget.kind == 'view' and gadget.view_type == 'ALPHA'))
+        for key in ('assembly','namespace','control_type'): self.fields[key].setEnabled(gadget.kind == 'container')
+        self.fields['callback'].setEnabled(gadget.kind in ('button','text','toggle','list','combo','slider'))
+        self.item_values.setEnabled(gadget.kind in ('list','combo'))
+        self.view_code.setEnabled(gadget.kind in ('view','commandline'))
+        relevant = {
+            'value_type':gadget.kind == 'text', 'initial':gadget.kind == 'text',
+            'callback':gadget.kind in ('button','text','toggle','list','combo','slider'),
+            'command':gadget.kind in ('button','text','toggle'),
+            'background':gadget.kind in ('button','paragraph'), 'orientation':gadget.kind == 'line',
+            'frame_style':gadget.kind == 'frame',
+            'width_ref':gadget.kind not in ('toggle','option','rtoggle'),
+        }
+        for key in ('path','halign','valign','hgap','vgap'): relevant[key] = gadget.layout_mode == 'AUTO'
+        for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): relevant[key] = gadget.layout_mode == 'RELATIVE'
+        for key in ('selection_mode','combo_keyword','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','channels','assembly','namespace','control_type'):
+            relevant[key] = self.fields[key].isEnabled()
+        for key,visible in relevant.items(): self.prop_layout.setRowVisible(self.fields[key],visible)
+        for editor,visible in ((self.choices,gadget.kind in ('option','list','combo')),
+                               (self.choice_commands,gadget.kind == 'option'),
+                               (self.item_values,gadget.kind in ('list','combo')),
+                               (self.view_code,gadget.kind in ('view','commandline')),
+                               (self.body,bool(gadget.callback)), (self.container_hint,gadget.kind == 'container')):
+            self.prop_layout.setRowVisible(editor,visible)
+
+    def sync_extra_editors(self, gadget, rebuild=True):
+        if rebuild:
+            for editor, value in ((self.item_values,'\n'.join(gadget.item_values)), (self.view_code,gadget.view_code)):
+                if editor.toPlainText() != value: editor.setPlainText(value)
+        self.enable_gadget_fields(gadget)
 
     def apply_page_visibility(self):
         if self.selected is not None and self.selected < len(self.form.gadgets):
@@ -341,6 +419,9 @@ class Window(QMainWindow):
             if siblings:
                 if not g.xref: g.xref = siblings[0].name
                 if not g.yref: g.yref = siblings[0].name
+        values = self.item_values.toPlainText()
+        g.item_values = values.split('\n') if values else []
+        g.view_code = self.view_code.toPlainText()
         choices = self.choices.toPlainText()
         g.items = choices.split('\n') if choices else []; g.body = self.body.toPlainText()
         if g.kind == 'option':
@@ -389,8 +470,9 @@ class Window(QMainWindow):
             if self.body.toPlainText() != g.body: self.body.setPlainText(g.body)
             self.props.setEnabled(True)
             self.fields['value_type'].setEnabled(g.kind == 'text'); self.fields['initial'].setEnabled(g.kind == 'text')
-            self.choices.setEnabled(g.kind in ('option', 'list'))
+            self.choices.setEnabled(g.kind in ('option', 'list', 'combo'))
             self.fields['label'].setEnabled(g.kind != 'line'); self.fields['orientation'].setEnabled(g.kind == 'line'); self.fields['frame_style'].setEnabled(g.kind == 'frame'); self.fields['callback'].setEnabled(g.kind not in ('paragraph', 'line', 'frame', 'option')); self.fields['command'].setEnabled(g.kind in ('toggle', 'text', 'button')); self.fields['background'].setEnabled(g.kind in ('paragraph', 'button')); self.body.setEnabled(bool(g.callback))
+            self.sync_extra_editors(g, rebuild)
         else: self.selected = None; self.props.setEnabled(False)
         self.loading = False
         try:
@@ -430,8 +512,9 @@ class Window(QMainWindow):
             self.choices.setPlainText('\n'.join(g.items)); self.body.setPlainText(g.body)
             self.choice_commands.setPlainText('\n'.join(g.item_commands)); self.choice_commands.setEnabled(g.kind == 'option')
             self.fields['value_type'].setEnabled(g.kind == 'text'); self.fields['initial'].setEnabled(g.kind == 'text')
-            self.choices.setEnabled(g.kind in ('option', 'list'))
+            self.choices.setEnabled(g.kind in ('option', 'list', 'combo'))
             self.fields['label'].setEnabled(g.kind != 'line'); self.fields['orientation'].setEnabled(g.kind == 'line'); self.fields['frame_style'].setEnabled(g.kind == 'frame'); self.fields['callback'].setEnabled(g.kind not in ('paragraph', 'line', 'frame', 'option')); self.fields['command'].setEnabled(g.kind in ('toggle', 'text', 'button')); self.fields['background'].setEnabled(g.kind in ('paragraph', 'button')); self.body.setEnabled(bool(g.callback))
+            self.sync_extra_editors(g)
         self.apply_page_visibility()
         self.props.setEnabled(self.selected is not None); self.loading = False
 
@@ -450,15 +533,17 @@ class Window(QMainWindow):
         if container and container.kind != 'frame': container = self.form.parent_gadget(container)
         if container and container.frame_style == 'TABSET' and kind != 'frame':
             self.statusBar().showMessage('TABSET 内に FRAME を追加し、その FRAME 内に部品を作成してください。'); return
+        if kind == 'rtoggle' and (not container or container.frame_style != 'FRAME'):
+            self.statusBar().showMessage('ラジオボタンは通常 FRAME を選択して追加してください。'); return
         self.checkpoint()
         name = self.unique_name(kind)
         width_limit, height_limit = (container.width, container.height) if container else (self.form.width, self.form.height)
-        height = min(5 if kind in ('list', 'frame') else 1, height_limit)
-        g = Gadget(kind=kind, name=name, label={'button':'Run','paragraph':'Message','text':'Name','toggle':'Enabled','option':'Mode','list':'Results','line':'','frame':'Group'}[kind],
+        height = min(5 if kind in ('list', 'frame', 'view', 'commandline', 'container') else 1, height_limit)
+        g = Gadget(kind=kind, name=name, label={'button':'Run','paragraph':'Message','text':'Name','toggle':'Enabled','option':'Mode','list':'Results','line':'','frame':'Group','slider':'Level','rtoggle':'Choice','combo':'Choice','view':'Model view','commandline':'Command line','container':'External control'}[kind],
                    width=min(18, width_limit), height=height,
                    x=0, y=0 if container else min(len(self.form.gadgets) * 1.5, height_limit-height),
                    parent=container.name if container else '')
-        if kind in ('option', 'list'): g.items = ['Item A', 'Item B']
+        if kind in ('option', 'list', 'combo'): g.items = ['Item A', 'Item B']
         self.form.gadgets.append(g); self.selected = len(self.form.gadgets) - 1; self.refresh()
 
     def unique_name(self, base):

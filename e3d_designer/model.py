@@ -3,7 +3,7 @@ import json
 import math
 import re
 
-KINDS = ('button', 'paragraph', 'text', 'toggle', 'option', 'list', 'line', 'frame')
+KINDS = ('button', 'paragraph', 'text', 'toggle', 'option', 'list', 'line', 'frame', 'slider', 'rtoggle', 'combo', 'view', 'commandline', 'container')
 IDENTIFIER = re.compile(r'[A-Za-z][A-Za-z0-9_]*\Z')
 
 
@@ -51,6 +51,22 @@ class Gadget:
     xoffset: float = 0
     yoffset: float = .5
     width_ref: str = ''
+    item_values: list[str] = field(default_factory=list)
+    selection_mode: str = 'SINGLE'
+    combo_keyword: str = 'COMBO'
+    slider_orientation: str = 'HORIZONTAL'
+    slider_min: float = 0
+    slider_max: float = 100
+    slider_step: float = 1
+    slider_value: float = 50
+    off_value: str = ''
+    on_value: str = 'ON'
+    view_type: str = 'VOLUME'
+    channels: str = 'BOTH'
+    view_code: str = ''
+    assembly: str = ''
+    namespace: str = ''
+    control_type: str = ''
 
 
 @dataclass
@@ -154,7 +170,7 @@ class Form:
         return result
 
     def validate(self):
-        names, callbacks = set(), {}
+        names, callbacks, callback_signatures = set(), {}, {}
         for key in ('name', 'title', 'after_show_code', 'default_body'):
             if not isinstance(getattr(self, key), str): raise ValueError(f'{key} は文字列で指定してください。')
         if not isinstance(self.variables, dict) or any(not isinstance(k,str) or not isinstance(v,str) for k,v in self.variables.items()):
@@ -162,13 +178,13 @@ class Form:
         if not isinstance(self.gadgets, list) or any(not isinstance(g,Gadget) for g in self.gadgets):
             raise ValueError('部品は配列で指定してください。')
         for g in self.gadgets:
-            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref'):
+            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type'):
                 if not isinstance(getattr(g,key),str): raise ValueError(f'部品の {key} は文字列で指定してください。')
-            for key in ('items','item_commands'):
+            for key in ('items','item_commands','item_values'):
                 value = getattr(g,key)
                 if not isinstance(value,list) or any(not isinstance(item,str) for item in value):
                     raise ValueError(f'{key} は文字列の配列で指定してください。')
-            for key in ('x','y','width','height','hgap','vgap','xoffset','yoffset'):
+            for key in ('x','y','width','height','hgap','vgap','xoffset','yoffset','slider_min','slider_max','slider_step','slider_value'):
                 value = getattr(g,key)
                 if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value):
                     raise ValueError('座標とサイズには有限数を指定してください。')
@@ -195,8 +211,8 @@ class Form:
             if g.layout_mode not in ('ABSOLUTE','AUTO','RELATIVE') or g.path not in ('DOWN','UP','LEFT','RIGHT') or g.halign not in ('LEFT','CENTRE','RIGHT') or g.valign not in ('TOP','CENTRE','BOTTOM') or g.xedge not in ('XMIN','XMAX') or g.yedge not in ('YMIN','YMAX') or g.xanchor not in ('LEFT','RIGHT'):
                 raise ValueError('配置方式・整列・参照辺の指定が不正です。')
             if g.hgap < 0 or g.vgap < 0: raise ValueError('配置間隔は0以上で指定してください。')
-            if g.width_ref and g.kind in ('toggle','option'):
-                raise ValueError('TOGGLE / OPTION の幅参照は未対応です。')
+            if g.width_ref and g.kind in ('toggle','option','rtoggle'):
+                raise ValueError('TOGGLE / OPTION / RTOGGLE の幅参照は未対応です。')
             self.layout_dependencies(g)
             parent = self.parent_gadget(g)
             if g.parent and (parent is None or parent.kind != 'frame'):
@@ -243,7 +259,34 @@ class Form:
                         raise ValueError(f'{g.name}: REAL の初期値は有限数にしてください。') from None
                 else:
                     literal(g.initial)
+            if g.selection_mode not in ('SINGLE','MULTI') or g.combo_keyword not in ('COMBO','COMBOBOX'):
+                raise ValueError('選択方式・コンボ定義キーワードが不正です。')
+            if g.slider_orientation not in ('HORIZONTAL','VERTICAL'):
+                raise ValueError('SLIDER の向きが不正です。')
+            if g.kind == 'slider' and (g.slider_min >= g.slider_max or g.slider_step <= 0 or not g.slider_min <= g.slider_value <= g.slider_max):
+                raise ValueError('SLIDER は最小値 < 最大値、刻み > 0、初期値は範囲内にしてください。')
+            if g.kind == 'rtoggle':
+                if not parent or parent.frame_style != 'FRAME':
+                    raise ValueError('RTOGGLE は通常 FRAME 内に配置してください。')
+                literal(g.off_value); literal(g.on_value)
+            if g.view_type not in ('ALPHA','AREA','PLOT','VOLUME') or g.channels not in ('NONE','REQUESTS','COMMANDS','BOTH'):
+                raise ValueError('VIEW の形式・チャンネルが不正です。')
+            if g.kind == 'container':
+                settings = (g.assembly,g.namespace,g.control_type)
+                if any(settings) and not all(settings):
+                    raise ValueError('CONTAINER のアセンブリ・名前空間・型はすべて指定してください。')
+                if all(settings):
+                    literal(g.assembly)
+                    if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*',g.namespace) or not IDENTIFIER.fullmatch(g.control_type):
+                        raise ValueError('CONTAINER の名前空間・型名が不正です。')
+                    member = (g.name+'Control').lower()
+                    if member in {other.name.lower() for other in self.gadgets} or member in {other.callback.lower() for other in self.gadgets}:
+                        raise ValueError('CONTAINER の生成メンバー名が部品名・メソッド名と重複します。')
             for item in g.items: literal(item)
+            for item in g.item_values: literal(item)
+            if g.item_values:
+                if g.kind not in ('list','combo') or len(g.item_values) != len(g.items):
+                    raise ValueError('LIST / COMBO の表示名と実値の行数を揃えてください。')
             if g.kind == 'option':
                 if g.item_commands and len(g.item_commands) != len(g.items):
                     raise ValueError('OPTION の選択肢とコマンドの行数を揃えてください。')
@@ -253,11 +296,17 @@ class Form:
                 literal(g.command, allow_expansion=True)
                 if g.callback: raise ValueError('メソッド名と CALL コマンドはどちらか一方だけ指定してください。')
             if g.callback:
-                if g.kind in ('paragraph', 'line', 'frame', 'option'):
+                if g.kind in ('paragraph', 'line', 'frame', 'option', 'rtoggle', 'view', 'commandline', 'container'):
                     raise ValueError('ラベル・LINE・FRAME・OPTION にはメソッド型コールバックを指定できません。')
                 if not IDENTIFIER.fullmatch(g.callback) or g.callback.lower() == self.name.lower():
                     raise ValueError('メソッド名が不正、またはコンストラクタと重複しています。')
                 key = g.callback.lower()
+                signature = 'OPEN' if g.kind == 'slider' else 'NORMAL'
+                if key in callback_signatures and callback_signatures[key] != signature:
+                    raise ValueError('SLIDER のイベントメソッド名は他の部品と分けてください。')
+                if signature == 'OPEN' and key == 'default':
+                    raise ValueError('SLIDER のイベントメソッドには DEFAULT 以外を指定してください。')
+                callback_signatures[key] = signature
                 if key in callbacks and callbacks[key] != g.body:
                     raise ValueError('同じメソッド名には同じ処理を指定してください。')
                 if key == 'default' and self.default_body and g.body and self.default_body != g.body:
@@ -290,6 +339,10 @@ class Form:
                  (f'setup form !!{self.name} DIALOG DOCK RIGHT' if self.dock_right
                   else f'setup form !!{self.name} size {n(self.width)} {n(self.height)} DIALOG'),
                  f'  title {literal(self.title)}']
+        for g in self.gadgets:
+            if g.kind == 'container' and g.assembly:
+                lines += [f'  import {literal(g.assembly)}', f"  using namespace '{g.namespace}'",
+                          f'  member .{g.name}Control is {g.control_type}']
         def render(g, depth):
             indent = '  '*depth
             position = f'AT X {n(g.x)} Y {n(g.y)}'
@@ -334,7 +387,26 @@ class Form:
                     line += '\n' + literal(display) + ' ' + literal(command, allow_expansion=True)
                 line += '\nEXIT'
             elif g.kind == 'list':
-                line = f'list .{g.name} {label} {at} lines {max(1, round(g.height))}' + callback
+                line = f'list .{g.name} {label} {g.selection_mode} {at} lines {max(1, round(g.height))}' + callback
+            elif g.kind == 'combo':
+                line = f'{g.combo_keyword} .{g.name} {label} {position} {width_clause}' + callback
+            elif g.kind == 'slider':
+                line = (f'SLIDER .{g.name} {position} {g.slider_orientation} RANGE {n(g.slider_min)} {n(g.slider_max)} '
+                        f'STEP {n(g.slider_step)} VAL {n(g.slider_value)} {width_clause}')
+                if g.slider_orientation == 'VERTICAL': line += f' HEIGHT {n(g.height)}'
+            elif g.kind == 'rtoggle':
+                line = f'RTOGGLE .{g.name} {label} {position} STATES {literal(g.off_value)} {literal(g.on_value)}'
+            elif g.kind in ('view','commandline'):
+                view_type = 'ALPHA' if g.kind == 'commandline' else g.view_type
+                line = f'VIEW .{g.name} {position} {view_type}\n  {width_clause} HEIGHT {n(g.height)}'
+                if view_type == 'ALPHA':
+                    for channel in ('REQUESTS','COMMANDS'):
+                        if g.channels in (channel,'BOTH'): line += '\n  CHANNEL '+channel
+                if g.view_code: line += '\n'+'\n'.join('  '+row for row in g.view_code.split('\n'))
+                line += '\nEXIT'
+            elif g.kind == 'container':
+                line = f'CONTAINER .{g.name} {position} PMLNETCONTROL {width_clause} HEIGHT {n(g.height)}'
+                if not g.assembly: line += '\n-- Set Control handle in DEFAULT or configure assembly / namespace / type'
             elif g.kind == 'button':
                 line = f'BUTTON .{g.name} {position}'
                 if g.background: line += f' BACKGROUND {int(g.background)}'
@@ -358,11 +430,20 @@ class Form:
             if g.kind == 'text' and g.initial:
                 value = n(float(g.initial)) if g.value_type == 'REAL' else literal(g.initial)
                 lines.append(f'  !this.{g.name}.val = {value}')
-            if g.kind == 'list' and g.items:
+            if g.kind == 'slider' and g.callback:
+                lines.append(f"  !this.{g.name}.callback = '!this.{g.callback}('")
+            if g.kind == 'container' and g.assembly:
+                lines += [f'  !this.{g.name}Control = object {g.control_type}()',
+                          f'  !this.{g.name}.Control = !this.{g.name}Control.handle()']
+            if g.kind in ('list','combo') and g.items:
                 lines.append('  !choices = object ARRAY()')
                 for i, item in enumerate(g.items, 1):
                     lines.append(f'  !choices[{i}] = {literal(item)}')
                 lines.append(f'  !this.{g.name}.dtext = !choices')
+                if g.item_values:
+                    lines.append('  !values = object ARRAY()')
+                    for i, value in enumerate(g.item_values,1): lines.append(f'  !values[{i}] = {literal(value)}')
+                    lines.append(f'  !this.{g.name}.rtext = !values')
         lines.extend(['endmethod', ''])
         default_code = self.default_body or next((g.body for g in self.gadgets if g.callback.lower() == 'default' and g.body), '')
         lines += ['DEFINE METHOD .DEFAULT()', default_code or '  -- TODO: add default logic', 'ENDMETHOD', '']
@@ -370,7 +451,8 @@ class Form:
         for g in self.gadgets:
             if g.callback and g.callback.lower() not in seen:
                 seen.add(g.callback.lower())
-                lines += [f'define method .{g.callback}()', g.body or '  -- TODO: add PML logic', 'endmethod', '']
+                signature = '(!gad is GADGET, !event is STRING)' if g.kind == 'slider' else '()'
+                lines += [f'define method .{g.callback}{signature}', g.body or '  -- TODO: add PML logic', 'endmethod', '']
         if self.show_form: lines += [f'SHOW !!{self.name}', '']
         if self.after_show_code: lines += [self.after_show_code, '']
         return '\n'.join(lines)

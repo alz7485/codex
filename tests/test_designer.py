@@ -14,6 +14,82 @@ from e3d_designer.app import Window, atomic_write, SX, SY
 
 
 class ModelTests(unittest.TestCase):
+    def test_slider_export_open_callback_and_bounds(self):
+        slider=Gadget(kind='slider',name='level',slider_min=-10,slider_max=90,slider_step=5,slider_value=30,
+                      callback='onLevel',body='  q var !event')
+        f=Form(gadgets=[slider]);pml=Form.loads(f.dumps()).pml()
+        self.assertIn('HORIZONTAL RANGE -10 90 STEP 5 VAL 30',pml)
+        self.assertIn("!this.level.callback = '!this.onLevel('",pml)
+        self.assertIn('define method .onLevel(!gad is GADGET, !event is STRING)',pml)
+        slider.slider_orientation='VERTICAL';slider.height=8
+        self.assertIn('HEIGHT 8',f.pml())
+        for field,value in [('slider_min',90),('slider_step',0),('slider_value',100)]:
+            old=getattr(slider,field);setattr(slider,field,value)
+            with self.assertRaises(ValueError): f.pml()
+            setattr(slider,field,old)
+        f.gadgets.append(Gadget(name='run',callback='onLevel',body=slider.body))
+        with self.assertRaisesRegex(ValueError,'分けて'): f.pml()
+        f.gadgets.pop();slider.callback='default'
+        with self.assertRaises(ValueError): f.pml()
+
+    def test_radio_group_export_and_parent_validation(self):
+        group=Gadget(kind='frame',name='group',width=24,height=6)
+        radios=[Gadget(kind='rtoggle',name=name,parent='group',y=i*2+1,on_value=value)
+                for i,(name,value) in enumerate([('pump','PUMP'),('tank','TANK')])]
+        f=Form(gadgets=[group,*radios]);pml=Form.loads(f.dumps()).pml()
+        self.assertIn("RTOGGLE .pump 'Run' AT X 2 Y 1 STATES '' 'PUMP'",pml)
+        self.assertLess(pml.index('FRAME .group'),pml.index('RTOGGLE .pump'))
+        radios[0].parent=''
+        with self.assertRaisesRegex(ValueError,'FRAME'): f.pml()
+        radios[0].parent='group';radios[0].callback='onRadio'
+        with self.assertRaises(ValueError): f.pml()
+
+    def test_list_combo_display_real_values_and_multiselect(self):
+        gadgets=[Gadget(kind=kind,name=kind+'1',y=i*5,items=['Pump','Tank'],item_values=['/P-1','/T-1'])
+                 for i,kind in enumerate(('list','combo'))]
+        gadgets[0].selection_mode='MULTI';gadgets[0].height=3
+        f=Form(gadgets=gadgets);pml=Form.loads(f.dumps()).pml()
+        self.assertIn("list .list1 'Run' MULTI",pml)
+        self.assertIn('COMBO .combo1',pml)
+        self.assertIn("!values[1] = '/P-1'",pml)
+        for g in gadgets:
+            self.assertIn(f'!this.{g.name}.dtext = !choices',pml)
+            self.assertIn(f'!this.{g.name}.rtext = !values',pml)
+        gadgets[1].combo_keyword='COMBOBOX'
+        self.assertIn('COMBOBOX .combo1',f.pml())
+        gadgets[0].item_values=['only one']
+        with self.assertRaisesRegex(ValueError,'行数'): f.pml()
+
+    def test_views_channels_and_container_connection(self):
+        model=Gadget(kind='view',name='model',height=5,view_code='LIMITS AUTO\nISOMETRIC 3')
+        alpha=Gadget(kind='commandline',name='commands',y=7,height=5,channels='COMMANDS')
+        host=Gadget(kind='container',name='grid',y=14,height=5,assembly='uGrid',namespace='Aveva.Gadgets.uGrid',control_type='userGrid')
+        f=Form(gadgets=[model,alpha,host]);pml=Form.loads(f.dumps()).pml()
+        self.assertIn('VIEW .model AT X 2 Y 1 VOLUME',pml)
+        self.assertIn('LIMITS AUTO\n    ISOMETRIC 3\n  EXIT',pml)
+        self.assertIn('VIEW .commands AT X 2 Y 7 ALPHA',pml)
+        self.assertIn('CHANNEL COMMANDS',pml);self.assertNotIn('CHANNEL REQUESTS',pml)
+        self.assertIn("import 'uGrid'",pml)
+        self.assertIn("using namespace 'Aveva.Gadgets.uGrid'",pml)
+        self.assertIn('member .gridControl is userGrid',pml)
+        self.assertIn('CONTAINER .grid AT X 2 Y 14 PMLNETCONTROL',pml)
+        self.assertIn('!this.grid.Control = !this.gridControl.handle()',pml)
+        host.namespace=''
+        with self.assertRaises(ValueError): f.pml()
+        host.namespace='Aveva.Gadgets.uGrid';host.control_type='userGrid()'
+        with self.assertRaises(ValueError): f.pml()
+        host.control_type='userGrid';f.gadgets.append(Gadget(name='gridControl'))
+        with self.assertRaisesRegex(ValueError,'重複'): f.pml()
+
+    def test_new_gadget_json_types_and_legacy_defaults(self):
+        raw=json.loads(Form(gadgets=[Gadget()]).dumps())
+        for key,value in [('slider_value',True),('slider_step',float('nan')),('item_values','bad'),('item_values',[1]),('channels',None)]:
+            changed=json.loads(json.dumps(raw));changed['form']['gadgets'][0][key]=value
+            with self.subTest(key=key),self.assertRaises(ValueError): Form.loads(json.dumps(changed))
+        for key in ('item_values','slider_min','slider_max','slider_step','slider_value','channels'):
+            del raw['form']['gadgets'][0][key]
+        self.assertEqual(Form.loads(json.dumps(raw)).gadgets[0].slider_value,50)
+
     def test_relative_layout_order_geometry_and_roundtrip(self):
         base = Gadget(name='base', x=10, y=5, width=14, height=2)
         follower = Gadget(name='follower', layout_mode='RELATIVE', xref='base', yref='base',
@@ -232,6 +308,38 @@ class GuiTests(unittest.TestCase):
     def setUpClass(cls): cls.app=QApplication.instance() or QApplication([])
     def setUp(self): self.w=Window(); self.w.show(); self.app.processEvents()
     def tearDown(self): self.w.dirty=False; self.w.close(); self.app.processEvents()
+
+    def test_new_gadgets_add_edit_undo_and_render(self):
+        self.w.add('rtoggle')
+        self.assertEqual(len(self.w.form.gadgets),0)
+        self.w.add('frame');group=self.w.form.gadgets[0]
+        self.w.add('rtoggle');radio=self.w.form.gadgets[1]
+        self.assertEqual(radio.parent,group.name)
+        self.assertTrue(self.w.fields['on_value'].isEnabled())
+        self.assertFalse(self.w.fields['callback'].isEnabled())
+        for kind in ('slider','combo','view','commandline','container'):
+            self.w.selected=None;self.w.refresh();self.w.add(kind)
+            self.assertEqual(self.w.form.gadgets[-1].kind,kind)
+            self.assertNotIn('出力できません',self.w.code.toPlainText())
+            self.w.view.viewport().repaint();self.app.processEvents()
+        self.w.undo();self.assertNotEqual(self.w.form.gadgets[-1].kind,'container')
+        self.w.redo();self.assertEqual(self.w.form.gadgets[-1].kind,'container')
+        self.assertEqual(len(Form.loads(self.w.form.dumps()).gadgets),7)
+
+    def test_real_value_editor_typing_keeps_cursor_and_save(self):
+        self.w.add('combo')
+        editor=self.w.item_values;editor.setFocus();QTest.keyClicks(editor,'/P-1')
+        QTest.keyClick(editor,Qt.Key_Return);QTest.keyClicks(editor,'/T-1');self.app.processEvents()
+        self.assertEqual(self.w.form.gadgets[0].item_values,['/P-1','/T-1'])
+        self.assertTrue(editor.toPlainText().endswith('/T-1'))
+        self.assertEqual(editor.textCursor().position(),len(editor.toPlainText()))
+        with tempfile.TemporaryDirectory() as d:
+            self.w.path=Path(d)/'combo.json';QTest.keyClick(editor,Qt.Key_S,Qt.ControlModifier);self.app.processEvents()
+            self.assertEqual(Form.loads(self.w.path.read_text()).gadgets[0].item_values,['/P-1','/T-1'])
+        self.w.selected=None;self.w.refresh();self.w.add('view')
+        self.w.view_code.setPlainText('LIMITS AUTO')
+        self.assertIn('LIMITS AUTO',self.w.code.toPlainText())
+        self.assertFalse(self.w.item_values.isEnabled())
 
     def test_relative_controls_preview_and_rename(self):
         self.w.form=Form(gadgets=[Gadget(name='base',x=10,y=5),Gadget(name='follow',y=8)])
