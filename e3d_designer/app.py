@@ -356,7 +356,8 @@ class Item(QGraphicsObject):
                         painter.drawText(cell.adjusted(4,1,-4,-1),Qt.AlignLeft|Qt.AlignVCenter,value)
                 painter.restore(); text = ''
             else: text = '\n'.join(g.items) or g.label
-        painter.drawText(r.adjusted(7, 2, -7, -2), Qt.AlignLeft | (Qt.AlignTop if g.kind in ('frame','textpane','selector') else Qt.AlignVCenter), text)
+        alignment = Qt.AlignCenter if g.kind == 'button' else Qt.AlignLeft | (Qt.AlignTop if g.kind in ('frame','textpane','selector') else Qt.AlignVCenter)
+        painter.drawText(r.adjusted(7, 2, -7, -2), alignment, text)
         if self.isSelected():
             painter.setPen(QPen(QColor('#2277cc'), 2, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
