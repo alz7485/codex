@@ -9,11 +9,30 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QPoint, QEvent, QCoreApplication, QTimer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
-from e3d_designer.model import Form, Gadget, literal
+from e3d_designer.model import Form, Gadget, Menu, MenuItem, literal
 from e3d_designer.app import Window, atomic_write, SX, SY
 
 
 class ModelTests(unittest.TestCase):
+    def test_menu_export_and_legacy_roundtrip(self):
+        form = Form(menus=[Menu(name='tools',items=[MenuItem('Run','!this.run()'),MenuItem('Show','$p !!value')]),Menu(name='other')])
+        pml = Form.loads(form.dumps()).pml()
+        self.assertIn("  menu .tools\n    add 'Run' '!this.run()'\n    add 'Show' '$p !!value'\n  exit",pml)
+        self.assertIn('  menu .other\n  exit',pml)
+        raw = json.loads(form.dumps()); del raw['form']['menus']
+        self.assertEqual(Form.loads(json.dumps(raw)).menus,[])
+
+    def test_invalid_menu_names_and_items(self):
+        for menus in ([Menu(name='bad name')], [Menu(name='tools'),Menu(name='TOOLS')],
+                      [Menu(items=[MenuItem('bad\nlabel','run')])],
+                      [Menu(items=[MenuItem('Run',123)])]):
+            with self.subTest(menus=menus),self.assertRaises(ValueError): Form(menus=menus).pml()
+        with self.assertRaises(ValueError): Form(menus=[Menu(name='button1')],gadgets=[Gadget()]).pml()
+        raw=json.loads(Form(menus=[Menu(items=[MenuItem()])]).dumps())
+        for value in (None,'not an array',[{'name':'menu1','items':[{'label':1,'command':'run'}]}]):
+            changed=json.loads(json.dumps(raw));changed['form']['menus']=value
+            with self.subTest(value=value),self.assertRaises(ValueError): Form.loads(json.dumps(changed))
+
     def test_slider_export_open_callback_and_bounds(self):
         slider=Gadget(kind='slider',name='level',slider_min=-10,slider_max=90,slider_step=5,slider_value=30,
                       callback='onLevel',body='  q var !event')
@@ -308,6 +327,42 @@ class GuiTests(unittest.TestCase):
     def setUpClass(cls): cls.app=QApplication.instance() or QApplication([])
     def setUp(self): self.w=Window(); self.w.show(); self.app.processEvents()
     def tearDown(self): self.w.dirty=False; self.w.close(); self.app.processEvents()
+
+    def test_menu_edit_save_preview_and_undo(self):
+        self.w.add_menu(); self.w.add_menu_item()
+        editor=self.w.menu_items.cellWidget(0,0)
+        editor.setFocus(); editor.selectAll(); QTest.keyClicks(editor,'Run')
+        command=self.w.menu_items.cellWidget(0,1)
+        command.setFocus(); QTest.keyClicks(command,'RUN')
+        self.assertEqual(self.w.form.menus[0].items[0],MenuItem('Run','RUN'))
+        self.assertIs(command,self.w.menu_items.cellWidget(0,1))
+        preview=self.w.preview_menu_bar.actions()[0].menu()
+        self.assertEqual(preview.actions()[0].text(),'Run')
+        with tempfile.TemporaryDirectory() as folder:
+            self.w.path=Path(folder)/'menu.json'
+            QTest.keyClick(command,Qt.Key_S,Qt.ControlModifier);self.app.processEvents()
+            self.assertEqual(Form.loads(self.w.path.read_text()).menus[0].items[0].command,'RUN')
+        self.w.delete_menu_item(0);self.assertEqual(self.w.form.menus[0].items,[])
+        self.w.undo();self.assertEqual(self.w.form.menus[0].items[0].command,'RUN')
+        self.w.delete_menu();self.assertEqual(self.w.form.menus,[])
+        self.w.undo();self.assertEqual(len(self.w.form.menus),1)
+        self.w.redo();self.assertEqual(self.w.form.menus,[])
+
+    def test_menu_switching_rename_and_unique_names(self):
+        self.w.add('button');self.w.form.gadgets[0].name='menu1';self.w.refresh()
+        self.w.add_menu();self.assertEqual(self.w.form.menus[0].name,'menu2')
+        self.w.add_menu_item();self.w.add_menu()
+        self.w.menu_list.setCurrentRow(0)
+        editor=self.w.menu_name;editor.setFocus();editor.selectAll();QTest.keyClicks(editor,'tools')
+        self.assertEqual(self.w.form.menus[0].name,'tools')
+        self.assertEqual(self.w.preview_menu_bar.actions()[0].text(),'tools')
+        self.w.menu_list.setCurrentRow(1)
+        self.assertEqual(self.w.menu_items.rowCount(),0)
+        self.w.menu_list.setCurrentRow(0)
+        self.assertEqual(self.w.menu_items.rowCount(),1)
+        self.w.form.menus[0].name='button2'; self.w.selected=None; self.w.refresh()
+        self.w.add('button')
+        self.assertNotEqual(self.w.form.gadgets[-1].name,'button2')
 
     def test_new_gadgets_add_edit_undo_and_render(self):
         self.w.add('rtoggle')

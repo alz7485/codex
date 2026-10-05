@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "form": {
+    "name": "menuDemo",
+    "title": "Menu demo",
+    "dock_right": true,
+    "show_form": true,
+    "after_show_code": "",
+    "default_body": "  $p |Ready|",
+    "width": 70,
+    "height": 22,
+    "gadgets": [
+      {
+        "kind": "paragraph",
+        "name": "message",
+        "label": "Menu demo",
+        "x": 2,
+        "y": 2,
+        "width": 14,
+        "height": 1,
+        "value_type": "STRING",
+        "initial": "",
+        "items": [],
+        "item_commands": [],
+        "callback": "",
+        "command": "",
+        "background": "",
+        "orientation": "HORIZ",
+        "frame_style": "FRAME",
+        "parent": "",
+        "body": "",
+        "layout_mode": "ABSOLUTE",
+        "path": "DOWN",
+        "halign": "LEFT",
+        "valign": "TOP",
+        "hgap": 1,
+        "vgap": 0.5,
+        "xref": "",
+        "yref": "",
+        "xedge": "XMIN",
+        "yedge": "YMAX",
+        "xanchor": "LEFT",
+        "xoffset": 0,
+        "yoffset": 0.5,
+        "width_ref": "",
+        "item_values": [],
+        "selection_mode": "SINGLE",
+        "combo_keyword": "COMBO",
+        "slider_orientation": "HORIZONTAL",
+        "slider_min": 0,
+        "slider_max": 100,
+        "slider_step": 1,
+        "slider_value": 50,
+        "off_value": "",
+        "on_value": "ON",
+        "view_type": "VOLUME",
+        "channels": "BOTH",
+        "view_code": "",
+        "assembly": "",
+        "namespace": "",
+        "control_type": ""
+      }
+    ],
+    "variables": {},
+    "menus": [
+      {
+        "name": "tools",
+        "items": [
+          {
+            "label": "初期化",
+            "command": "!this.DEFAULT()"
+          },
+          {
+            "label": "実行",
+            "command": "$p |Run|"
+          }
+        ]
+      }
+    ]
+  }
+}

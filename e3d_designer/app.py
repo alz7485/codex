@@ -9,8 +9,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QFormLayout, QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
-    QScrollArea, QCheckBox)
-from .model import Form, Gadget, KINDS
+    QScrollArea, QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView)
+from .model import Form, Gadget, Menu, MenuItem, KINDS
 
 LABELS = {'button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
           'toggle': 'チェックボックス', 'option': 'ドロップダウン', 'list': 'リスト', 'line': '線 (LINE)', 'frame': '枠 (FRAME)', 'slider':'スライダー', 'rtoggle':'ラジオボタン', 'combo':'コンボボックス', 'view':'ビュー', 'commandline':'コマンド欄 (ALPHA)', 'container':'外部部品 (CONTAINER)'}
@@ -151,6 +151,8 @@ class Window(QMainWindow):
     def __init__(self):
         super().__init__()
         self.form, self.path, self.selected = Form(), None, None
+        self.selected_menu = None
+        self.preview_menus = []
         self.history, self.future = [], []
         self.active_pages = {}
         self.dirty, self.loading = False, False
@@ -184,7 +186,10 @@ class Window(QMainWindow):
         self.scene = Scene(self); self.scene.selectionChanged.connect(self.selection_changed)
         self.view = QGraphicsView(self.scene)
         self.view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        middle.addWidget(self.view)
+        preview = QWidget(); preview_layout = QVBoxLayout(preview); preview_layout.setContentsMargins(0,0,0,0)
+        self.preview_menu_bar = QMenuBar(); self.preview_menu_bar.setNativeMenuBar(False)
+        preview_layout.addWidget(self.preview_menu_bar); preview_layout.addWidget(self.view)
+        middle.addWidget(preview)
         self.code = QPlainTextEdit(); self.code.setReadOnly(True)
         self.code.setStyleSheet('font-family: monospace; font-size: 12px;')
         middle.addWidget(self.code); middle.setSizes([550, 230]); columns.addWidget(middle)
@@ -254,6 +259,27 @@ class Window(QMainWindow):
         self.body.setMinimumHeight(110); self.prop_layout.addRow('処理コード', self.body)
         self.body.textChanged.connect(self.update_gadget)
         rl.addWidget(self.props)
+        self.menu_group = QGroupBox('メニューバー'); menu_layout = QVBoxLayout(self.menu_group)
+        menu_buttons = QHBoxLayout()
+        for label, handler in (('+ メニュー',self.add_menu),('メニュー削除',self.delete_menu)):
+            button = QPushButton(label); button.clicked.connect(handler); menu_buttons.addWidget(button)
+        menu_layout.addLayout(menu_buttons)
+        self.menu_list = QListWidget(); self.menu_list.setMaximumHeight(85)
+        self.menu_list.currentRowChanged.connect(self.choose_menu); menu_layout.addWidget(self.menu_list)
+        menu_name_layout = QFormLayout(); self.menu_name = QLineEdit()
+        self.menu_name.textEdited.connect(self.update_menu_name)
+        menu_name_layout.addRow('メニュー名',self.menu_name); menu_layout.addLayout(menu_name_layout)
+        self.menu_items = QTableWidget(0,3); self.menu_items.setHorizontalHeaderLabels(['表示名','コマンド','削除'])
+        self.menu_items.horizontalHeader().setSectionResizeMode(0,QHeaderView.Stretch)
+        self.menu_items.horizontalHeader().setSectionResizeMode(1,QHeaderView.Stretch)
+        self.menu_items.horizontalHeader().setSectionResizeMode(2,QHeaderView.ResizeToContents)
+        self.menu_items.setMinimumHeight(120); self.menu_items.setMaximumHeight(220)
+        menu_layout.addWidget(self.menu_items)
+        self.menu_add_item = QPushButton('+ メニュー項目'); self.menu_add_item.clicked.connect(self.add_menu_item)
+        menu_layout.addWidget(self.menu_add_item)
+        note = QLabel('プレビューの見出しはメニュー名です。項目のコマンドは E3D で実行されます。')
+        note.setWordWrap(True); menu_layout.addWidget(note)
+        rl.insertWidget(rl.indexOf(self.props)-1,self.menu_group)
         self.encoding = QComboBox(); self.encoding.addItems(['utf-8', 'cp932'])
         rl.addWidget(QLabel('PML 出力文字コード')); rl.addWidget(self.encoding)
         rl.addWidget(QLabel('text / toggle / option の高さは E3D 側で決まります。\n選択肢は OPTION / LIST / COMBO 用です。\n処理コードの構文は E3D で確認してください。'))
@@ -276,6 +302,85 @@ class Window(QMainWindow):
     def checkpoint(self):
         self.history.append(copy.deepcopy(self.form)); self.history = self.history[-100:]; self.future.clear()
         self.dirty = True
+
+    def current_menu(self):
+        if self.selected_menu is not None and 0 <= self.selected_menu < len(self.form.menus):
+            return self.form.menus[self.selected_menu]
+        return None
+
+    def refresh_menus(self, rebuild=True):
+        self.preview_menu_bar.clear()
+        for menu in self.preview_menus: menu.deleteLater()
+        self.preview_menus = []
+        for menu in self.form.menus:
+            preview = QMenu(menu.name,self.preview_menu_bar)
+            self.preview_menus.append(preview)
+            self.preview_menu_bar.addMenu(preview)
+            for item in menu.items: preview.addAction(item.label)
+        self.preview_menu_bar.setVisible(bool(self.form.menus))
+        if self.current_menu() is None:
+            self.selected_menu = 0 if self.form.menus else None
+        self.menu_list.clear()
+        self.menu_list.addItems([menu.name for menu in self.form.menus])
+        self.menu_list.setCurrentRow(self.selected_menu if self.selected_menu is not None else -1)
+        menu = self.current_menu()
+        self.menu_name.setEnabled(menu is not None); self.menu_items.setEnabled(menu is not None)
+        self.menu_add_item.setEnabled(menu is not None)
+        name = menu.name if menu else ''
+        if self.menu_name.text() != name: self.menu_name.setText(name)
+        if not rebuild: return
+        self.menu_items.setRowCount(0)
+        if menu is None: return
+        for row, item in enumerate(menu.items):
+            self.menu_items.insertRow(row)
+            for column, key in enumerate(('label','command')):
+                editor = QLineEdit(getattr(item,key))
+                editor.textEdited.connect(lambda text, r=row, k=key: self.update_menu_item(r,k,text))
+                self.menu_items.setCellWidget(row,column,editor)
+            remove = QPushButton('×')
+            remove.clicked.connect(lambda checked=False, r=row: self.delete_menu_item(r))
+            self.menu_items.setCellWidget(row,2,remove)
+
+    def choose_menu(self, index):
+        if self.loading: return
+        self.selected_menu = index if index >= 0 else None
+        self.loading = True
+        self.refresh_menus()
+        self.loading = False
+
+    def add_menu(self):
+        self.checkpoint()
+        used = {g.name.lower() for g in self.form.gadgets} | {menu.name.lower() for menu in self.form.menus}
+        index = 1
+        while f'menu{index}' in used: index += 1
+        self.form.menus.append(Menu(name=f'menu{index}'))
+        self.selected_menu = len(self.form.menus)-1
+        self.refresh()
+
+    def delete_menu(self):
+        if self.current_menu() is None: return
+        self.checkpoint(); self.form.menus.pop(self.selected_menu)
+        self.refresh()
+
+    def update_menu_name(self, text):
+        menu = self.current_menu()
+        if self.loading or menu is None: return
+        self.checkpoint(); menu.name = text; self.refresh(rebuild=False)
+
+    def add_menu_item(self):
+        menu = self.current_menu()
+        if menu is None: return
+        self.checkpoint(); menu.items.append(MenuItem()); self.refresh()
+
+    def update_menu_item(self, row, key, text):
+        menu = self.current_menu()
+        if self.loading or menu is None or not 0 <= row < len(menu.items): return
+        self.checkpoint(); setattr(menu.items[row],key,text); self.refresh(rebuild=False)
+
+    def delete_menu_item(self, row):
+        menu = self.current_menu()
+        if menu is None or not 0 <= row < len(menu.items): return
+        self.checkpoint(); menu.items.pop(row); self.refresh()
 
     def update_variables(self):
         if self.loading: return
@@ -433,6 +538,7 @@ class Window(QMainWindow):
     def refresh(self, rebuild=True):
         if self._closing or not isValid(self) or not isValid(self.scene): return
         self.loading = True
+        self.refresh_menus(rebuild)
         variable_text = '\n'.join(f'{k}={v}' for k,v in self.form.variables.items())
         if not self.variable_error and self.variables.toPlainText() != variable_text:
             self.variables.setPlainText(variable_text)
@@ -547,7 +653,7 @@ class Window(QMainWindow):
         self.form.gadgets.append(g); self.selected = len(self.form.gadgets) - 1; self.refresh()
 
     def unique_name(self, base):
-        used = {g.name.lower() for g in self.form.gadgets}; i = 1
+        used = {g.name.lower() for g in self.form.gadgets} | {menu.name.lower() for menu in self.form.menus}; i = 1
         while (base + str(i)).lower() in used: i += 1
         return base + str(i)
 

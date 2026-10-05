@@ -70,6 +70,18 @@ class Gadget:
 
 
 @dataclass
+class MenuItem:
+    label: str = 'Item'
+    command: str = ''
+
+
+@dataclass
+class Menu:
+    name: str = 'menu1'
+    items: list[MenuItem] = field(default_factory=list)
+
+
+@dataclass
 class Form:
     name: str = 'userform'
     title: str = 'User Form'
@@ -81,6 +93,7 @@ class Form:
     height: float = 22
     gadgets: list[Gadget] = field(default_factory=list)
     variables: dict[str, str] = field(default_factory=dict)
+    menus: list[Menu] = field(default_factory=list)
 
     def parent_gadget(self, gadget):
         return next((g for g in self.gadgets if g.name.lower() == gadget.parent.lower()), None) if gadget.parent else None
@@ -171,6 +184,21 @@ class Form:
 
     def validate(self):
         names, callbacks, callback_signatures = set(), {}, {}
+        if not isinstance(self.menus,list) or any(not isinstance(menu,Menu) for menu in self.menus):
+            raise ValueError('メニューは配列で指定してください。')
+        for menu in self.menus:
+            if not isinstance(menu.name,str) or not IDENTIFIER.fullmatch(menu.name):
+                raise ValueError('メニュー名は英字で始まる英数字・_ にしてください。')
+            if menu.name.lower() in names:
+                raise ValueError('メニュー名が重複しています。')
+            names.add(menu.name.lower())
+            if not isinstance(menu.items,list) or any(not isinstance(item,MenuItem) for item in menu.items):
+                raise ValueError('メニュー項目は配列で指定してください。')
+            for item in menu.items:
+                if not isinstance(item.label,str) or not isinstance(item.command,str):
+                    raise ValueError('メニュー項目の表示名・コマンドは文字列で指定してください。')
+                literal(item.label)
+                literal(item.command,allow_expansion=True)
         for key in ('name', 'title', 'after_show_code', 'default_body'):
             if not isinstance(getattr(self, key), str): raise ValueError(f'{key} は文字列で指定してください。')
         if not isinstance(self.variables, dict) or any(not isinstance(k,str) or not isinstance(v,str) for k,v in self.variables.items()):
@@ -280,7 +308,7 @@ class Form:
                     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*',g.namespace) or not IDENTIFIER.fullmatch(g.control_type):
                         raise ValueError('CONTAINER の名前空間・型名が不正です。')
                     member = (g.name+'Control').lower()
-                    if member in {other.name.lower() for other in self.gadgets} or member in {other.callback.lower() for other in self.gadgets}:
+                    if member in {other.name.lower() for other in self.gadgets} or member in {other.callback.lower() for other in self.gadgets} or member in {menu.name.lower() for menu in self.menus}:
                         raise ValueError('CONTAINER の生成メンバー名が部品名・メソッド名と重複します。')
             for item in g.items: literal(item)
             for item in g.item_values: literal(item)
@@ -324,6 +352,12 @@ class Form:
             if data['version'] != 1: raise ValueError('未対応の設計ファイルです。')
             raw = dict(data['form'])
             raw['gadgets'] = [Gadget(**g) for g in raw['gadgets']]
+            menus = []
+            for value in raw.get('menus',[]):
+                menu = dict(value)
+                menu['items'] = [MenuItem(**item) for item in menu['items']]
+                menus.append(Menu(**menu))
+            raw['menus'] = menus
             result = cls(**raw)
             result.validate()
             return result
@@ -339,6 +373,11 @@ class Form:
                  (f'setup form !!{self.name} DIALOG DOCK RIGHT' if self.dock_right
                   else f'setup form !!{self.name} size {n(self.width)} {n(self.height)} DIALOG'),
                  f'  title {literal(self.title)}']
+        for menu in self.menus:
+            lines.append(f'  menu .{menu.name}')
+            for item in menu.items:
+                lines.append(f'    add {literal(item.label)} {literal(item.command,allow_expansion=True)}')
+            lines.append('  exit')
         for g in self.gadgets:
             if g.kind == 'container' and g.assembly:
                 lines += [f'  import {literal(g.assembly)}', f"  using namespace '{g.namespace}'",
