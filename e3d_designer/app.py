@@ -1029,6 +1029,7 @@ class Window(QMainWindow):
 
     def update_gadget(self):
         if self.loading or self.selected is None: return
+        previous_history=list(self.history);previous_form=self.form
         previous_future=list(self.future);previous_dirty=self.dirty
         requested_name=self.fields['name'].text()
         self.checkpoint()
@@ -1095,7 +1096,8 @@ class Window(QMainWindow):
             from .names import rename
             try:self.form=rename(self.form,'gadget',self.selected,requested_name)
             except ValueError as error:
-                self.form=self.history.pop();self.future=previous_future;self.dirty=previous_dirty
+                self.form=previous_form;self.history=previous_history
+                self.future=previous_future;self.dirty=previous_dirty
                 self.statusBar().showMessage(str(error));return
         self.refresh(rebuild=table_changed or name_changed)
 

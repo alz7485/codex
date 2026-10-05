@@ -60,6 +60,51 @@ class AuditFixTests(unittest.TestCase):
                 w=self.window;w.form=Form(gadgets=[gadget],default_body=source);w.selected=0;w.refresh();w.fields['name'].setText('new');w.update_gadget()
                 self.assertEqual(w.form.default_body,expected)
 
+    def test_rejected_rename_preserves_full_history_and_redo(self):
+        w=self.window
+        w.form=Form(gadgets=[Gadget(name='first'),Gadget(name='second')])
+        w.selected=0;w.refresh()
+        w.history=[Form(title=f'History {index}') for index in range(100)]
+        w.future=[Form(title='Redo')]
+        expected_history=[form.dumps() for form in w.history]
+        expected_future=[form.dumps() for form in w.future]
+        original=w.form.dumps()
+        for dirty in (False,True):
+            w.dirty=dirty
+            for name in ('second','bad name','', 'second'):
+                with self.subTest(dirty=dirty,name=name):
+                    w.fields['name'].setText(name);w.update_gadget()
+                    self.assertEqual(w.form.dumps(),original)
+                    self.assertEqual([form.dumps() for form in w.history],expected_history)
+                    self.assertEqual([form.dumps() for form in w.future],expected_future)
+                    self.assertEqual(w.dirty,dirty)
+        w.fields['name'].setText('valid');w.update_gadget()
+        self.assertEqual(len(w.history),100)
+        self.assertEqual([form.dumps() for form in w.history[:-1]],expected_history[1:])
+        self.assertEqual(w.history[-1].dumps(),original)
+        self.assertEqual(w.future,[])
+        w.undo();self.assertEqual(w.form.dumps(),original)
+        w.redo();self.assertEqual(w.form.gadgets[0].name,'valid')
+
+    def test_rejected_form_menu_names_preserve_full_history(self):
+        w=self.window
+        w.form=Form(menus=[Menu(name='first'),Menu(name='second')])
+        w.selected_menu=0;w.refresh()
+        w.history=[Form(title=f'History {index}') for index in range(100)]
+        w.future=[Form(title='Redo')]
+        original=w.form.dumps()
+        history=[form.dumps() for form in w.history]
+        future=[form.dumps() for form in w.future]
+        for name in ('','bad name'):
+            w.fname.setText(name);w.update_form()
+            self.assertEqual(w.form.dumps(),original)
+        for name in ('','bad name','second'):
+            w.update_menu_name(name)
+            self.assertEqual(w.form.dumps(),original)
+        self.assertEqual([form.dumps() for form in w.history],history)
+        self.assertEqual([form.dumps() for form in w.future],future)
+        self.assertFalse(w.dirty)
+
     def test_control_characters_rejected_in_macro_path_and_json(self):
         for char in ('\x00','\t','\x1b','\n'):
             form=Form(gadgets=[Gadget(action_mode='MACRO',macro_path='C:/co'+char+'de.mac')])
