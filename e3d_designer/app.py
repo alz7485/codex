@@ -1316,7 +1316,7 @@ class Window(QMainWindow):
         self.fields['width'].setToolTip(hint)
         self.fields['height'].setToolTip(hint)
         for key,value in fixed_dimensions(gadget).items():
-            self.fields[key].setToolTip('文字表示は1行固定です。' if gadget.kind in ('text','paragraph') else f'太さは{value:.1f}固定です。長さだけ変更できます。')
+            self.fields[key].setToolTip('高さは1行固定です。' if gadget.kind not in ('line','slider') else f'太さは{value:.1f}固定です。長さだけ変更できます。')
         parent = self.form.parent_gadget(gadget)
         if parent and parent.frame_style == 'TOOLBAR':
             for key in ('x','y','layout_mode','xref','yref','path','width_ref'): self.fields[key].setEnabled(False)

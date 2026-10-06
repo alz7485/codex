@@ -34,7 +34,8 @@ class DirectionalDimensionsTests(unittest.TestCase):
     def thickness(self,kind):return 1 if kind=='line' else 3
 
     def test_legacy_projects_normalize_text_paragraph_line_and_slider_thickness(self):
-        form=Form(gadgets=[Gadget(kind='paragraph',name='label'),Gadget(kind='line',name='horizontalLine',label='',width=12),
+        form=Form(gadgets=[Gadget(kind='paragraph',name='label'),Gadget(kind='toggle',name='check'),
+            Gadget(kind='option',name='choices'),Gadget(kind='combo',name='combo'),Gadget(kind='line',name='horizontalLine',label='',width=12),
             Gadget(kind='line',name='verticalLine',label='',orientation='VERT',height=12),
             Gadget(kind='slider',name='horizontalSlider',width=12),
             Gadget(kind='slider',name='verticalSlider',slider_orientation='VERTICAL',height=12)])
@@ -43,18 +44,33 @@ class DirectionalDimensionsTests(unittest.TestCase):
             record['width']=12;record['height']=5
             if record['name'].startswith('vertical'):record['width_ref']='horizontalLine'
         loaded=Form.loads(json.dumps(data))
-        self.assertEqual([(g.width,g.height) for g in loaded.gadgets],[(12,1),(12,1),(1,5),(12,1),(3,5)])
+        self.assertEqual([(g.width,g.height) for g in loaded.gadgets],[(12,1),(12,1),(12,1),(12,1),(12,1),(1,5),(12,1),(3,5)])
         self.assertTrue(all(not g.width_ref for g in loaded.gadgets))
         self.assertEqual(Form.loads(loaded.dumps()).dumps(),loaded.dumps())
 
-    def test_text_paragraph_has_one_line_and_only_width_control(self):
-        self.load([Gadget(kind='paragraph',height=5)])
-        self.assertEqual(self.w.form.gadgets[0].height,1)
-        self.assertEqual(self.item().boundingRect().height(),26)
-        self.assertEqual(set(self.item().handles()),{'width'})
-        self.assertFalse(self.w.fields['height'].isEnabled());self.assertTrue(self.w.fields['width'].isEnabled())
-        dialog=MiniProperties(self.w,self.w.form,0)
-        self.assertNotIn('height',dialog.fields);dialog.reject();dialog.deleteLater()
+    def test_single_line_gadgets_have_only_width_control(self):
+        for kind in ('text','paragraph','toggle','option','combo'):
+            with self.subTest(kind=kind):
+                self.load([Gadget(kind=kind,height=5)])
+                self.assertEqual(self.w.form.gadgets[0].height,1)
+                self.assertEqual(self.item().boundingRect().height(),26)
+                self.assertEqual(set(self.item().handles()),{'width'})
+                self.assertFalse(self.w.fields['height'].isEnabled());self.assertTrue(self.w.fields['width'].isEnabled())
+                self.w.fields['height'].setValue(5)
+                self.assertEqual(self.w.form.gadgets[0].height,1)
+                dialog=MiniProperties(self.w,self.w.form,0)
+                self.assertNotIn('height',dialog.fields);dialog.reject();dialog.deleteLater()
+
+    def test_single_line_legacy_height_does_not_displace_auto_layout(self):
+        for kind in ('toggle','option','combo'):
+            with self.subTest(kind=kind):
+                form=Form(gadgets=[Gadget(kind=kind,name='choice'),Gadget(name='next',layout_mode='AUTO')])
+                data=json.loads(form.dumps());data['form']['gadgets'][0]['height']=5
+                loaded=Form.loads(json.dumps(data))
+                self.assertEqual(loaded.geometry(loaded.gadgets[1])[1],2.5)
+                self.assertEqual(loaded.gadgets[0].height,1)
+                restored=Form.loads(loaded.dumps())
+                self.assertEqual(restored.geometry(restored.gadgets[1])[1],2.5)
 
     def test_line_and_slider_only_expose_length_handle_and_input(self):
         for kind in ('line','slider'):

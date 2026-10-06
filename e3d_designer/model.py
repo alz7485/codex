@@ -10,7 +10,7 @@ CHAR_WIDTH, LINE_HEIGHT = 10, 26
 
 def fixed_dimensions(gadget):
     if gadget.display_mode == 'PIXMAP':return {}
-    if gadget.kind in ('text','paragraph'):return {'height':1}
+    if gadget.kind in ('text','paragraph','toggle','option','combo'):return {'height':1}
     if gadget.kind == 'line':
         return {'width':1} if gadget.orientation == 'VERT' else {'height':1}
     if gadget.kind == 'slider':
