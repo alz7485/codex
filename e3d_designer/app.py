@@ -393,7 +393,8 @@ class Item(QGraphicsObject):
         if self.isSelected():
             painter.setPen(QPen(QColor('#2277cc'), 2, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
-            painter.drawRect(r.adjusted(1, 1, -1, -1))
+            selection_rect=self.shape().boundingRect() if self.form.is_tab_page(g) else r
+            painter.drawRect(selection_rect.adjusted(1, 1, -1, -1))
             painter.setPen(QPen(QColor('#2277cc'),1)); painter.setBrush(QColor('#ffffff'))
             for handle in self.handles().values(): painter.drawRect(handle)
 
@@ -1696,6 +1697,8 @@ class Window(QMainWindow):
     def choose_row(self, index):
         if self.loading: return
         self.selected = index if index >= 0 else None
+        # Hidden pages must become visible before Qt can select their outline.
+        self.apply_page_visibility()
         self.scene.blockSignals(True)
         for item in self.scene.items():
             if isinstance(item,Item): item.setSelected(item.data(0)==self.selected)
