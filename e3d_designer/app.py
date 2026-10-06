@@ -808,7 +808,8 @@ class Window(QMainWindow):
         close_menu=QPushButton('閉じる');close_menu.clicked.connect(self.menu_dialog.close);menu_dialog_layout.addWidget(close_menu)
         rl.addStretch()
         method_page=QWidget();rl=QVBoxLayout(method_page);right.addTab(method_page,'処理')
-        rl.addWidget(QLabel('表示後のプログラム')); rl.addWidget(self.after_show)
+        self.program_label=QLabel('表示後のプログラム')
+        rl.addWidget(self.program_label); rl.addWidget(self.after_show)
         rl.addWidget(QLabel('DEFAULT メソッドの追加処理（初期値は自動出力）')); rl.addWidget(self.default_body)
         rl.addWidget(QLabel('選択部品のメソッド処理'))
         self.method_target=QLabel();self.method_target.setWordWrap(True);self.method_target.setTextFormat(Qt.PlainText)
@@ -1768,6 +1769,7 @@ class Window(QMainWindow):
             self.variables.setPlainText(variable_text)
         if self.default_body.toPlainText() != self.form.default_body: self.default_body.setPlainText(self.form.default_body)
         if self.after_show.toPlainText() != self.form.after_show_code: self.after_show.setPlainText(self.form.after_show_code)
+        self.program_label.setText('取り込んだ表示プログラム（SHOWを含む）' if self.form.program_mode=='SOURCE' else '表示後のプログラム')
         self.fname.setText(self.form.name); self.ftitle.setText(self.form.title)
         self.docking.setCurrentIndex(self.docking.findData('MAIN' if self.form.form_type=='MAIN' else self.form.docking_side()))
         for event,editor in self.form_callbacks.items():

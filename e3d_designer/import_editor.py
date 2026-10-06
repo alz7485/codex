@@ -15,6 +15,8 @@ class ImportCodeDialog(QDialog):
         layout=QVBoxLayout(self)
         note=QLabel('部品の項目に変換できない処理を保持します。元コード優先では、選択肢などの初期化もこのコードで管理します。')
         note.setWordWrap(True);layout.addWidget(note)
+        program_note=QLabel('表示プログラムはSHOWを含め、元の順序で出力します。' if form.program_mode=='SOURCE' else '表示プログラムは、自動生成するSHOWの後へ追加します。')
+        program_note.setWordWrap(True);layout.addWidget(program_note)
         controls=QHBoxLayout();self.mode=QComboBox()
         self.mode.addItem('部品から初期化を生成＋追加コード','GENERATED')
         self.mode.addItem('元のコンストラクタを優先','SOURCE')
@@ -39,6 +41,7 @@ class ImportCodeDialog(QDialog):
         for key,title,value in (('preamble_code','フォーム定義前',form.preamble_code),
                                 ('constructor_body','コンストラクタ',form.constructor_body),
                                 ('default_body','DEFAULT',form.default_body or next((g.body for g in form.gadgets if g.callback.lower()=='default' and g.body),'')),
+                                ('after_show_code','表示プログラム',form.after_show_code),
                                 ('extra_methods','その他のメソッド',extras)):
             editor=QPlainTextEdit(value);self.editors[key]=editor;tabs.addTab(editor,title)
             editor.setStyleSheet('font-family: monospace; font-size: 12px;')
@@ -62,6 +65,7 @@ class ImportCodeDialog(QDialog):
             if remaining.strip():candidate.preamble_code+='\n'+remaining
             candidate.constructor_body=self.editors['constructor_body'].toPlainText()
             candidate.default_body=self.editors['default_body'].toPlainText()
+            candidate.after_show_code=self.editors['after_show_code'].toPlainText()
             for gadget in candidate.gadgets:
                 if gadget.callback.lower()=='default':gadget.body=''
             candidate.constructor_mode=self.mode.currentData()

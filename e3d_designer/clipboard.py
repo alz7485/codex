@@ -1,7 +1,9 @@
 """Transactional copying of a gadget subtree and its generated symbols."""
 import copy
+import re
 from .model import uses_pairs,native_size
 from .names import actual_name,code_slots,read_slot,write_slot,rewrite_code
+from .pml_syntax import mask_non_code
 
 
 def clone_subtree(target,source,index,restore_names=False):
@@ -52,6 +54,52 @@ def clone_subtree(target,source,index,restore_names=False):
             gadget.callback = next(value for name,value in methods.items() if name.lower() == original.callback.lower())
             if original.callback.lower() == 'default' and not restore_names:
                 gadget.body = source.default_body or original.body
+    owners = {id(gadget) for _,_,gadget in copies}|{id(gadget.item_commands) for _,_,gadget in copies}
+    original_owners={id(original) for _,original,_ in copies}|{id(original.item_commands) for _,original,_ in copies}
+    snippets=[read_slot(owner,key) for _,owner,key in code_slots(source) if id(owner) in original_owners]
+    # A copied DEFAULT callback uses the form's canonical body.
+    snippets.extend(gadget.body for _,_,gadget in copies)
+    helpers={method.name.lower():method for method in source.extra_methods}
+    calls=re.compile(r'(?:!this|!!'+re.escape(source.name)+r')\.([A-Za-z_][A-Za-z0-9_]*)\s*\(',re.I)
+    existing_helpers={method.name.lower():method for method in draft.extra_methods}
+    def can_reuse(key):
+        if not restore_names or source.name.lower()!=draft.name.lower():return False
+        pending=[key];checked=set()
+        while pending:
+            dependency=pending.pop()
+            if dependency in checked:continue
+            checked.add(dependency)
+            original=helpers[dependency]
+            if existing_helpers.get(dependency)!=original:return False
+            pending.extend(match.group(1).lower() for match in calls.finditer(mask_non_code(original.body,strings=False))
+                           if match.group(1).lower() in helpers)
+        return True
+    queue=list(snippets);seen=set();helper_copies=[];helper_snippets=[]
+    while queue:
+        value=queue.pop()
+        for match in calls.finditer(mask_non_code(value,strings=False)):
+            key=match.group(1).lower()
+            if key not in helpers or key in seen:continue
+            seen.add(key);original=helpers[key]
+            helper_snippets.append(original.body);queue.append(original.body)
+            if can_reuse(key):
+                methods[original.name]=existing_helpers[key].name
+                continue
+            helper=copy.deepcopy(original)
+            if restore_names and key not in reserved:
+                reserved.add(key)
+            else:helper.name=unique(original.name+'_copy')
+            methods[original.name]=helper.name;helper_copies.append(helper)
+    draft.extra_methods.extend(helper_copies)
+    owners.update(id(method) for method in helper_copies)
+    # Carry registered globals used by the copied code, retaining existing bindings.
+    globals_by_name={name.lower():(name,value) for name,value in source.variables.items()}
+    occupied_globals={name.lower() for name in draft.variables}
+    for value in snippets+helper_snippets:
+        for match in re.finditer(r'!!([A-Za-z_][A-Za-z0-9_]*)',mask_non_code(value,strings=False)):
+            key=match.group(1).lower()
+            if key in globals_by_name and key not in occupied_globals:
+                name,initial=globals_by_name[key];draft.variables[name]=initial;occupied_globals.add(key)
     existing = {g.name.lower() for g in draft.gadgets}
     available = existing|{name.lower() for name in mapping.values()}
     for original_index,original,gadget in copies:
@@ -70,7 +118,6 @@ def clone_subtree(target,source,index,restore_names=False):
             gadget.layout_mode = 'ABSOLUTE';gadget.xref = gadget.yref = gadget.width_ref = ''
         if restore_names: draft.gadgets.insert(min(original_index,len(draft.gadgets)),gadget)
         else: draft.gadgets.append(gadget)
-    owners = {id(gadget) for _,_,gadget in copies}|{id(gadget.item_commands) for _,_,gadget in copies}
     for _,owner,key in code_slots(draft):
         if id(owner) in owners:
             write_slot(owner,key,rewrite_code(read_slot(owner,key),source.name,draft.name,members,methods))

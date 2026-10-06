@@ -204,6 +204,7 @@ class Form:
     keep_default: bool = False
     default_mode: str = 'GENERATED'
     source_mac_path: str = ''
+    program_mode: str = 'GENERATED'
 
     def docking_side(self):
         return self.dock_side or ('RIGHT' if self.dock_right else 'NONE')
@@ -357,6 +358,7 @@ class Form:
         if not isinstance(self.auto_default,bool):raise ValueError('DEFAULTの自動呼び出し設定は真偽値にしてください。')
         if not isinstance(self.keep_default,bool):raise ValueError('取り込んだDEFAULTの保持設定は真偽値にしてください。')
         if self.default_mode not in ('GENERATED','SOURCE'):raise ValueError('DEFAULTの生成形式が不正です。')
+        if self.program_mode not in ('GENERATED','SOURCE'):raise ValueError('表示プログラムの生成形式が不正です。')
         if self.constructor_mode not in ('GENERATED','SOURCE'):raise ValueError('コンストラクタの生成形式が不正です。')
         if '\x00' in self.source_mac_path:raise ValueError('取り込み元のパスにNULを使用できません。')
         if not isinstance(self.extra_methods,list) or any(not isinstance(method,Method) for method in self.extra_methods):
@@ -828,7 +830,7 @@ class Form:
                 lines.append('  ' * depth + 'EXIT')
         for g in self.ordered_children(''): render(g, 1)
         lines.extend(['exit', ''])
-        lines += [f'SHOW !!{self.name}', '']
+        if self.program_mode=='GENERATED':lines += [f'SHOW !!{self.name}', '']
         if self.after_show_code: lines += [user_code(self.after_show_code), '']
         method_start = len(lines)
         method_offsets = [method_start]

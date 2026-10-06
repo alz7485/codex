@@ -139,6 +139,20 @@ class Importer:
     def gadget_named(self,name):
         return next((g for g in self.form.gadgets if actual_name(g).lower()==name.lower() or g.name.lower()==name.lower()),None)
 
+    def program_slice(self,index,include_exit=False):
+        """Preserve comments that cross the declaration/program boundary."""
+        start=index-1 if include_exit and self.comments[index-1].strip() else index
+        lines=self.raw[start:].copy()
+        if start<index:lines[0]=self.comments[start].rstrip()
+        program='\n'.join(lines)
+        offset=sum(len(line)+1 for line in self.raw[:start])
+        for match in NON_CODE.finditer(self.text):
+            if match.start()<offset<match.end() and match.group().startswith(('--','$*','$(')):
+                program=self.text[match.start():offset]+program
+                start=self.text[:match.start()].count('\n')
+                break
+        return program,start
+
     def position(self,tokens,gadget):
         for axis in ('X','Y'):
             value=tokens.pop();upper=value.upper()
@@ -234,7 +248,7 @@ class Importer:
             preamble.append(self.raw[index])
         self.form.preamble_code='\n'.join(preamble).strip('\n')
         stack=[];layout={};comments=[];assembly=namespace='';members={};member_rows={};imports=[];index=start+1
-        bar_entries=[];bar_row=None
+        bar_entries=[];bar_row=None;explicit_exit=False
         kinds={'BUTTON':'button','PARAGRAPH':'paragraph','PARA':'paragraph','TEXT':'text','TOGGLE':'toggle','OPTION':'option',
                'LIST':'list','LINE':'line','FRAME':'frame','SLIDER':'slider','RTOGGLE':'rtoggle','COMBO':'combo','COMBOBOX':'combo',
                'VIEW':'view','CONTAINER':'container','TEXTPANE':'textpane','TEXTPANEL':'textpane','SELECTOR':'selector'}
@@ -261,6 +275,7 @@ class Importer:
             if key=='EXIT':
                 if tokens.more():raise MacImportError(row,'EXITの後に未対応の指定があります。')
                 if stack:stack.pop();continue
+                explicit_exit=True
                 break
             if key=='TITLE':
                 self.form.title=tokens.quoted()
@@ -384,16 +399,22 @@ class Importer:
             for field in ('xref','yref','width_ref'):
                 target=self.gadget_named(getattr(gadget,field))
                 if target:setattr(gadget,field,target.name)
-        after='\n'.join(self.raw[index:])
+        after,index=self.program_slice(index,explicit_exit)
         try:program,methods,method_rows=split_methods(after)
         except MacImportError as error:
             raise MacImportError(index+error.line,str(error).split(': ',1)[-1]) from error
         source_methods={method.name.lower():method for method in methods}
         program_masked=mask_non_code(program).splitlines()
         program_comments=comment_lines(program)
-        self.form.after_show_code='\n'.join(
-            program_comments[row].rstrip() if re.fullmatch(r'\s*SHOW\s+!!'+re.escape(self.form.name)+r'\s*',program_masked[row],re.I) else line
-            for row,line in enumerate(program.splitlines())).strip('\n')
+        first=next((row for row,line in enumerate(program_masked) if line.strip()),None)
+        if first is not None and re.fullmatch(r'\s*SHOW\s+!!'+re.escape(self.form.name)+r'\s*',program_masked[first],re.I):
+            # Only the leading display statement is represented by generated SHOW.
+            self.form.after_show_code='\n'.join(
+                program_comments[row].rstrip() if row==first else line
+                for row,line in enumerate(program.splitlines())).strip('\n')
+        else:
+            self.form.program_mode='SOURCE'
+            self.form.after_show_code=program.strip('\n')
         constructor=source_methods.pop(self.form.name.lower(),None)
         default=source_methods.pop('default',None)
         self.form.auto_default=False
