@@ -917,7 +917,7 @@ class GuiTests(unittest.TestCase):
     def test_native_list_move_preserves_selection_save_and_undo(self):
         self.w.form=Form(gadgets=[Gadget(name='first'),Gadget(name='second',y=4),Gadget(name='third',y=7)])
         self.w.selected=1;self.w.refresh()
-        self.assertTrue(self.w.objects.model().moveRows(QModelIndex(),1,1,QModelIndex(),3))
+        self.w.objects.move_item(1,'')
         self.app.processEvents()
         self.assertEqual([g.name for g in self.w.form.gadgets],['first','third','second'])
         self.assertEqual(self.w.form.gadgets[self.w.selected].name,'second')
@@ -941,7 +941,7 @@ class GuiTests(unittest.TestCase):
         a=Gadget(name='a',parent='group')
         b=Gadget(name='b',parent='group',layout_mode='AUTO')
         self.w.form=Form(gadgets=[group,a,b]);self.w.selected=2;self.w.refresh()
-        self.assertTrue(self.w.objects.model().moveRows(QModelIndex(),2,1,QModelIndex(),1))
+        self.w.objects.move_item(2,'group',1)
         self.app.processEvents()
         self.assertEqual([g.name for g in self.w.form.gadgets],['group','b','a'])
         self.assertEqual((a.parent,b.parent),('group','group'))

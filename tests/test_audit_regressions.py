@@ -200,7 +200,8 @@ class AuditGuiRegressionTests(unittest.TestCase):
         w.add('button');button=w.form.gadgets[-1]
         self.assertEqual(button.parent,first.name)
         w.add_page_button.click();second=w.form.gadgets[-1]
-        self.assertTrue(w.objects.item(1).isHidden());self.assertTrue(w.objects.item(3).isHidden())
+        self.assertFalse(w.objects.item(1).isHidden());self.assertFalse(w.objects.item(3).isHidden())
+        self.assertIs(w.objects.item(1).parent(),w.objects.item(0));self.assertIs(w.objects.item(3).parent(),w.objects.item(0))
         w.add('text');text=w.form.gadgets[-1]
         self.assertEqual(text.parent,second.name)
         def visible(name):
@@ -236,11 +237,13 @@ class AuditGuiRegressionTests(unittest.TestCase):
         self.assertEqual(len(w.form.named('tabs').tabs),1)
         w.undo();self.assertEqual(w.form.dumps(),original)
 
-    def test_blank_selection_keeps_tab_placement_and_form_target_is_explicit(self):
+    def test_form_root_selection_is_explicit_and_page_selection_sets_placement(self):
         w=self.w
         self.load(Form(gadgets=[Gadget(kind='frame',name='tabs',frame_style='TABSET',width=40,height=12)]))
         w.add_page_button.click();page=w.form.gadgets[-1].name
         w.choose_row(-1);w.add('button')
+        self.assertEqual(w.form.gadgets[-1].parent,'')
+        w.choose_row(next(i for i,g in enumerate(w.form.gadgets) if g.name==page));w.add('button')
         self.assertEqual(w.form.gadgets[-1].parent,page)
         w.tabset_picker.setCurrentIndex(0);w.add('button')
         self.assertEqual(w.form.gadgets[-1].parent,'')

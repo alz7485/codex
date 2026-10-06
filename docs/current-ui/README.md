@@ -43,3 +43,5 @@
 ![MAC出力先フォルダと部品コメント](output-comments.png)
 
 最新のフォーム枠・ハンドル・共通プロパティ: [form-canvas.png](form-canvas.png)。フォームタブは廃止し、選択に合わせてプロパティを表示します。
+
+左側のツリーと上部の追加ボタン: [tree-explorer.png](tree-explorer.png)。FRAMEとタブのフレームをフォルダとして展開できます。

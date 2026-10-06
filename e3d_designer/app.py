@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
     QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
     QGridLayout, QTabBar, QDialog, QDialogButtonBox, QTabWidget, QInputDialog, QToolButton, QStackedWidget)
+from .explorer import ObjectExplorer
 from .form_item import FormItem
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
@@ -383,28 +384,6 @@ class Item(QGraphicsObject):
         self.moved.emit(old,self.gadget.name,round(self.pos().x()/SX,2),round(self.pos().y()/SY,2))
 
 
-class ObjectList(QListWidget):
-    orderCommitted = Signal(object,int)
-
-    def __init__(self):
-        super().__init__()
-        self.setDragDropMode(QAbstractItemView.InternalMove)
-        self.setDefaultDropAction(Qt.MoveAction); self.setDragDropOverwriteMode(False)
-        self.setDropIndicatorShown(True)
-        self.model().rowsMoved.connect(self.commit_order)
-
-    def commit_order(self, *args):
-        order = [self.item(row).data(Qt.UserRole) for row in range(self.count())]
-        selected = self.currentItem().data(Qt.UserRole) if self.currentItem() else -1
-        self.orderCommitted.emit(order,selected)
-
-    def dropEvent(self, event):
-        previous = self.blockSignals(True)
-        try: super().dropEvent(event)
-        finally: self.blockSignals(previous)
-        self.commit_order()
-
-
 class TableCell(QLineEdit):
     focused = Signal()
 
@@ -474,10 +453,10 @@ class Window(QMainWindow):
         root = QWidget(); outer = QVBoxLayout(root)
         columns = QSplitter();self.columns=columns
         left = QWidget();self.library_panel=left;ll = QVBoxLayout(left)
-        ll.addWidget(QLabel('部品を追加'))
+        ll.addWidget(QLabel('ツリーエクスプローラ'))
         palette=QWidget();self.palette_panel=palette;palette_layout=QGridLayout(palette)
         palette_layout.setContentsMargins(0,0,0,0);palette_layout.setSpacing(4)
-        palette.setFixedHeight(12*28+11*4)
+        palette.setFixedHeight(55)
         self.palette_buttons = {}
         entries = []
         palette_order = [kind for kind in KINDS if kind != 'frame']
@@ -490,27 +469,25 @@ class Window(QMainWindow):
             else: entries.append((kind,kind,None,*PALETTE[kind]))
         entries += [('tabset','frame','TABSET','🗂️','タブ'),('image','paragraph','PIXMAP','🖼️','画像'),('image_option','option','PIXMAP','🖼️','画像選択'),('toolbar','frame','TOOLBAR','🛠️','ツールバー'),('menubar',None,None,'📑','メニューバー')]
         for index,(key,kind,direction,icon,label) in enumerate(entries):
-            b = QPushButton(f'{icon} {label}'); b.setFixedHeight(28)
-            b.setStyleSheet('font-size: 12px; padding: 2px 4px;')
+            b = QPushButton(f'{icon} {label}'); b.setFixedHeight(25);b.setAccessibleName(label)
+            b.setStyleSheet('font-size: 11px; padding: 1px 3px;')
             if key == 'menubar':
                 b.setToolTip('別ウィンドウでメニューバーを編集します。')
                 b.clicked.connect(self.add_palette_menu)
             else:
-                b.setToolTip(f'{LABELS[kind]} を追加' + (f' ({direction})' if direction else ''))
+                b.setToolTip(f'{label}: {LABELS[kind]} を追加' + (f' ({direction})' if direction else ''))
                 b.clicked.connect(lambda checked=False, k=kind, d=direction: self.add(k,d))
-            palette_layout.addWidget(b,index//2,index%2);self.palette_buttons[key]=b
-        palette_layout.setColumnStretch(0,1);palette_layout.setColumnStretch(1,1)
-        ll.addWidget(palette)
+            palette_layout.addWidget(b,index//12,index%12);self.palette_buttons[key]=b
+        for column in range(12):palette_layout.setColumnStretch(column,1)
+        outer.addWidget(palette)
         self.placement_hint=QLabel();self.placement_hint.setWordWrap(True)
         self.placement_hint.setStyleSheet('color: #185fa8; padding: 4px; background: #eaf3ff;')
-        ll.addWidget(self.placement_hint)
-        ll.addWidget(QLabel('部品一覧'))
-        self.objects = ObjectList(); self.objects.currentRowChanged.connect(self.choose_row)
+        self.objects = ObjectExplorer(); self.objects.currentRowChanged.connect(self.choose_row)
         self.objects.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.objects.setTextElideMode(Qt.ElideRight)
-        self.objects.orderCommitted.connect(self.reorder_objects); ll.addWidget(self.objects)
-        self.objects.itemDoubleClicked.connect(lambda item:self.request_object_label(self.form.gadgets[item.data(Qt.UserRole)].name))
-        self.objects.setToolTip('ドラッグで部品の順序を変更します（親コンテナは変わりません）。')
+        self.objects.moveRequested.connect(self.move_tree_gadget);ll.addWidget(self.objects,1);ll.addWidget(self.placement_hint)
+        self.objects.itemDoubleClicked.connect(self.edit_tree_item)
+        self.objects.setToolTip('フレームをフォルダとして表示。ドラッグで順序や所属フレームを変更できます。')
         left.setMinimumWidth(220); columns.addWidget(left)
         self.scene = Scene(self); self.scene.selectionChanged.connect(self.selection_changed)
         self.view = QGraphicsView(self.scene)
@@ -1419,9 +1396,9 @@ class Window(QMainWindow):
         self.form.sync_tabs()
         visibility={item.data(0):item.isVisible() for item in self.scene.items() if isinstance(item,Item)}
         for index,g in enumerate(self.form.gadgets):
-            self.objects.item(index).setHidden(self.form.is_tab_page(g))
-            self.objects.item(index).setForeground(QColor('#24354b' if visibility.get(index,True) else '#98a2b3'))
-            self.objects.item(index).setToolTip(f'.{g.name}'+(f' / 親: .{g.parent}' if g.parent else ' / フォーム直下')+'\nダブルクリックで設定を編集')
+            self.objects.item(index).setHidden(False)
+            self.objects.item(index).setForeground(0,QColor('#24354b' if visibility.get(index,True) else '#98a2b3'))
+            self.objects.item(index).setToolTip(0,f'{gadget_title(g)}: {g.label}\n.{g.name}'+(f' / 親: .{g.parent}' if g.parent else ' / フォーム直下')+'\nダブルクリックで設定を編集')
         self.sync_tab_editor()
         self.sync_context_hints()
 
@@ -1435,7 +1412,7 @@ class Window(QMainWindow):
         else:
             self.selection_hint.setText('部品を選択してください。\nダブルクリックで設定を編集できます。')
             self.method_target.setText('キャンバスまたは部品一覧で、処理を編集する部品を選択してください。')
-        target=g if g and g.kind=='frame' else self.form.parent_gadget(g) if g else self.form.named(self.tabset_picker.currentData()) if self.tabset_picker.currentData() else None
+        target=g if g and g.kind=='frame' else self.form.parent_gadget(g) if g else None
         if target and target.frame_style=='TABSET':
             target=next((page for page in target.tabs if page.name.lower()==self.active_pages.get(target.name.lower())),None)
         self.placement_hint.setText('追加先: '+(f'{target.label} (.{target.name})' if target else 'フォーム直下'))
@@ -1629,10 +1606,8 @@ class Window(QMainWindow):
         for event,editor in self.form_callbacks.items():
             if editor.text() != getattr(self.form,event): editor.setText(getattr(self.form,event))
         self.load_number(self.fw,self.form.width); self.load_number(self.fh,self.form.height)
-        self.objects.clear()
-        for index,g in enumerate(self.form.gadgets):
-            self.objects.addItem(f'{PALETTE[g.kind][0]} {gadget_title(g)}  .{g.name}' + (f' → {g.parent}' if g.parent else ''))
-            self.objects.item(index).setData(Qt.UserRole,index)
+        self.objects.rebuild(self.form,gadget_title,lambda g:PALETTE[g.kind][0])
+        if self.selected is None:self.objects.setCurrentRow(-1)
         self.scene.blockSignals(True); self.scene.clear()
         self.scene.setSceneRect(-12,-30,self.form.width*SX+24,self.form.height*SY+42)
         self.form_item=FormItem(self.form,SX,SY);self.scene.addItem(self.form_item)
@@ -1692,6 +1667,41 @@ class Window(QMainWindow):
             elif isinstance(item,FormItem):item.setSelected(self.selected is None)
         self.scene.blockSignals(False)
         self.sync_selection()
+
+    def edit_tree_item(self,item,column=0):
+        index=item.data(0,Qt.UserRole)
+        if index is None or index<0:QTimer.singleShot(0,self.edit_form_properties)
+        else:self.request_object_label(self.form.gadgets[index].name)
+
+    def move_tree_gadget(self,index,parent_name,before=-1):
+        if self.loading or not 0<=index<len(self.form.gadgets):return
+        g=self.form.gadgets[index];parent=self.form.named(parent_name) if parent_name else None
+        excluded={g.name.lower(),*(name.lower() for name in self.form.descendants(g.name))}
+        if parent_name and (parent is None or parent.kind!='frame' or parent.name.lower() in excluded):
+            self.statusBar().showMessage('移動先には自分や子孫以外のフレームを指定してください。');return
+        same_parent=g.parent.lower()==parent_name.lower()
+        if self.form.is_tab_page(g) and not same_parent:
+            self.statusBar().showMessage('タブフレームは同じTABSET内で並べ替えてください。');return
+        branch=[i for i,item in enumerate(self.form.gadgets) if item.name.lower() in excluded]
+        if before in branch:return
+        order=[i for i in range(len(self.form.gadgets)) if i not in branch]
+        slot=order.index(before) if before in order else len(order)
+        order[slot:slot]=branch
+        if same_parent:
+            self.reorder_objects(order,index);return
+        draft=copy.deepcopy(self.form);moved=draft.gadgets[index]
+        x,y,width,height=draft.geometry(moved);ox,oy=draft.offset(moved);x+=ox;y+=oy
+        moved.parent=parent_name;moved.layout_mode='ABSOLUTE';moved.xref=moved.yref=moved.width_ref=''
+        moved.width,moved.height=native_size(moved,width,height)
+        ox,oy=draft.offset(moved);pw,ph=draft.geometry(draft.parent_gadget(moved))[2:] if parent else (draft.width,draft.height)
+        if width>pw+.001 or height>ph+.001:
+            self.statusBar().showMessage('移動先のフレームに部品全体が収まりません。');return
+        moved.x=round(max(0,min(x-ox,pw-width)),2);moved.y=round(max(0,min(y-oy,ph-height)),2)
+        draft.gadgets=[draft.gadgets[i] for i in order];draft.sync_tabs()
+        try:draft.validate()
+        except ValueError as error:self.statusBar().showMessage(str(error));return
+        self.checkpoint();self.form=draft;self.selected=order.index(index)
+        QTimer.singleShot(0,self.refresh)
 
     def reorder_objects(self, order, selected):
         if self.loading or sorted(order) != list(range(len(self.form.gadgets))) or order == list(range(len(order))): return
@@ -1812,10 +1822,6 @@ class Window(QMainWindow):
 
     def add(self, kind, direction=None):
         container = self.form.gadgets[self.selected] if self.selected is not None else None
-        if container is None and self.tabset_picker.currentData():
-            tabset=self.form.named(self.tabset_picker.currentData())
-            if tabset:
-                container=next((page for page in tabset.tabs if page.name.lower()==self.active_pages.get(tabset.name.lower())),tabset)
         if container and container.kind != 'frame': container = self.form.parent_gadget(container)
         if direction == 'TOOLBAR':
             if self.form.form_type != 'MAIN':
