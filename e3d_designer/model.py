@@ -16,14 +16,20 @@ def native_size(gadget,width,height):
     return (width*CHAR_WIDTH,height*LINE_HEIGHT) if gadget.display_mode == 'PIXMAP' else (width,height)
 
 
-def literal(value, allow_expansion=False):
+def literal(value, allow_expansion=False, field='表示文字列'):
     # PML expands $ expressions even inside strings. Do not silently emit them.
     if any(c in value for c in '\r\n\x00') or ('$' in value and not allow_expansion):
-        raise ValueError('表示文字列には改行・NUL・$ を使用できません。')
+        forbidden='改行・NUL' if allow_expansion else '改行・NUL・$'
+        raise ValueError(f'{field}には{forbidden} を使用できません。')
     for delimiter in ("'", '|', '"'):
         if delimiter not in value:
             return delimiter + value + delimiter
-    raise ValueError('表示文字列に全種類の引用符があります。引用符を減らしてください。')
+    raise ValueError(f'{field}に全種類の引用符があります。引用符を減らしてください。')
+
+
+def image_path_literal(value):
+    # UNC shares such as \\server\images$ are filenames, not display labels.
+    return literal(value,allow_expansion=True,field='画像パス')
 
 
 @dataclass
@@ -384,7 +390,7 @@ class Form:
             if g.display_mode == 'PIXMAP':
                 if g.kind not in ('paragraph','button','toggle','option'): raise ValueError('PIXMAP は PARAGRAPH / BUTTON / TOGGLE / OPTION 用です。')
                 if g.kind == 'option' and not IDENTIFIER.fullmatch(g.name): raise ValueError('画像 OPTION の部品名は英字で始めてください。')
-            literal(g.pixmap_path)
+            image_path_literal(g.pixmap_path)
             for value in g.pane_lines: literal(value)
             if g.database not in ('OWNERS','MEMBERS','AUTO'): raise ValueError('DATABASE は OWNERS / MEMBERS / AUTO を指定してください。')
             if g.button_role not in ('NORMAL','OK','APPLY','CANCEL','RESET','HELP'): raise ValueError('ボタン属性が不正です。')
@@ -440,7 +446,8 @@ class Form:
                     member = (g.name+'Control').lower()
                     if member in {other.name.lower() for other in self.gadgets} or member in {other.callback.lower() for other in self.gadgets} or member in {menu.name.lower() for menu in self.menus}:
                         raise ValueError('CONTAINER の生成メンバー名が部品名・メソッド名と重複します。')
-            for item in g.items: literal(item)
+            for item in g.items:
+                (image_path_literal if g.kind=='option' and g.display_mode=='PIXMAP' else literal)(item)
             for item in g.item_values: literal(item)
             if g.item_values:
                 if g.kind not in ('list','combo','option') or len(g.item_values) != len(g.items):
@@ -726,7 +733,7 @@ class Form:
             if value: lines.append(f'  !this.{event} = {literal(value,allow_expansion=True)}')
         for g in self.gadgets:
             if g.display_mode == 'PIXMAP' and g.kind != 'option' and g.pixmap_path:
-                lines.append(f'  !this.{g.name}.AddPixmap({literal(g.pixmap_path)})')
+                lines.append(f'  !this.{g.name}.AddPixmap({image_path_literal(g.pixmap_path)})')
             if g.popup_menu: lines.append(f'  !this.{g.name}.SetPopup(!this.{g.popup_menu})')
             if g.kind == 'list' and g.list_mode == 'TABLE':
                 lines.append(f'  !this.{g.table_method or "populate_"+g.name}()')
@@ -738,7 +745,8 @@ class Form:
             if (g.kind in ('list','combo') or (g.kind == 'option' and (g.display_mode == 'PIXMAP' or g.item_values))) and g.items and not (g.kind == 'list' and g.list_mode == 'TABLE'):
                 lines.append('  !choices = object ARRAY()')
                 for i, item in enumerate(g.items, 1):
-                    lines.append(f'  !choices[{i}] = {literal(item)}')
+                    value=image_path_literal(item) if g.kind=='option' and g.display_mode=='PIXMAP' else literal(item)
+                    lines.append(f'  !choices[{i}] = {value}')
                 target = '_'+g.name.lstrip('_') if g.kind=='option' and g.display_mode=='TEXT' else g.name
                 lines.append(f'  !this.{target}.dtext = !choices')
                 if g.item_values:

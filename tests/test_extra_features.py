@@ -16,6 +16,31 @@ from e3d_designer.names import rename,reference_locations,actual_name
 
 
 class ExtraModelTests(unittest.TestCase):
+    def test_server_image_paths_with_dollars_round_trip_and_generate(self):
+        paths=[r'\\SERVER\Images$\Logo One.png',r'\\SERVER\C$\Images\見本.png',r"\\SERVER\Images$\O'Brien.png"]
+        for kind in ('paragraph','button','toggle'):
+            for path in paths:
+                with self.subTest(kind=kind,path=path):
+                    form=Form(gadgets=[Gadget(kind=kind,name='Picture',display_mode='PIXMAP',pixmap_path=path,width=100,height=50)])
+                    loaded=Form.loads(form.dumps());self.assertEqual(loaded.gadgets[0].pixmap_path,path)
+                    delimiter='|' if "'" in path else "'"
+                    self.assertIn(f'!this.Picture.AddPixmap({delimiter}{path}{delimiter})',loaded.pml(normalize=False))
+                    self.assertIn(path,loaded.pml().encode('cp932').decode('cp932'))
+        option=Form(gadgets=[Gadget(kind='option',name='Pictures',display_mode='PIXMAP',items=paths,item_values=['A','B','C'],width=100,height=50)])
+        loaded=Form.loads(option.dumps());self.assertEqual(loaded.gadgets[0].items,paths)
+        pml=loaded.pml(normalize=False)
+        self.assertIn(f"!choices[1] = '{paths[0]}'",pml);self.assertIn('!this.Pictures.dtext = !choices',pml)
+        self.assertIn('!this.Pictures.rtext = !values',pml)
+
+    def test_image_path_controls_are_rejected_with_field_specific_error(self):
+        for path in ('bad\nfile.png','bad\rfile.png','bad\x00file.png',"bad'|\".png"):
+            for kind in ('paragraph','option'):
+                with self.subTest(path=path,kind=kind):
+                    g=Gadget(kind=kind,display_mode='PIXMAP',pixmap_path=path if kind=='paragraph' else '',items=[path] if kind=='option' else [])
+                    with self.assertRaisesRegex(ValueError,'画像パス'):Form(gadgets=[g]).pml()
+        for g in (Gadget(label='Price$'),Gadget(kind='option',items=['Price$']),Gadget(kind='list',items=['Price$']),Gadget(kind='combo',items=['Price$'])):
+            with self.subTest(kind=g.kind),self.assertRaisesRegex(ValueError,'表示文字列'):Form(gadgets=[g]).pml()
+
     def test_pixmap_paragraph_button_toggle_and_option(self):
         gadgets=[Gadget(kind=kind,name=kind+'Pic',display_mode='PIXMAP',pixmap_path=r'C:\Images\sample.png') for kind in ('paragraph','button','toggle')]
         gadgets.append(Gadget(kind='option',name='imageChoice',display_mode='PIXMAP',items=[r'/C:\Images\red.gif',r'/C:\Images\yellow.gif'],item_values=['RED','YELLOW'],callback='imageChanged',body='q var !this.imageChoice.val'))
@@ -99,10 +124,12 @@ class ExtraGuiTests(unittest.TestCase):
     def test_image_picker_preview_save_and_undo(self):
         self.w.palette_actions['image'].trigger();self.assertEqual(self.w.form.gadgets[0].display_mode,'PIXMAP')
         with tempfile.TemporaryDirectory() as folder:
-            filename=Path(folder)/'sample.png';pixmap=QPixmap(20,10);pixmap.fill(QColor('red'));pixmap.save(str(filename))
+            shared=Path(folder)/'images$';shared.mkdir()
+            filename=shared/'sample.png';pixmap=QPixmap(20,10);pixmap.fill(QColor('red'));pixmap.save(str(filename))
             with patch('e3d_designer.app.QFileDialog.getOpenFileName',return_value=(str(filename),'')): self.w.browse_image.click()
             self.assertEqual(self.w.form.gadgets[0].pixmap_path,str(filename))
             item=next(item for item in self.w.scene.items() if isinstance(item,Item));self.assertFalse(item.pixmap.isNull())
+            self.assertEqual(self.w.validation_error,'');self.assertNotIn('出力できません',self.w.code.toPlainText())
             self.w.path=Path(folder)/'design.json';self.assertTrue(self.w.save())
             self.assertEqual(Form.loads(self.w.path.read_text()).gadgets[0].pixmap_path,str(filename))
         self.w.undo();self.assertEqual(self.w.form.gadgets[0].pixmap_path,'')
@@ -122,6 +149,14 @@ class ExtraGuiTests(unittest.TestCase):
         self.w.fixed_font.setChecked(False);self.assertNotIn(canonical_pml('FIXCHARS'),self.w.code.toPlainText())
         self.w.selected=None;self.w.add('selector');self.w.fields['database'].setCurrentText('MEMBERS')
         self.assertIn(canonical_pml('DATABASE MEMBERS'),self.w.code.toPlainText())
+
+    def test_image_option_picker_accepts_server_share_paths(self):
+        self.w.palette_actions['image_option'].trigger()
+        paths=[r'\\SERVER\Images$\Red.png',r'\\SERVER\Images$\Blue.png']
+        with patch('e3d_designer.app.QFileDialog.getOpenFileNames',return_value=(paths,'')):self.w.browse_image.click()
+        self.assertEqual(self.w.form.gadgets[0].items,paths);self.assertEqual(self.w.validation_error,'')
+        self.assertIn(paths[0],self.w.code.toPlainText());self.assertEqual(Form.loads(self.w.form.dumps()).gadgets[0].items,paths)
+        self.w.undo();self.assertEqual(self.w.form.gadgets[0].items,[])
 
     def test_popup_editor_rename_delete_and_preview(self):
         self.w.add_menu();self.w.add_menu_item();self.w.menu_popup.setChecked(True)
