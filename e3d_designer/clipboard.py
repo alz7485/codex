@@ -1,6 +1,6 @@
 """Transactional copying of a gadget subtree and its generated symbols."""
 import copy
-from .model import native_size
+from .model import uses_pairs,native_size
 from .names import actual_name,code_slots,read_slot,write_slot,rewrite_code
 
 
@@ -18,6 +18,7 @@ def clone_subtree(target,source,index,restore_names=False):
     reserved |= {('macro_'+g.name).lower() for g in draft.gadgets if g.action_mode == 'MACRO'}
     reserved |= {(g.table_method or 'populate_'+g.name).lower() for g in draft.gadgets if g.kind == 'list' and g.list_mode == 'TABLE'}
     reserved |= {(g.name+'Control').lower() for g in draft.gadgets if g.kind == 'container' and g.assembly}
+    reserved |= {method.name.lower() for method in draft.extra_methods}
     def unique(base,extra=None):
         number = 1
         while (base+str(number)).lower() in reserved or (extra and extra(base+str(number)).lower() in reserved): number += 1
@@ -27,7 +28,7 @@ def clone_subtree(target,source,index,restore_names=False):
     for original_index,original in originals:
         gadget = copy.deepcopy(original)
         if not restore_names:
-            extra = (lambda name:'macro_'+name) if original.action_mode == 'MACRO' else (lambda name:'_'+name) if original.kind == 'option' and original.display_mode == 'TEXT' else (lambda name:name+'Control') if original.kind == 'container' else (lambda name:'populate_'+name) if original.kind == 'list' and original.list_mode == 'TABLE' else None
+            extra = (lambda name:'macro_'+name) if original.action_mode == 'MACRO' else (lambda name:'_'+name) if uses_pairs(original) else (lambda name:name+'Control') if original.kind == 'container' else (lambda name:'populate_'+name) if original.kind == 'list' and original.list_mode == 'TABLE' else None
             gadget.name = unique(gadget.kind,extra)
         mapping[original.name.lower()] = gadget.name
         members[actual_name(original)] = actual_name(gadget)

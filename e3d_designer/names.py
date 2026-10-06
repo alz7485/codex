@@ -1,12 +1,15 @@
 """Name inventory and transactional renaming of project symbols."""
 import copy
 import re
-from .model import IDENTIFIER
+from .model import IDENTIFIER,uses_pairs
 
 
 def code_slots(form):
     yield 'DEFAULT', form, 'default_body'
     yield '表示後のプログラム', form, 'after_show_code'
+    yield 'フォーム定義前の処理',form,'preamble_code'
+    yield 'コンストラクタの追加処理',form,'constructor_body'
+    for method in form.extra_methods:yield f'追加メソッド {method.name}',method,'body'
     for event in ('initcall','okcall','cancelcall'): yield event.upper(),form,event
     for g in form.gadgets:
         for key in ('command','body','view_code'):
@@ -28,7 +31,7 @@ def write_slot(owner, key, value):
 
 
 def actual_name(g):
-    return '_'+g.name.lstrip('_') if g.kind == 'option' and g.display_mode == 'TEXT' else g.name
+    return '_'+g.name.lstrip('_') if uses_pairs(g) else g.name
 
 
 def rewrite_code(value, source_form, target_form, members, methods=None):

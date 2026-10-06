@@ -18,7 +18,7 @@ from .explorer import ObjectExplorer
 from .form_item import FormItem
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
-from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size, fixed_dimensions, dimension_editable, normalize_dimensions, change_orientation
+from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size, fixed_dimensions, dimension_editable, normalize_dimensions, change_orientation, uses_pairs
 from .images import resolve_image_path, sync_image_size
 
 LABELS = {'textpane':'複数行テキスト (TEXTPANE)','selector':'DB セレクタ (SELECTOR)','button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
@@ -291,7 +291,7 @@ class Item(QGraphicsObject):
 
     def hoverMoveEvent(self, event):
         handle = self.handle_at(event.pos())
-        self.setToolTip(PREVIEW_WIDTH_HINT if handle=='width' and self.gadget.kind in ('toggle','option') and self.gadget.display_mode=='TEXT' else '')
+        self.setToolTip(PREVIEW_WIDTH_HINT if handle=='width' and ((self.gadget.kind=='toggle' and self.gadget.display_mode=='TEXT') or uses_pairs(self.gadget)) else '')
         self.setCursor({'width':Qt.SizeHorCursor,'height':Qt.SizeVerCursor,'both':Qt.SizeFDiagCursor}.get(handle,Qt.ArrowCursor))
         super().hoverMoveEvent(event)
 
@@ -518,6 +518,10 @@ class Window(QMainWindow):
         names_action = QAction('変数・名前管理',self)
         names_action.setShortcut(QKeySequence('Ctrl+M'));names_action.triggered.connect(self.manage_names)
         edit_menu.addAction(names_action)
+        import_action=file_menu.addAction('MACを読み込む…')
+        import_action.triggered.connect(self.open_mac)
+        source_action=edit_menu.addAction('取り込みコードを編集…')
+        source_action.triggered.connect(self.edit_imported_code)
         self.recent_menu=QMenu('最近の設計',self)
         recent_button=QToolButton();recent_button.setText('最近の設計')
         recent_button.setMenu(self.recent_menu);recent_button.setPopupMode(QToolButton.InstantPopup)
@@ -1317,7 +1321,7 @@ class Window(QMainWindow):
         hint='元画像のサイズで固定。収まらない場合はフォーム／フレームを広げてください。' if gadget.display_mode == 'PIXMAP' else ''
         self.fields['width'].setToolTip(hint)
         self.fields['height'].setToolTip(hint)
-        if gadget.kind in ('toggle','option') and gadget.display_mode=='TEXT':self.fields['width'].setToolTip(PREVIEW_WIDTH_HINT)
+        if ((gadget.kind=='toggle' and gadget.display_mode=='TEXT') or uses_pairs(gadget)):self.fields['width'].setToolTip(PREVIEW_WIDTH_HINT)
         for key,value in fixed_dimensions(gadget).items():
             self.fields[key].setToolTip('高さは1行固定です。' if gadget.kind not in ('line','slider') else f'太さは{value:.1f}固定です。長さだけ変更できます。')
         parent = self.form.parent_gadget(gadget)
@@ -1344,8 +1348,8 @@ class Window(QMainWindow):
         self.fields['view_aspect'].setEnabled(gadget.kind in ('view','commandline'))
         self.fields['channels'].setEnabled(gadget.kind == 'commandline' or (gadget.kind == 'view' and gadget.view_type == 'ALPHA'))
         for key in ('assembly','namespace','control_type'): self.fields[key].setEnabled(gadget.kind == 'container')
-        self.fields['callback'].setEnabled((gadget.kind in ('button','text','toggle','list','combo','slider','selector') or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP')) and gadget.button_role not in ('OK','CANCEL','HELP'))
-        self.item_values.setEnabled(gadget.kind in ('list','combo') or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP'))
+        self.fields['callback'].setEnabled((gadget.kind in ('button','text','toggle','list','combo','slider','selector') or (gadget.kind == 'option' and not uses_pairs(gadget))) and gadget.button_role not in ('OK','CANCEL','HELP'))
+        self.item_values.setEnabled(gadget.kind in ('list','combo') or (gadget.kind == 'option' and not uses_pairs(gadget)))
         self.view_code.setEnabled(gadget.kind in ('view','commandline'))
         hint = '空欄＝設定しない。DEFAULT に自動出力'
         if gadget.kind in ('toggle','rtoggle'): hint = 'TRUE / FALSE'
@@ -1371,7 +1375,7 @@ class Window(QMainWindow):
             'width_ref':gadget.display_mode != 'PIXMAP' and 'width' not in fixed_dimensions(gadget) and gadget.kind not in ('toggle','option','rtoggle'),
         }
         relevant['callback'] = self.fields['callback'].isEnabled()
-        relevant['command'] = gadget.kind in ('button','text','toggle') and gadget.button_role not in ('OK','CANCEL','HELP') and not macro
+        relevant['command'] = (gadget.kind in ('button','text','toggle') or (gadget.kind=='option' and gadget.display_mode=='TEXT' and not uses_pairs(gadget))) and gadget.button_role not in ('OK','CANCEL','HELP') and not macro
         for key in ('path','halign','valign','hgap','vgap'): relevant[key] = gadget.layout_mode == 'AUTO'
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): relevant[key] = gadget.layout_mode == 'RELATIVE'
         for key in ('selection_mode','list_mode','table_method','combo_keyword','combo_scroll','combo_tagwid','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','view_aspect','channels','assembly','namespace','control_type'):
@@ -1382,8 +1386,8 @@ class Window(QMainWindow):
         self.prop_layout.setRowVisible(self.initial_choice,boolean)
         self.initial_choice.setCurrentIndex(max(0,self.initial_choice.findData(gadget.initial.upper())))
         for editor,visible in ((self.choose_background,relevant['background']),(self.macro_folder_row,macro),(self.macro_browse,macro),(self.macro_template,macro),(self.choices,gadget.kind in ('option','combo') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
-                               (self.choice_commands,gadget.kind == 'option' and gadget.display_mode == 'TEXT'),
-                               (self.item_values,gadget.kind == 'combo' or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP') or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
+                               (self.choice_commands,uses_pairs(gadget) and not gadget.item_values),
+                               (self.item_values,gadget.kind == 'combo' or (gadget.kind == 'option' and not uses_pairs(gadget)) or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
                                (self.view_code,gadget.kind in ('view','commandline')),
                                (self.container_hint,gadget.kind == 'container'),
                                (self.browse_image,relevant['pixmap_path'] or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP')),(self.fixed_font,gadget.kind == 'textpane'),(self.pane_lines,gadget.kind == 'textpane')):
@@ -1396,7 +1400,7 @@ class Window(QMainWindow):
         self.choices.setPlaceholderText('画像のファイルパスを1行1件で指定' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢の表示文字を1行1件で指定')
         self.prop_layout.setCaption(self.choices,'画像ファイル (1行1画像)' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢 (1行1項目)')
         self.prop_layout.setCaption(self.item_values,'RTEXT 実値 (1行1項目)')
-        width_caption = '幅 (px)' if gadget.display_mode == 'PIXMAP' else '幅（プレビューのみ）' if gadget.kind in ('toggle','option') else '幅'
+        width_caption = '幅 (px)' if gadget.display_mode == 'PIXMAP' else '幅（プレビューのみ）' if (gadget.kind=='toggle' or uses_pairs(gadget)) else '幅'
         self.prop_layout.setCaption(self.fields['width'],width_caption)
         self.prop_layout.setCaption(self.fields['height'],'高さ (px)' if gadget.display_mode == 'PIXMAP' else '高さ / 行数')
         basis='フレーム基準' if gadget.parent else 'フォーム基準'
@@ -1683,10 +1687,11 @@ class Window(QMainWindow):
         g.fixed_font = self.fixed_font.isChecked()
         choices = self.choices.toPlainText()
         g.items = choices.split('\n') if choices else []; g.body = self.body.toPlainText()
-        if g.kind == 'option':
+        if uses_pairs(g) and not g.item_values:
             commands = self.choice_commands.toPlainText().split('\n')
             g.item_commands = (commands if self.choice_commands.toPlainText() else [])
             if len(g.item_commands) < len(g.items): g.item_commands += [''] * (len(g.items) - len(g.item_commands))
+        if g.kind=='option' and not uses_pairs(g):g.item_commands=[]
         if g.kind == 'option' and old_display != g.display_mode:
             for _,owner,key in code_slots(self.form):
                 write_slot(owner,key,rewrite_code(read_slot(owner,key),self.form.name,self.form.name,{old_actual:actual_name(g)}))
@@ -1701,7 +1706,8 @@ class Window(QMainWindow):
         self.refresh(rebuild=table_changed or name_changed)
 
     def image_directories(self):
-        return ((self.path.resolve().parent,) if self.path else ()) + (self.settings.app_directory,)
+        source = (Path(self.form.source_mac_path).parent,) if self.form.source_mac_path else ()
+        return ((self.path.resolve().parent,) if self.path else ()) + source + (self.settings.app_directory,)
 
     def refresh(self, rebuild=True):
         if self._closing or not isValid(self) or not isValid(self.scene): return
@@ -2216,23 +2222,47 @@ class Window(QMainWindow):
 
     def open(self):
         if not self.confirm_discard(): return
-        name, _ = QFileDialog.getOpenFileName(self, '設計を開く', '', '設計 (*.json)')
+        name, _ = QFileDialog.getOpenFileName(self, '設計を開く', '', '設計・MAC (*.json *.mac);;設計 (*.json);;MAC (*.mac)')
         if not name: return
         self.open_design(Path(name),confirmed=True)
 
+    def open_mac(self):
+        if not self.confirm_discard():return
+        name,_=QFileDialog.getOpenFileName(self,'MACを読み込む','','MAC (*.mac);;すべて (*)')
+        if name:self.open_design(Path(name),confirmed=True)
+
+    def edit_imported_code(self):
+        from .import_editor import ImportCodeDialog
+        dialog=ImportCodeDialog(self,self.form)
+        if dialog.exec()==QDialog.Accepted:
+            self.checkpoint();self.form=dialog.result_form;self.refresh()
+        dialog.deleteLater()
+
     def open_design(self,path,*,confirmed=False):
         if not confirmed and not self.confirm_discard():return False
+        imported=Path(path).suffix.lower()=='.mac'
+        result=None
         try:
-            text = Path(path).read_text(encoding='utf-8')
-            form = Form.loads(text)
+            if imported:
+                from .mac_import import read_mac
+                result=read_mac(path);form=result.form
+                form.pml()
+            else:
+                text = Path(path).read_text(encoding='utf-8')
+                form = Form.loads(text)
         except (OSError, ValueError) as e:
             QMessageBox.warning(self, '読込エラー', str(e)); return False
         self.clear_backup()
         self.project_key = uuid.uuid4().hex
-        self.variable_error = False; self.form = form; self.path = Path(path); self.selected = None; self._multi_selection.clear(); self.active_pages.clear(); self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
+        self.variable_error = False; self.form = form; self.path = None if imported else Path(path); self.selected = None; self._multi_selection.clear(); self.active_pages.clear(); self.history.clear(); self.future.clear(); self.dirty = imported; self.refresh()
         self.set_workflow('layout')
-        warning=self.remember_project()
-        if warning:self.statusBar().showMessage(warning)
+        if imported:
+            self.statusBar().showMessage(f'MACを読み込みました: {len(form.gadgets)}部品 / {result.encoding}。設計JSONとして保存してください。')
+            if result.warnings:
+                QMessageBox.information(self,'MAC取り込み結果','\n'.join(result.warnings))
+        else:
+            warning=self.remember_project()
+            if warning:self.statusBar().showMessage(warning)
         return True
 
     def save_as(self):
@@ -2246,7 +2276,7 @@ class Window(QMainWindow):
             QMessageBox.warning(self, '保存エラー', str(e)); return False
         path = self.path
         if path is None or force_dialog:
-            initial = str(path) if path else str(self.settings.app_directory/(self.form.name+'.json'))
+            initial = str(path) if path else str(Path(self.form.source_mac_path).with_suffix('.json')) if self.form.source_mac_path else str(self.settings.app_directory/(self.form.name+'.json'))
             name, _ = QFileDialog.getSaveFileName(self, '名前を付けて保存' if force_dialog else '設計を保存', initial, '設計 (*.json)')
             if not name: return False
             path = Path(name)

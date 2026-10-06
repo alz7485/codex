@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLine
     QComboBox,QDoubleSpinBox,QPushButton,QDialogButtonBox,QTableWidget,QTableWidgetItem,QLabel)
 from .names import rename
 from .color_picker import ColorPicker
-from .model import dimension_editable,normalize_dimensions,change_orientation
+from .model import dimension_editable,normalize_dimensions,change_orientation,uses_pairs
 
 
 class ItemsDialog(QDialog):
@@ -16,7 +16,7 @@ class ItemsDialog(QDialog):
         if gadget.kind=='list':
             self.mode.addItems(['表示名 / 実値','表（複数列）'])
             self.mode.setCurrentIndex(int(gadget.list_mode=='TABLE'))
-        elif gadget.kind=='option' and gadget.display_mode=='TEXT':
+        elif uses_pairs(gadget):
             self.mode.addItems(['表示名 / コマンド','表示名 / 実値'])
             self.mode.setCurrentIndex(int(bool(gadget.item_values)))
         else:self.mode.addItems(['表示名 / 実値'])
@@ -50,9 +50,9 @@ class ItemsDialog(QDialog):
             headings=g.headings or ['列1'];rows=g.rows if g.list_mode=='TABLE' else [[v] for v in g.items]
             data=[headings,*rows];headers=[f'列{i+1}' for i in range(len(headings))]
         else:
-            values=g.item_commands if g.kind=='option' and g.display_mode=='TEXT' and self.mode.currentIndex()==0 else g.item_values
+            values=g.item_commands if uses_pairs(g) and self.mode.currentIndex()==0 else g.item_values
             data=[[v,values[i] if i<len(values) else ''] for i,v in enumerate(g.items)]
-            headers=['表示名','コマンド' if g.kind=='option' and g.display_mode=='TEXT' and self.mode.currentIndex()==0 else '実値']
+            headers=['表示名','コマンド' if uses_pairs(g) and self.mode.currentIndex()==0 else '実値']
         mode=self.mode.currentIndex()
         if mode in self._tables:data=self._tables[mode]
         elif self._loaded_mode is not None:
@@ -93,7 +93,7 @@ class ItemsDialog(QDialog):
         else:
             if g.kind=='list':g.list_mode='SIMPLE';g.headings=[];g.rows=[]
             g.items=[row[0] for row in data];values=[row[1] for row in data]
-            commands=g.kind=='option' and g.display_mode=='TEXT' and self.mode.currentIndex()==0
+            commands=uses_pairs(g) and self.mode.currentIndex()==0
             g.item_commands=values if commands else []
             g.item_values=[] if commands or not any(values) else values
         self.gadget=g;super().accept()
@@ -133,7 +133,7 @@ class MiniProperties(QDialog):
         elif g.kind=='slider':number('slider_value','初期値')
         elif g.kind=='text' or (g.kind=='paragraph' and g.display_mode=='TEXT'):text('initial','初期値')
         if g.display_mode=='PIXMAP' and g.kind in ('button','paragraph','toggle'):text('pixmap_path','画像ファイル')
-        if g.kind in ('button','text','toggle') and g.action_mode=='CODE' and (g.kind!='button' or g.button_role not in ('OK','CANCEL','HELP')):
+        if (g.kind in ('button','text','toggle') or (g.kind=='option' and g.display_mode=='TEXT' and not uses_pairs(g))) and g.action_mode=='CODE' and (g.kind!='button' or g.button_role not in ('OK','CANCEL','HELP')):
             self.call_mode=QComboBox();self.call_mode.addItems(['メソッド名','コマンド'])
             self.call_mode.setCurrentIndex(int(bool(g.command)));fields.addRow('処理方式',self.call_mode)
             widget=QLineEdit(g.command or g.callback);self.fields['action']=widget;fields.addRow('処理',widget)
@@ -141,7 +141,7 @@ class MiniProperties(QDialog):
         if g.kind in ('button','paragraph','list'):
             row=QHBoxLayout();widget=QLineEdit(g.background);self.fields['background']=widget;row.addWidget(widget)
             button=QPushButton('色を選ぶ');button.clicked.connect(self.choose_color);row.addWidget(button);fields.addRow('色番号',row)
-        sized=g.kind not in ('toggle','rtoggle','option','frame') or g.display_mode=='PIXMAP' or (g.kind=='frame' and g.frame_style in ('TABSET','TOOLBAR'))
+        sized=g.kind not in ('toggle','rtoggle','option','frame') or g.display_mode=='PIXMAP' or (g.kind=='option' and not uses_pairs(g)) or (g.kind=='frame' and g.frame_style in ('TABSET','TOOLBAR'))
         if g.kind=='combo':text('combo_scroll','SCROLL（表示量）')
         if sized:number('width','WIDTH')
         if g.kind in ('line','slider','list','view','alpha','container','textpane','selector') or g.display_mode=='PIXMAP' or (g.kind=='frame' and g.frame_style=='TOOLBAR'):number('height','HEIGHT')

@@ -9,6 +9,10 @@ IDENTIFIER = re.compile(r'[A-Za-z][A-Za-z0-9_]*\Z')
 CHAR_WIDTH, LINE_HEIGHT = 10, 26
 
 
+def uses_pairs(gadget):
+    return gadget.kind == 'option' and gadget.display_mode == 'TEXT' and gadget.option_style == 'PAIRS'
+
+
 def fixed_dimensions(gadget):
     if gadget.display_mode == 'PIXMAP':return {}
     if gadget.kind in ('text','paragraph','toggle','option','combo'):return {'height':1}
@@ -111,6 +115,7 @@ class Gadget:
     combo_keyword: str = 'COMBO'
     combo_scroll: str = '20'
     combo_tagwid: str = ''
+    option_style: str = 'PAIRS'
     slider_orientation: str = 'HORIZONTAL'
     slider_min: float = 0
     slider_max: float = 100
@@ -161,6 +166,13 @@ class Menu:
 
 
 @dataclass
+class Method:
+    name: str
+    signature: str = '()'
+    body: str = ''
+
+
+@dataclass
 class Form:
     name: str = 'userform'
     title: str = 'User Form'
@@ -178,6 +190,12 @@ class Form:
     okcall: str = ''
     cancelcall: str = ''
     dock_side: str = ''  # Empty preserves legacy dock_right projects.
+    preamble_code: str = ''
+    constructor_body: str = ''
+    constructor_mode: str = 'GENERATED'
+    extra_methods: list[Method] = field(default_factory=list)
+    auto_default: bool = True
+    source_mac_path: str = ''
 
     def docking_side(self):
         return self.dock_side or ('RIGHT' if self.dock_right else 'NONE')
@@ -320,14 +338,19 @@ class Form:
                     raise ValueError('メニュー項目の表示名・コマンドは文字列で指定してください。')
                 literal(item.label)
                 literal(item.command,allow_expansion=True)
-        for key in ('name', 'title', 'after_show_code', 'default_body','form_type','initcall','okcall','cancelcall','dock_side'):
+        for key in ('name', 'title', 'after_show_code', 'default_body','form_type','initcall','okcall','cancelcall','dock_side','preamble_code','constructor_body','source_mac_path'):
             if not isinstance(getattr(self, key), str): raise ValueError(f'{key} は文字列で指定してください。')
+        if not isinstance(self.auto_default,bool):raise ValueError('DEFAULTの自動呼び出し設定は真偽値にしてください。')
+        if self.constructor_mode not in ('GENERATED','SOURCE'):raise ValueError('コンストラクタの生成形式が不正です。')
+        if '\x00' in self.source_mac_path:raise ValueError('取り込み元のパスにNULを使用できません。')
+        if not isinstance(self.extra_methods,list) or any(not isinstance(method,Method) for method in self.extra_methods):
+            raise ValueError('追加メソッドの形式が不正です。')
         if not isinstance(self.variables, dict) or any(not isinstance(k,str) or not isinstance(v,str) for k,v in self.variables.items()):
             raise ValueError('変数は名前と初期値の文字列を指定してください。')
         if not isinstance(self.gadgets, list) or any(not isinstance(g,Gadget) for g in self.gadgets):
             raise ValueError('部品は配列で指定してください。')
         for g in self.gadgets:
-            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','combo_scroll','combo_tagwid','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method','display_mode','pixmap_path','popup_menu','database','button_role','action_mode','macro_path','macro_flag','macro_value','comment'):
+            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','combo_scroll','combo_tagwid','option_style','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method','display_mode','pixmap_path','popup_menu','database','button_role','action_mode','macro_path','macro_flag','macro_value','comment'):
                 if not isinstance(getattr(g,key),str): raise ValueError(f'部品の {key} は文字列で指定してください。')
             for key in ('items','item_commands','item_values','headings','pane_lines'):
                 value = getattr(g,key)
@@ -402,7 +425,7 @@ class Form:
                 seen.add(ancestor.name.lower()); ancestor = self.parent_gadget(ancestor)
             if g.kind not in KINDS or not (re.fullmatch(r'_?[A-Za-z][A-Za-z0-9_]*',g.name) if g.kind == 'option' else IDENTIFIER.fullmatch(g.name)):
                 raise ValueError('部品の種類または名前が不正です。')
-            effective_name = ('_' + g.name.lstrip('_') if g.kind == 'option' and g.display_mode == 'TEXT' else g.name).lower()
+            effective_name = ('_' + g.name.lstrip('_') if uses_pairs(g) else g.name).lower()
             if effective_name in names:
                 raise ValueError(f'部品名が重複しています: {g.name}')
             names.add(effective_name)
@@ -429,6 +452,7 @@ class Form:
             literal(g.label)
             if not isinstance(g.fixed_font,bool): raise ValueError('等幅フォント設定は真偽値で指定してください。')
             if g.display_mode not in ('TEXT','PIXMAP'): raise ValueError('表示方式は TEXT / PIXMAP を指定してください。')
+            if g.option_style not in ('PAIRS','GADGET'):raise ValueError('OPTIONの宣言形式が不正です。')
             if g.display_mode == 'PIXMAP':
                 if g.kind not in ('paragraph','button','toggle','option'): raise ValueError('PIXMAP は PARAGRAPH / BUTTON / TOGGLE / OPTION 用です。')
                 if g.kind == 'option' and not IDENTIFIER.fullmatch(g.name): raise ValueError('画像 OPTION の部品名は英字で始めてください。')
@@ -500,11 +524,11 @@ class Form:
                     raise ValueError('OPTION の選択肢とコマンドの行数を揃えてください。')
                 for command in g.item_commands: literal(command, allow_expansion=True)
             if g.command:
-                if g.kind not in ('toggle', 'text', 'button'): raise ValueError('CALL コマンド欄は TOGGLE / TEXT / BUTTON 用です。')
+                if g.kind not in ('toggle', 'text', 'button') and not (g.kind=='option' and g.display_mode=='TEXT' and not uses_pairs(g)): raise ValueError('この部品にはCALLコマンドを指定できません。')
                 literal(g.command, allow_expansion=True)
                 if g.callback: raise ValueError('メソッド名と CALL コマンドはどちらか一方だけ指定してください。')
             if g.callback:
-                if g.kind in ('paragraph', 'line', 'frame', 'rtoggle', 'view', 'commandline', 'container','textpane') or (g.kind == 'option' and g.display_mode != 'PIXMAP'):
+                if g.kind in ('paragraph', 'line', 'frame', 'rtoggle', 'view', 'commandline', 'container','textpane') or uses_pairs(g):
                     raise ValueError('ラベル・LINE・FRAME・OPTION にはメソッド型コールバックを指定できません。')
                 if not IDENTIFIER.fullmatch(g.callback) or g.callback.lower() == self.name.lower():
                     raise ValueError('メソッド名が不正、またはコンストラクタと重複しています。')
@@ -543,6 +567,12 @@ class Form:
                 if not IDENTIFIER.fullmatch(method) or method.lower() in methods:
                     raise ValueError('複数列 LIST のメソッド名が不正、または他のメソッドと重複しています。')
                 methods.add(method.lower())
+        for method in self.extra_methods:
+            if not isinstance(method.name,str) or not IDENTIFIER.fullmatch(method.name) or method.name.lower() in methods:
+                raise ValueError('追加メソッド名が不正、または他のメソッドと重複しています。')
+            if not isinstance(method.signature,str) or not re.fullmatch(r'\([^()\r\n]*\)(?:\s+IS\s+[A-Za-z][A-Za-z0-9_.]*)?',method.signature,re.I) or not isinstance(method.body,str):
+                raise ValueError('追加メソッドの引数・本文の形式が不正です。')
+            methods.add(method.name.lower())
         self.initial_lines()
         self.sync_tabs()
 
@@ -572,6 +602,7 @@ class Form:
                 menu['items'] = [MenuItem(**item) for item in menu['items']]
                 menus.append(Menu(**menu))
             raw['menus'] = menus
+            raw['extra_methods'] = [Method(**method) for method in raw.get('extra_methods',[])]
             result = cls(**raw)
             if 'gadget_order' in data:
                 order=data['gadget_order']
@@ -587,7 +618,7 @@ class Form:
         """Validated initial values emitted only in DEFAULT, after choices are ready."""
         lines=[];radio_groups=set()
         for g in self.gadgets:
-            target='_'+g.name.lstrip('_') if g.kind == 'option' and g.display_mode == 'TEXT' else g.name
+            target='_'+g.name.lstrip('_') if uses_pairs(g) else g.name
             if g.kind == 'slider':
                 lines.append(f'  !this.{g.name}.val = {format(g.slider_value,".8g")}')
             elif g.kind == 'textpane':
@@ -642,6 +673,7 @@ class Form:
         def active_callback(g):return bool(g.callback and g.callback.lower() in active_methods)
         n = lambda v: format(v, '.8g')
         lines = [f'VAR !!{name} {literal(value)}' for name, value in self.variables.items()]
+        if self.preamble_code:lines.extend([user_code(self.preamble_code),''])
         lines += [f'kill !!{self.name}', '-- Generated by E3D PML Form Designer',
                  '-- Target: E3D 4.0 (runtime compatibility not yet verified)',
                  (f'setup form !!{self.name} MAIN' if self.form_type == 'MAIN' else f'setup form !!{self.name} DIALOG DOCK {self.docking_side()}' if self.docking_side() != 'NONE'
@@ -707,6 +739,10 @@ class Form:
             elif g.kind == 'option':
                 if g.display_mode == 'PIXMAP':
                     line = f'OPTION .{g.name} {position} {label} PIXMAP {width_clause} HEIGHT {n(g.height)}'+callback
+                elif not uses_pairs(g):
+                    line = f'OPTION .{g.name} {position} {label} {width_clause}'
+                    command=g.command or (f'!this.{g.callback}()' if active_callback(g) else '')
+                    if command:line += ' CALL '+literal(command,allow_expansion=True)
                 else:
                     object_name = '_' + g.name.lstrip('_')
                     line = f"OPTION {object_name} {position} {label}"
@@ -773,6 +809,7 @@ class Form:
         method_start = len(lines)
         method_offsets = [method_start]
         lines.append(f'define method .{self.name}()')
+        constructor_start = len(lines)
         for menu in self.menus:
             if menu.popup:
                 for item in menu.items:
@@ -791,18 +828,20 @@ class Form:
             if g.kind == 'container' and g.assembly:
                 lines += [f'  !this.{g.name}Control = object {g.control_type}()',
                           f'  !this.{g.name}.Control = !this.{g.name}Control.handle()']
-            if (g.kind in ('list','combo') or (g.kind == 'option' and (g.display_mode == 'PIXMAP' or g.item_values))) and g.items and not (g.kind == 'list' and g.list_mode == 'TABLE'):
+            if (g.kind in ('list','combo') or (g.kind == 'option' and (not uses_pairs(g) or g.item_values))) and g.items and not (g.kind == 'list' and g.list_mode == 'TABLE'):
                 lines.append('  !choices = object ARRAY()')
                 for i, item in enumerate(g.items, 1):
                     value=image_path_literal(item) if g.kind=='option' and g.display_mode=='PIXMAP' else literal(item)
                     lines.append(f'  !choices[{i}] = {value}')
-                target = '_'+g.name.lstrip('_') if g.kind=='option' and g.display_mode=='TEXT' else g.name
+                target = '_'+g.name.lstrip('_') if uses_pairs(g) else g.name
                 lines.append(f'  !this.{target}.dtext = !choices')
                 if g.item_values:
                     lines.append('  !values = object ARRAY()')
                     for i, value in enumerate(g.item_values,1): lines.append(f'  !values[{i}] = {literal(value)}')
                     lines.append(f'  !this.{target}.rtext = !values')
-        if initial_lines: lines.append('  !this.DEFAULT()')
+        if self.constructor_mode == 'SOURCE':del lines[constructor_start:]
+        if self.constructor_body:lines.append(user_code(self.constructor_body))
+        if initial_lines and self.auto_default and self.constructor_mode == 'GENERATED': lines.append('  !this.DEFAULT()')
         lines.extend(['endmethod', ''])
         for g in self.gadgets:
             if g.kind != 'list' or g.list_mode != 'TABLE': continue
@@ -830,6 +869,9 @@ class Form:
                 signature = '(!gad is GADGET, !event is STRING)' if g.kind in ('slider','combo') else '()'
                 method_offsets.append(len(lines))
                 lines += [f'define method .{g.callback}{signature}', user_code(g.body), 'endmethod', '']
+        for method in self.extra_methods:
+            method_offsets.append(len(lines))
+            lines += [f'define method .{method.name} '+user_code(method.signature),user_code(method.body),'endmethod','']
         from .method_order import order_methods
         ends = method_offsets[1:] + [len(lines)]
         blocks = [lines[start:end] for start,end in zip(method_offsets,ends)]
