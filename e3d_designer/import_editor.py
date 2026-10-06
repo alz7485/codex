@@ -47,6 +47,12 @@ class ImportCodeDialog(QDialog):
             editor.setStyleSheet('font-family: monospace; font-size: 12px;')
             highlighter=PmlHighlighter(editor.document());highlighter.set_symbols(form)
             self.highlighters.append(highlighter)
+        if form.partial_import_source:
+            for title,value in (('省略理由','\n'.join(form.partial_import_notes)),
+                                ('元MAC（参照用）',form.partial_import_source)):
+                editor=QPlainTextEdit(value);editor.setReadOnly(True);tabs.addTab(editor,title)
+                if title.startswith('元MAC'):
+                    highlighter=PmlHighlighter(editor.document());self.highlighters.append(highlighter)
         self.error=QLabel();self.error.setWordWrap(True);layout.addWidget(self.error)
         buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);layout.addWidget(buttons)

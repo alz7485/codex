@@ -521,8 +521,17 @@ class Window(QMainWindow):
         edit_menu.addAction(names_action)
         import_action=file_menu.addAction('MACを読み込む…')
         import_action.triggered.connect(self.open_mac)
+        partial_action=file_menu.addAction('MACを部分的に読み込む…')
+        partial_action.triggered.connect(self.open_partial_mac)
         source_action=edit_menu.addAction('取り込みコードを編集…')
         source_action.triggered.connect(self.edit_imported_code)
+        methods_action=edit_menu.addAction('補助メソッド管理…')
+        methods_action.triggered.connect(self.manage_methods)
+        self.partial_notice=QPushButton('部分取り込みの省略箇所')
+        self.partial_notice.setToolTip('未復元の宣言と元MACを確認します。省略した処理はMACへ出力されません。')
+        self.partial_notice.clicked.connect(self.edit_imported_code)
+        self.statusBar().addPermanentWidget(self.partial_notice)
+        self.partial_notice.hide()
         self.recent_menu=QMenu('最近の設計',self)
         recent_button=QToolButton();recent_button.setText('最近の設計')
         recent_button.setMenu(self.recent_menu);recent_button.setPopupMode(QToolButton.InstantPopup)
@@ -1751,6 +1760,8 @@ class Window(QMainWindow):
 
     def refresh(self, rebuild=True):
         if self._closing or not isValid(self) or not isValid(self.scene): return
+        self.partial_notice.setVisible(bool(self.form.partial_import_source))
+        self.partial_notice.setText(f'部分取り込み: {len(self.form.partial_import_notes)}箇所を省略')
         self.loading = True
         image_directories = self.image_directories()
         for gadget in self.form.gadgets:
@@ -2276,6 +2287,11 @@ class Window(QMainWindow):
         name,_=QFileDialog.getOpenFileName(self,'MACを読み込む','','MAC (*.mac);;すべて (*)')
         if name:self.open_design(Path(name),confirmed=True)
 
+    def open_partial_mac(self):
+        if not self.confirm_discard():return
+        name,_=QFileDialog.getOpenFileName(self,'MACを部分的に読み込む','','MAC (*.mac);;すべて (*)')
+        if name:self.open_design(Path(name),confirmed=True,partial=True)
+
     def edit_imported_code(self):
         from .import_editor import ImportCodeDialog
         dialog=ImportCodeDialog(self,self.form)
@@ -2283,14 +2299,21 @@ class Window(QMainWindow):
             self.checkpoint();self.form=dialog.result_form;self.refresh()
         dialog.deleteLater()
 
-    def open_design(self,path,*,confirmed=False):
+    def manage_methods(self):
+        from .method_manager import MethodManagerDialog
+        dialog=MethodManagerDialog(self,self.form)
+        if dialog.exec()==QDialog.Accepted:
+            self.checkpoint();self.form=dialog.result_form;self.refresh()
+        dialog.deleteLater()
+
+    def open_design(self,path,*,confirmed=False,partial=False):
         if not confirmed and not self.confirm_discard():return False
         imported=Path(path).suffix.lower()=='.mac'
         result=None
         try:
             if imported:
                 from .mac_import import read_mac
-                result=read_mac(path);form=result.form
+                result=read_mac(path,partial=partial);form=result.form
                 form.pml()
             else:
                 text = Path(path).read_text(encoding='utf-8')
@@ -2302,7 +2325,8 @@ class Window(QMainWindow):
         self.variable_error = False; self.form = form; self.path = None if imported else Path(path); self.selected = None; self._multi_selection.clear(); self.active_pages.clear(); self.history.clear(); self.future.clear(); self.dirty = imported; self.refresh()
         self.set_workflow('layout')
         if imported:
-            self.statusBar().showMessage(f'MACを読み込みました: {len(form.gadgets)}部品 / {result.encoding}。設計JSONとして保存してください。')
+            mode='部分取り込み' if form.partial_import_source else '読み込み'
+            self.statusBar().showMessage(f'MACを{mode}しました: {len(form.gadgets)}部品 / {result.encoding}。設計JSONとして保存してください。')
             if result.warnings:
                 QMessageBox.information(self,'MAC取り込み結果','\n'.join(result.warnings))
         else:

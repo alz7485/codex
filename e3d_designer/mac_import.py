@@ -702,15 +702,18 @@ def split_arguments(text):
     return [value[0] for value in values] if all(value and value[1]=='string' for value in values) else []
 
 
-def import_mac(text,source_path=None):
+def import_mac(text,source_path=None,*,partial=False):
     if len(text)>4*1024*1024 or '\x00' in text:raise ValueError('MACが大きすぎるか、NULを含んでいます。')
     text=text.replace('\r\n','\n').replace('\r','\n').lstrip('\ufeff')
-    result=Importer(text).parse()
+    if partial:
+        from .partial_import import recover_mac
+        result=recover_mac(text)
+    else:result=Importer(text).parse()
     if source_path is not None:result.form.source_mac_path=str(Path(source_path).resolve())
     return result
 
 
-def read_mac(path):
+def read_mac(path,*,partial=False):
     with Path(path).open('rb') as stream:data=stream.read(4*1024*1024+1)
     text,encoding=decode_mac(data)
-    result=import_mac(text,path);result.encoding=encoding;return result
+    result=import_mac(text,path,partial=partial);result.encoding=encoding;return result

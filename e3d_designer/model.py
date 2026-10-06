@@ -205,6 +205,8 @@ class Form:
     default_mode: str = 'GENERATED'
     source_mac_path: str = ''
     program_mode: str = 'GENERATED'
+    partial_import_source: str = ''
+    partial_import_notes: list[str] = field(default_factory=list)
 
     def docking_side(self):
         return self.dock_side or ('RIGHT' if self.dock_right else 'NONE')
@@ -359,6 +361,10 @@ class Form:
         if not isinstance(self.keep_default,bool):raise ValueError('取り込んだDEFAULTの保持設定は真偽値にしてください。')
         if self.default_mode not in ('GENERATED','SOURCE'):raise ValueError('DEFAULTの生成形式が不正です。')
         if self.program_mode not in ('GENERATED','SOURCE'):raise ValueError('表示プログラムの生成形式が不正です。')
+        if not isinstance(self.partial_import_source,str) or '\x00' in self.partial_import_source:
+            raise ValueError('部分取り込みの原文が不正です。')
+        if not isinstance(self.partial_import_notes,list) or any(not isinstance(note,str) for note in self.partial_import_notes):
+            raise ValueError('部分取り込みの記録は文字列の配列にしてください。')
         if self.constructor_mode not in ('GENERATED','SOURCE'):raise ValueError('コンストラクタの生成形式が不正です。')
         if '\x00' in self.source_mac_path:raise ValueError('取り込み元のパスにNULを使用できません。')
         if not isinstance(self.extra_methods,list) or any(not isinstance(method,Method) for method in self.extra_methods):
