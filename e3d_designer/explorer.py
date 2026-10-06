@@ -34,12 +34,19 @@ class ObjectExplorer(QTreeWidget):
     def item(self,index):return self.nodes.get(index)
     def count(self):return len(self.nodes)
     def currentRow(self):return self.currentItem().data(0,Qt.UserRole) if self.currentItem() else -1
-    def setCurrentRow(self,index):
+    def setCurrentRow(self,index,reveal=True):
         item=self.nodes.get(index,self.root)
         parent=item.parent() if item else None
-        while parent:parent.setExpanded(True);parent=parent.parent()
+        while reveal and parent:parent.setExpanded(True);parent=parent.parent()
+        collapsed=[]
+        if not reveal:
+            parent=item.parent() if item else None
+            while parent:
+                if not parent.isExpanded():collapsed.append(parent)
+                parent=parent.parent()
         self.setCurrentItem(item)
-        if item:self.scrollToItem(item)
+        for parent in collapsed:parent.setExpanded(False)
+        if reveal and item:self.scrollToItem(item)
     def startDrag(self,actions):
         self._drag_index=self.currentRow()
         if self._drag_index<0:return

@@ -72,6 +72,50 @@ class ExplorerTests(unittest.TestCase):
         self.assertEqual([g.name for g in self.w.form.gadgets],['Second','First'])
         self.assertEqual(tree.count(),2);self.assertIsNotNone(self.node('First'));self.w.form.validate()
 
+    def test_reparent_rejects_broken_relative_dependency_without_mutation(self):
+        self.load(Form(gadgets=[Gadget(name='Source',x=2,y=2,width=8),
+            Gadget(kind='frame',name='Target',width=30,height=12,layout_mode='RELATIVE',
+                xref='Source',yref='Source',xedge='XMAX',yedge='YMIN',xoffset=2)]))
+        original=self.w.form.dumps();self.w.dirty=False
+        self.w.move_tree_gadget(0,'Target');self.app.processEvents()
+        self.assertEqual(self.w.form.dumps(),original)
+        self.assertEqual(self.w.history,[]);self.assertFalse(self.w.dirty)
+        self.assertTrue(self.w.statusBar().currentMessage())
+
+    def test_refresh_keeps_selected_child_folder_collapsed(self):
+        self.load(Form(gadgets=[Gadget(kind='frame',name='Group',width=30,height=12),
+            Gadget(name='Child',parent='Group',width=8)]))
+        self.w.objects.setCurrentRow(1);self.node('Group').setExpanded(False)
+        self.w.form.named('Child').label='Changed';self.w.refresh();self.app.processEvents()
+        self.assertFalse(self.node('Group').isExpanded())
+        self.assertEqual(self.w.objects.currentRow(),1)
+        self.w.objects.setCurrentRow(1)
+        self.assertTrue(self.node('Group').isExpanded())
+
+    def test_drop_last_child_on_own_folder_is_noop(self):
+        self.load(Form(gadgets=[Gadget(kind='frame',name='Group',width=30,height=12),
+            Gadget(name='Last',parent='Group',width=8),Gadget(name='Other',x=40,width=8)]))
+        original=self.w.form.dumps();self.w.dirty=False
+        self.w.move_tree_gadget(1,'Group');self.app.processEvents()
+        self.assertEqual(self.w.form.dumps(),original)
+        self.assertEqual(self.w.history,[]);self.assertFalse(self.w.dirty)
+
+    def test_reparent_invalid_auto_layout_is_rejected_without_exception(self):
+        self.load(Form(gadgets=[Gadget(kind='frame',name='Group',width=30,height=12),
+            Gadget(name='A',parent='Group',width=8),
+            Gadget(name='B',parent='Group',width=8,layout_mode='AUTO')]))
+        self.w.move_tree_gadget(2,'Group',1);self.app.processEvents()
+        original=[g.name for g in self.w.form.gadgets];history=len(self.w.history)
+        # The same invalid arrangement at form level must not crash its resize handle.
+        from e3d_designer.form_item import FormItem
+        invalid=Form(gadgets=[Gadget(name='Auto',layout_mode='AUTO')])
+        item=FormItem(invalid,10,10)
+        self.assertFalse(item.resize_to(invalid.width+1,invalid.height+1))
+        self.w.move_tree_gadget(1,'');self.app.processEvents()
+        self.assertEqual([g.name for g in self.w.form.gadgets],original)
+        self.assertEqual(len(self.w.history),history)
+        self.w.undo();self.w.form.validate()
+
     def test_tree_double_click_edits_gadget_and_root(self):
         self.load(Form(gadgets=[Gadget(name='Run')]))
         def edit_gadget(d):d.fields['label'].setText('Updated');d.accept();return 1

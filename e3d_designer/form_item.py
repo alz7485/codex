@@ -46,10 +46,12 @@ class FormItem(QGraphicsObject):
         super().mousePressEvent(event)
     def resize_to(self,width,height):
         width=max(1,min(300,round(width,1)));height=max(1,min(300,round(height,1)))
-        for g in self.form.gadgets:
-            if g.parent:continue
-            x,y,w,h=self.form.geometry(g)
-            if x<-.001 or y<-.001 or x+w>width+.001 or y+h>height+.001:return False
+        try:
+            for g in self.form.gadgets:
+                if g.parent:continue
+                x,y,w,h=self.form.geometry(g)
+                if x<-.001 or y<-.001 or x+w>width+.001 or y+h>height+.001:return False
+        except ValueError:return False
         if (width,height)==(self.form.width,self.form.height):return False
         self.form.width,self.form.height=width,height
         self.prepareGeometryChange();self._width,self._height=width,height;self.update()

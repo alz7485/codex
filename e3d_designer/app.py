@@ -1607,7 +1607,7 @@ class Window(QMainWindow):
             if editor.text() != getattr(self.form,event): editor.setText(getattr(self.form,event))
         self.load_number(self.fw,self.form.width); self.load_number(self.fh,self.form.height)
         self.objects.rebuild(self.form,gadget_title,lambda g:PALETTE[g.kind][0])
-        if self.selected is None:self.objects.setCurrentRow(-1)
+        if self.selected is None:self.objects.setCurrentRow(-1,reveal=False)
         self.scene.blockSignals(True); self.scene.clear()
         self.scene.setSceneRect(-12,-30,self.form.width*SX+24,self.form.height*SY+42)
         self.form_item=FormItem(self.form,SX,SY);self.scene.addItem(self.form_item)
@@ -1625,7 +1625,7 @@ class Window(QMainWindow):
         self.scene.blockSignals(False)
         self.apply_page_visibility()
         if self.selected is not None and self.selected < len(self.form.gadgets):
-            self.objects.setCurrentRow(self.selected); g = self.form.gadgets[self.selected]
+            self.objects.setCurrentRow(self.selected,reveal=False); g = self.form.gadgets[self.selected]
             self.populate_parents(g)
             self.enable_layout_fields(g)
             for key, w in self.fields.items():
@@ -1688,17 +1688,20 @@ class Window(QMainWindow):
         slot=order.index(before) if before in order else len(order)
         order[slot:slot]=branch
         if same_parent:
+            siblings=[i for i,item in enumerate(self.form.gadgets) if item.parent.lower()==g.parent.lower()]
+            if [i for i in order if i in siblings]==siblings:return
             self.reorder_objects(order,index);return
         draft=copy.deepcopy(self.form);moved=draft.gadgets[index]
-        x,y,width,height=draft.geometry(moved);ox,oy=draft.offset(moved);x+=ox;y+=oy
-        moved.parent=parent_name;moved.layout_mode='ABSOLUTE';moved.xref=moved.yref=moved.width_ref=''
-        moved.width,moved.height=native_size(moved,width,height)
-        ox,oy=draft.offset(moved);pw,ph=draft.geometry(draft.parent_gadget(moved))[2:] if parent else (draft.width,draft.height)
-        if width>pw+.001 or height>ph+.001:
-            self.statusBar().showMessage('移動先のフレームに部品全体が収まりません。');return
-        moved.x=round(max(0,min(x-ox,pw-width)),2);moved.y=round(max(0,min(y-oy,ph-height)),2)
-        draft.gadgets=[draft.gadgets[i] for i in order];draft.sync_tabs()
-        try:draft.validate()
+        try:
+            x,y,width,height=draft.geometry(moved);ox,oy=draft.offset(moved);x+=ox;y+=oy
+            moved.parent=parent_name;moved.layout_mode='ABSOLUTE';moved.xref=moved.yref=moved.width_ref=''
+            moved.width,moved.height=native_size(moved,width,height)
+            ox,oy=draft.offset(moved);pw,ph=draft.geometry(draft.parent_gadget(moved))[2:] if parent else (draft.width,draft.height)
+            if width>pw+.001 or height>ph+.001:
+                self.statusBar().showMessage('移動先のフレームに部品全体が収まりません。');return
+            moved.x=round(max(0,min(x-ox,pw-width)),2);moved.y=round(max(0,min(y-oy,ph-height)),2)
+            draft.gadgets=[draft.gadgets[i] for i in order];draft.sync_tabs()
+            draft.validate()
         except ValueError as error:self.statusBar().showMessage(str(error));return
         self.checkpoint();self.form=draft;self.selected=order.index(index)
         QTimer.singleShot(0,self.refresh)
