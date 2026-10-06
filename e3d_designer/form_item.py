@@ -11,7 +11,7 @@ class FormItem(QGraphicsObject):
 
     def __init__(self,form,sx,sy):
         super().__init__();self.form=form;self.sx=sx;self.sy=sy
-        self._width=form.width;self._height=form.height;self._resize=None
+        self._width=form.width;self._height=form.height;self._resize=None;self._cancelled=False
         self.setFlags(QGraphicsItem.ItemIsSelectable)
         self.setAcceptHoverEvents(True);self.setZValue(-100000)
         self.setToolTip('フォーム全体：クリックで設定、ダブルクリックで編集。右・下・右下のハンドルでサイズ変更。')
@@ -35,6 +35,8 @@ class FormItem(QGraphicsObject):
         painter.setPen(QPen(QColor('#2277cc'),1));painter.setBrush(QColor('#ffffff'))
         for handle in self.handles().values():painter.drawRect(handle)
     def mousePressEvent(self,event):
+        if event.button()!=Qt.LeftButton:event.ignore();return
+        self._cancelled=False
         if event.button()==Qt.LeftButton:
             for item in self.scene().selectedItems():
                 if item is not self:item.setSelected(False)
@@ -44,6 +46,13 @@ class FormItem(QGraphicsObject):
                 self._resize=(handle,event.scenePos(),self.form.width,self.form.height,copy.deepcopy(self.form))
                 event.accept();return
         super().mousePressEvent(event)
+    def cancel_interaction(self):
+        if self._resize is None:return False
+        _,_,width,height,_=self._resize;self._resize=None;self._cancelled=True
+        self.form.width,self.form.height=width,height
+        self.prepareGeometryChange();self._width,self._height=width,height;self.update()
+        self.resizing.emit();return True
+
     def resize_to(self,width,height):
         width=max(1,min(300,round(width,1)));height=max(1,min(300,round(height,1)))
         try:
@@ -57,6 +66,7 @@ class FormItem(QGraphicsObject):
         self.prepareGeometryChange();self._width,self._height=width,height;self.update()
         self.resizing.emit();return True
     def mouseMoveEvent(self,event):
+        if self._cancelled:event.accept();return
         if self._resize:
             handle,origin,width,height,_=self._resize;delta=event.scenePos()-origin
             self.resize_to(width+delta.x()/self.sx if handle in ('width','both') else width,
@@ -64,6 +74,9 @@ class FormItem(QGraphicsObject):
             event.accept();return
         super().mouseMoveEvent(event)
     def mouseReleaseEvent(self,event):
+        if event.button()!=Qt.LeftButton:event.ignore();return
+        if self._cancelled:
+            self._cancelled=False;event.accept();return
         if self._resize:
             _,_,width,height,old=self._resize;self._resize=None
             if (self.form.width,self.form.height)!=(width,height):self.resized.emit(old)

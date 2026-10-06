@@ -5,7 +5,7 @@ import sys
 from shiboken6 import isValid
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QRectF, Signal, QMimeData, QTimer
+from PySide6.QtCore import Qt, QRectF, Signal, QMimeData, QTimer, QEvent
 from PySide6.QtGui import QAction, QColor, QPainter, QPen, QKeySequence, QPainterPath, QPixmap, QFont, QIcon
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QFormLayout, QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
@@ -172,6 +172,7 @@ class Item(QGraphicsObject):
         self._move_pos = None
         self._move_origin = None
         self._move_children = []
+        self._cancelled = False
         self._sync_geometry = False
         image_path = gadget.pixmap_path if gadget.kind != 'option' else (gadget.items[0] if gadget.items else '')
         if image_path and not Path(image_path).is_absolute():
@@ -204,6 +205,8 @@ class Item(QGraphicsObject):
         return None
 
     def mousePressEvent(self, event):
+        if event.button()!=Qt.LeftButton:event.ignore();return
+        self._cancelled=False
         g = self.gadget
         handle = self.handle_at(event.pos())
         if event.button() == Qt.LeftButton and handle:
@@ -222,6 +225,19 @@ class Item(QGraphicsObject):
             self._move_children=[(item,item.pos()) for item in self.scene().items()
                                  if isinstance(item,Item) and item.gadget.name.lower() in descendants]
         super().mousePressEvent(event)
+
+    def cancel_interaction(self):
+        if self._resize is not None:
+            _,_,width,height,_=self._resize;self._resize=None
+            self.gadget.width,self.gadget.height=width,height
+            self.resizing.emit()
+        elif self._move_start is not None:
+            self._sync_geometry=True;self.setPos(self._move_pos);self._sync_geometry=False
+            for child,origin in self._move_children:
+                child._sync_geometry=True;child.setPos(origin);child._sync_geometry=False
+        else:return False
+        self._move_start=None;self._move_children=[];self._cancelled=True
+        return True
 
     def mouseDoubleClickEvent(self,event):
         if event.button()==Qt.LeftButton:
@@ -248,6 +264,7 @@ class Item(QGraphicsObject):
         super().hoverMoveEvent(event)
 
     def mouseMoveEvent(self, event):
+        if self._cancelled:event.accept();return
         if self._resize is None:
             if self._move_start is not None:
                 # Keep Qt's selected-item drag cache out of single-object moves.
@@ -388,6 +405,9 @@ class Item(QGraphicsObject):
         return super().itemChange(change, value)
 
     def mouseReleaseEvent(self, event):
+        if event.button()!=Qt.LeftButton:event.ignore();return
+        if self._cancelled:
+            self._cancelled=False;event.accept();return
         if self._resize is not None:
             _,_,width,height,old = self._resize; self._resize = None
             if (self.gadget.width,self.gadget.height) != (width,height): self.resized.emit(old)
@@ -505,6 +525,7 @@ class Window(QMainWindow):
         left.setMinimumWidth(220); columns.addWidget(left)
         self.scene = Scene(self); self.scene.selectionChanged.connect(self.selection_changed)
         self.view = QGraphicsView(self.scene)
+        self.view.installEventFilter(self);self.view.viewport().installEventFilter(self)
         self.view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.view.customContextMenuRequested.connect(self.preview_popup)
         self.edit_actions = []
@@ -1759,6 +1780,15 @@ class Window(QMainWindow):
         from PySide6.QtCore import QTimer
         QTimer.singleShot(0,self.refresh)
 
+    def eventFilter(self,watched,event):
+        if event.type()==QEvent.KeyPress and event.key()==Qt.Key_Escape:
+            if watched in (self.view,self.view.viewport()):
+                item=self.scene.mouseGrabberItem()
+                if isinstance(item,(Item,FormItem)) and item.cancel_interaction():
+                    self.statusBar().showMessage('操作を取り消しました。')
+                    event.accept();return True
+        return super().eventFilter(watched,event)
+
     def selection_changed(self):
         if self._closing or not isValid(self) or not isValid(self.scene) or self.loading: return
         items = self.scene.selectedItems()
@@ -1807,29 +1837,30 @@ class Window(QMainWindow):
         index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name),None)
         if index is None:return
         candidate=copy.deepcopy(self.form);g=candidate.gadgets[index]
-        _,_,width,height=candidate.geometry(g)
-        excluded={name.lower(),*(child.lower() for child in candidate.descendants(name))}
-        visible={item.gadget.name.lower() for item in self.scene.items() if isinstance(item,Item) and item.isVisible()}
-        targets=[]
-        for frame in candidate.gadgets:
-            if frame.kind!='frame' or frame.frame_style!='FRAME' or frame.name.lower() in excluded or frame.name.lower() not in visible:continue
-            fx,fy,fw,fh=candidate.geometry(frame);ox,oy=candidate.offset(frame);fx+=ox;fy+=oy
-            if x>=fx-.001 and y>=fy-.001 and x+width<=fx+fw+.001 and y+height<=fy+fh+.001:
-                depth=0;parent=candidate.parent_gadget(frame);seen={frame.name.lower()}
-                while parent and parent.name.lower() not in seen:
-                    seen.add(parent.name.lower());depth+=1;parent=candidate.parent_gadget(parent)
-                targets.append((depth,-fw*fh,frame.name))
-        parent=candidate.named(max(targets)[2]) if targets else None
-        if g.kind=='rtoggle' and parent is None:
-            message='ラジオボタン全体がFRAME内に収まる位置へ配置してください。'
-            QTimer.singleShot(0,lambda:(self.refresh(),self.statusBar().showMessage(message)));return
-        changed_parent=g.parent.lower()!=(parent.name.lower() if parent else '')
-        g.parent=parent.name if parent else ''
-        if changed_parent:
-            g.width,g.height=native_size(g,width,height)
-            g.xref=g.yref=g.width_ref=''
-        ox,oy=candidate.offset(g);g.x=round(x-ox,2);g.y=round(y-oy,2)
-        try:candidate.validate()
+        try:
+            _,_,width,height=candidate.geometry(g)
+            excluded={name.lower(),*(child.lower() for child in candidate.descendants(name))}
+            visible={item.gadget.name.lower() for item in self.scene.items() if isinstance(item,Item) and item.isVisible()}
+            targets=[]
+            for frame in candidate.gadgets:
+                if frame.kind!='frame' or frame.frame_style!='FRAME' or frame.name.lower() in excluded or frame.name.lower() not in visible:continue
+                fx,fy,fw,fh=candidate.geometry(frame);ox,oy=candidate.offset(frame);fx+=ox;fy+=oy
+                if x>=fx-.001 and y>=fy-.001 and x+width<=fx+fw+.001 and y+height<=fy+fh+.001:
+                    depth=0;parent=candidate.parent_gadget(frame);seen={frame.name.lower()}
+                    while parent and parent.name.lower() not in seen:
+                        seen.add(parent.name.lower());depth+=1;parent=candidate.parent_gadget(parent)
+                    targets.append((depth,-fw*fh,frame.name))
+            parent=candidate.named(max(targets)[2]) if targets else None
+            if g.kind=='rtoggle' and parent is None:
+                message='ラジオボタン全体がFRAME内に収まる位置へ配置してください。'
+                QTimer.singleShot(0,lambda:(self.refresh(),self.statusBar().showMessage(message)));return
+            changed_parent=g.parent.lower()!=(parent.name.lower() if parent else '')
+            g.parent=parent.name if parent else ''
+            if changed_parent:
+                g.width,g.height=native_size(g,width,height)
+                g.xref=g.yref=g.width_ref=''
+            ox,oy=candidate.offset(g);g.x=round(x-ox,2);g.y=round(y-oy,2)
+            candidate.validate()
         except ValueError as error:
             message=str(error)
             QTimer.singleShot(0,lambda:(self.refresh(),self.statusBar().showMessage(message)));return
