@@ -1259,7 +1259,10 @@ class Window(QMainWindow):
 
     def update_default_body(self):
         if self.loading: return
-        self.checkpoint(); self.form.default_body = self.default_body.toPlainText(); self.refresh()
+        self.checkpoint(); self.form.default_body = self.default_body.toPlainText()
+        for gadget in self.form.gadgets:
+            if gadget.callback.lower()=='default':gadget.body=''
+        self.refresh()
 
     def update_after_show(self):
         if self.loading: return
@@ -1408,6 +1411,17 @@ class Window(QMainWindow):
         self.prop_layout.setCaption(self.fields['y'],f'Y ({basis})')
         for key in ('x','y'):self.fields[key].setToolTip(f'{basis}の座標。フレーム間のドラッグでは位置を保って座標を換算します。')
         self.browse_image.setText('📁 画像ファイルを追加' if gadget.kind == 'option' else '📁 画像ファイルを選択')
+        generated=self.form.default_mode=='GENERATED'
+        for editor,applicable in ((self.fields['initial'],relevant['initial']),
+                                  (self.initial_choice,boolean),(self.pane_lines,gadget.kind=='textpane')):
+            editor.setEnabled(generated and applicable)
+            if not generated:editor.setToolTip('元コードを保持中です。「取り込みコード」のDEFAULT欄で編集してください。')
+        if generated:
+            self.initial_choice.setToolTip('空欄＝設定しない。TRUE / FALSEを選ぶとDEFAULTへ自動出力します。')
+            self.pane_lines.setToolTip('')
+        self.prop_layout.setCaption(self.fields['slider_value'],'宣言時の値' if not generated else '初期値')
+        shared=sum(g.callback.lower()==gadget.callback.lower() for g in self.form.gadgets) if gadget.callback else 0
+        self.body.setToolTip('同じメソッド名を使うすべての部品に編集を反映します。' if shared>1 else '')
         self.prop_layout.batching = False
         if self.prop_layout.pending: self.prop_layout.reflow()
 
@@ -1686,7 +1700,11 @@ class Window(QMainWindow):
         pane_text = self.pane_lines.toPlainText();g.pane_lines = pane_text.split('\n') if pane_text else []
         g.fixed_font = self.fixed_font.isChecked()
         choices = self.choices.toPlainText()
-        g.items = choices.split('\n') if choices else []; g.body = self.body.toPlainText()
+        g.items = choices.split('\n') if choices else []
+        from .callbacks import join_callback,set_callback_body
+        if g.callback.lower()!=old_callback.lower():
+            join_callback(self.form,g,old_callback)
+        else:set_callback_body(self.form,g,self.body.toPlainText())
         if uses_pairs(g) and not g.item_values:
             commands = self.choice_commands.toPlainText().split('\n')
             g.item_commands = (commands if self.choice_commands.toPlainText() else [])
@@ -1767,7 +1785,9 @@ class Window(QMainWindow):
             if rebuild and self.choices.toPlainText() != '\n'.join(g.items): self.choices.setPlainText('\n'.join(g.items))
             if rebuild and self.choice_commands.toPlainText() != '\n'.join(g.item_commands): self.choice_commands.setPlainText('\n'.join(g.item_commands))
             self.choice_commands.setEnabled(g.kind == 'option')
-            if self.body.toPlainText() != g.body: self.body.setPlainText(g.body)
+            from .callbacks import callback_body
+            body=callback_body(self.form,g)
+            if self.body.toPlainText() != body: self.body.setPlainText(body)
             self.props.setEnabled(not self.form.is_tab_page(g))
             self.fields['value_type'].setEnabled(g.kind == 'text'); self.fields['initial'].setEnabled(g.kind in ('text','paragraph','toggle','rtoggle','option','combo','list') and not (g.kind == 'paragraph' and g.display_mode == 'PIXMAP'))
             self.choices.setEnabled(g.kind in ('option', 'list', 'combo'))
@@ -1989,7 +2009,8 @@ class Window(QMainWindow):
                 elif key == 'action_mode': w.setCurrentIndex(w.findData(v))
                 elif isinstance(w, QComboBox): w.setCurrentText(v)
                 else: w.setText(v)
-            self.choices.setPlainText('\n'.join(g.items)); self.body.setPlainText(g.body)
+            from .callbacks import callback_body
+            self.choices.setPlainText('\n'.join(g.items)); self.body.setPlainText(callback_body(self.form,g))
             self.choice_commands.setPlainText('\n'.join(g.item_commands)); self.choice_commands.setEnabled(g.kind == 'option')
             self.fields['value_type'].setEnabled(g.kind == 'text'); self.fields['initial'].setEnabled(g.kind in ('text','paragraph','toggle','rtoggle','option','combo','list') and not (g.kind == 'paragraph' and g.display_mode == 'PIXMAP'))
             self.choices.setEnabled(g.kind in ('option', 'list', 'combo'))

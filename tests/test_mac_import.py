@@ -141,7 +141,9 @@ comment ends $)
 $P 'Tail'
 Endmethod""")
         f=import_mac(code).form;pml=f.pml()
-        self.assertEqual(f.gadgets[0].initial,'MiXeD')
+        self.assertEqual(f.default_mode,'SOURCE')
+        self.assertEqual(f.gadgets[0].initial,'')
+        self.assertEqual(pml.count("!this.Input.Val = 'MiXeD'"),1)
         self.assertIn('$( comment begins\ncomment ends $)',pml)
         self.assertIn('-- keep note',pml);self.assertIn("$P 'Tail'",pml)
 
@@ -212,6 +214,71 @@ class MacImportGuiTests(unittest.TestCase):
         self.app.processEvents();self.temp.cleanup()
     def write_mac(self,text):
         path=self.folder/'original.mac';path.write_bytes(text.encode('cp932'));return path
+
+    def shared_form(self):
+        return import_mac(source("""Button .A At X 1 Y 1 'A' Width 10 Call '!this.Work()'
+Button .B At X 1 Y 3 'B' Width 10 Call '!this.Work()'""",
+            "Define Method .Work()\n$P 'old'\nEndmethod")).form
+
+    def install_form(self,form,index):
+        self.w.form=form;self.w.selected=None;self.w.refresh();self.w.choose_row(index)
+
+    def test_shared_callback_edit_updates_all_users_and_undo(self):
+        self.install_form(self.shared_form(),0)
+        self.w.body.setPlainText("$P 'new'")
+        self.assertEqual([g.body for g in self.w.form.gadgets],["$P 'new'"]*2)
+        self.assertEqual(self.w.form.pml().count('Define Method .Work()'),1)
+        self.w.undo()
+        self.assertEqual([g.body for g in self.w.form.gadgets],["$P 'old'"]*2)
+        self.w.redo()
+        self.assertIn("$P 'new'",self.w.form.pml())
+        self.w.choose_row(1);self.w.body.clear()
+        self.assertEqual([g.body for g in self.w.form.gadgets],['',''])
+        self.assertNotIn('Define Method .Work()',self.w.form.pml())
+
+    def test_join_existing_callback_uses_its_body_in_both_editors(self):
+        for mini in (False,True):
+            with self.subTest(mini=mini):
+                f=self.shared_form();f.gadgets[1].callback='Other';f.gadgets[1].body="$P 'different'"
+                if mini:
+                    d=MiniProperties(self.w,f,1);d.fields['action'].setText('work');d.accept()
+                    self.assertEqual(d.result(),QDialog.Accepted);f=d.result_form;d.deleteLater()
+                else:
+                    self.install_form(f,1);self.w.fields['callback'].setText('work')
+                    self.w.update_gadget();f=self.w.form
+                self.assertEqual(f.gadgets[1].body,"$P 'old'")
+                self.assertEqual(f.pml().lower().count('define method .work()'),1)
+
+    def test_default_callback_body_has_one_editable_source(self):
+        f=import_mac(source("List .Choices At X 1 Y 1 'Choices' Single Width 20 Height 5 Callback '!this.DEFAULT()'",
+                            "Define Method .DEFAULT()\n$P 'original'\nEndmethod")).form
+        self.install_form(f,0)
+        self.assertEqual(self.w.body.toPlainText(),"$P 'original'")
+        self.w.body.setPlainText("$P 'changed'")
+        self.assertEqual(self.w.form.default_body,"$P 'changed'")
+        self.assertEqual(self.w.form.gadgets[0].body,'')
+        self.assertEqual(self.w.form.pml().count("$P 'changed'"),1)
+        self.w.default_body.clear()
+        self.assertEqual(self.w.body.toPlainText(),'')
+        self.assertNotIn("$P 'changed'",self.w.form.pml())
+
+    def test_source_default_initial_fields_and_mode_are_consistent(self):
+        f=import_mac(source("Toggle .Check At X 1 Y 1 'Check'",
+                            "Define Method .DEFAULT()\n!this.Check.Val = TRUE\n$P 'side effect'\nEndmethod")).form
+        self.install_form(f,0)
+        self.assertFalse(self.w.initial_choice.isEnabled())
+        self.assertIn('取り込みコード',self.w.initial_choice.toolTip())
+        d=MiniProperties(self.w,f,0);self.assertFalse(d.fields['initial'].isEnabled());d.deleteLater()
+        items=ItemsDialog(self.w,Gadget('list','Rows'),initial_editable=False)
+        self.assertFalse(items.initial.isEnabled());items.deleteLater()
+        d=ImportCodeDialog(self.w,f)
+        self.assertEqual(d.default_mode.currentData(),'SOURCE')
+        self.assertFalse(d.auto_default.isEnabled())
+        d.editors['default_body'].clear();d.default_mode.setCurrentIndex(d.default_mode.findData('GENERATED'))
+        self.assertTrue(d.auto_default.isEnabled())
+        d.accept();self.assertEqual(d.result(),QDialog.Accepted)
+        self.install_form(d.result_form,0)
+        self.assertTrue(self.w.initial_choice.isEnabled());d.deleteLater()
 
     def test_import_save_json_preserves_source_and_image_lookup(self):
         image=QImage(40,25,QImage.Format_ARGB32);image.fill(0xffcc8800)

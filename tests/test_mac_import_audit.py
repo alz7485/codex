@@ -14,6 +14,76 @@ LIST="List .Choices At X 2 Y 1 'Choices' Multiple Width 20 Height 5"
 
 
 class ImportAuditTests(unittest.TestCase):
+    def test_slider_declaration_and_deferred_default_values_are_separate(self):
+        declaration="Slider .Level At X 1 Y 1 Horizontal Range 0 100 Step 1 Val 10 Width 20"
+        body='!this.Level.Val = 30'
+        for constructor in ('','!this.DEFAULT()'):
+            with self.subTest(constructor=constructor):
+                f=import_mac(source(declaration,constructor,f'Define Method .DEFAULT()\n{body}\nEndmethod')).form
+                self.assertEqual(f.named('Level').slider_value,10)
+                self.assertEqual(f.default_mode,'SOURCE')
+                p=f.pml()
+                self.assertIn('VAL 10 Width',p)
+                self.assertIn(body,p)
+                self.assertNotIn('!this.Level.val = 10',p)
+                self.assertEqual(p.count('!this.DEFAULT()'),bool(constructor))
+                restored=Form.loads(f.dumps())
+                self.assertEqual(restored.pml(),p)
+
+    def test_missing_default_does_not_introduce_slider_or_textpane_initialization(self):
+        declarations="""Slider .Level At X 1 Y 1 Horizontal Range 0 100 Step 1 Val 10 Width 20
+Textpanel .Notes At X 1 Y 3 Width 20 Height 3"""
+        f=import_mac(source(declarations)).form
+        self.assertEqual(f.default_mode,'SOURCE')
+        self.assertNotIn('Define Method .DEFAULT()',f.pml())
+        self.assertNotIn('!this.DEFAULT()',f.pml())
+        self.assertNotIn('!paneLines',f.pml())
+
+    def test_unassigned_slider_is_not_added_to_existing_default(self):
+        declarations="""Text .Input At X 1 Y 1 'Value' Width 10 Is String
+Slider .Level At X 1 Y 3 Horizontal Range 0 100 Step 1 Val 10 Width 20"""
+        body="!this.Input.Val = 'set'"
+        f=import_mac(source(declarations,'!this.DEFAULT()',f'Define Method .DEFAULT()\n{body}\nEndmethod')).form
+        self.assertEqual(f.default_mode,'SOURCE')
+        self.assertIn(body,f.pml())
+        self.assertNotIn('!this.Level.val',f.pml())
+        self.assertEqual(f.pml().count('!this.DEFAULT()'),1)
+
+    def test_default_assignment_order_is_preserved(self):
+        declarations="""Text .First At X 1 Y 1 'First' Width 10 Is String
+Text .Second At X 1 Y 3 'Second' Width 10 Is String"""
+        body="!this.Second.Val = 'two'\n!this.First.Val = 'one'"
+        f=import_mac(source(declarations,'!this.DEFAULT()',f'Define Method .DEFAULT()\n{body}\nEndmethod')).form
+        self.assertEqual(f.default_mode,'SOURCE')
+        self.assertIn(body,f.pml())
+        self.assertEqual(f.pml().count('!this.DEFAULT()'),1)
+
+    def test_default_without_constructor_is_not_called_implicitly(self):
+        code="""Setup Form !!Imported Dialog Size 70 22
+Text .Input At X 1 Y 1 'Value' Width 10 Is String
+Exit
+Show !!Imported
+Define Method .DEFAULT()
+!this.Input.Val = 'deferred'
+Endmethod"""
+        f=import_mac(code).form
+        self.assertEqual(f.default_mode,'GENERATED')
+        self.assertEqual(f.named('Input').initial,'deferred')
+        self.assertFalse(f.auto_default)
+        self.assertNotIn('!this.DEFAULT()',f.pml())
+
+    def test_radio_default_does_not_add_extra_reset(self):
+        declarations="""Frame .Group 'Group'
+Rtoggle .A 'A'
+Rtoggle .B 'B'
+Exit"""
+        for body in ('!this.Group.Val = 1','!this.Group.Val = 2\n!this.Group.Val = 1'):
+            with self.subTest(body=body):
+                f=import_mac(source(declarations,'!this.DEFAULT()',f'Define Method .DEFAULT()\n{body}\nEndmethod')).form
+                self.assertEqual(f.default_mode,'SOURCE')
+                self.assertIn(body,f.pml())
+                self.assertNotIn('!this.Group.val = 0',f.pml())
+
     def test_early_and_repeated_default_calls_keep_execution_order(self):
         for body in ('!this.DEFAULT()\n'+CHOICES,
                      '!this.DEFAULT()\n'+CHOICES+'\n!this.DEFAULT()'):

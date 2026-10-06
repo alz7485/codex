@@ -8,7 +8,7 @@ from .model import dimension_editable,normalize_dimensions,change_orientation,us
 
 
 class ItemsDialog(QDialog):
-    def __init__(self,parent,gadget):
+    def __init__(self,parent,gadget,initial_editable=True):
         super().__init__(parent)
         self.gadget=copy.deepcopy(gadget)
         self.setWindowTitle('項目・値の編集');self.resize(570,390)
@@ -32,6 +32,8 @@ class ItemsDialog(QDialog):
         layout.addLayout(tools)
         form=QFormLayout();self.initial=QLineEdit(gadget.initial)
         self.initial.setPlaceholderText('空欄、または行番号（1から）');form.addRow('初期選択',self.initial)
+        self.initial.setEnabled(initial_editable)
+        if not initial_editable:self.initial.setToolTip('「取り込みコード」のDEFAULT欄で編集してください。')
         self.selection=QComboBox();self.selection.addItems(['SINGLE','MULTIPLE'])
         self.selection.setCurrentText('MULTIPLE' if gadget.selection_mode=='MULTI' else gadget.selection_mode)
         if gadget.kind=='list':form.addRow('選択方式',self.selection)
@@ -130,8 +132,11 @@ class MiniProperties(QDialog):
             button=QPushButton('項目・値を表で編集…');button.clicked.connect(self.edit_items);fields.addRow('値',button)
         elif g.kind in ('toggle','rtoggle'):
             widget=QComboBox();widget.addItems(['','TRUE','FALSE']);widget.setCurrentText(g.initial.upper());self.fields['initial']=widget;fields.addRow('初期値',widget)
-        elif g.kind=='slider':number('slider_value','初期値')
+        elif g.kind=='slider':number('slider_value','宣言時の値' if form.default_mode=='SOURCE' else '初期値')
         elif g.kind=='text' or (g.kind=='paragraph' and g.display_mode=='TEXT'):text('initial','初期値')
+        if 'initial' in self.fields and form.default_mode=='SOURCE':
+            self.fields['initial'].setEnabled(False)
+            self.fields['initial'].setToolTip('「取り込みコード」のDEFAULT欄で編集してください。')
         if g.display_mode=='PIXMAP' and g.kind in ('button','paragraph','toggle'):text('pixmap_path','画像ファイル')
         if (g.kind in ('button','text','toggle') or (g.kind=='option' and g.display_mode=='TEXT' and not uses_pairs(g))) and g.action_mode=='CODE' and (g.kind!='button' or g.button_role not in ('OK','CANCEL','HELP')):
             self.call_mode=QComboBox();self.call_mode.addItems(['メソッド名','コマンド'])
@@ -178,13 +183,14 @@ class MiniProperties(QDialog):
         if dialog.exec()==QDialog.Accepted:self.fields['background'].setText(dialog.value)
         dialog.deleteLater()
     def edit_items(self):
-        dialog=ItemsDialog(self,self.gadget)
+        dialog=ItemsDialog(self,self.gadget,initial_editable=self.draft.default_mode=='GENERATED')
         if dialog.exec()==QDialog.Accepted:
             self.gadget=dialog.gadget;self.draft.gadgets[self.index]=self.gadget
             if self.gadget.display_mode=='PIXMAP':self.preview_image_dimensions()
         dialog.deleteLater()
     def accept(self):
         candidate=copy.deepcopy(self.draft);g=candidate.gadgets[self.index]
+        previous_callback=g.callback
         for key,widget in self.fields.items():
             if key in ('name','action'):continue
             if key in ('width','height') and not dimension_editable(g,key):continue
@@ -195,6 +201,8 @@ class MiniProperties(QDialog):
         if 'action' in self.fields:
             g.callback=self.fields['action'].text() if self.call_mode.currentIndex()==0 else ''
             g.command=self.fields['action'].text() if self.call_mode.currentIndex()==1 else ''
+        from .callbacks import join_callback
+        join_callback(candidate,g,previous_callback)
         try:
             from .images import sync_image_size
             sync_image_size(g,self.image_directories)

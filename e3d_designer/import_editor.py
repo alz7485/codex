@@ -23,16 +23,22 @@ class ImportCodeDialog(QDialog):
         self.auto_default=QCheckBox('初期値のDEFAULTを自動呼び出し')
         self.auto_default.setChecked(form.auto_default);controls.addWidget(self.auto_default)
         layout.addLayout(controls);tabs=QTabWidget();layout.addWidget(tabs)
+        self.default_mode=QComboBox()
+        self.default_mode.addItem('DEFAULT：部品の初期値を生成＋追加コード','GENERATED')
+        self.default_mode.addItem('DEFAULT：元コードのみ（初期値はDEFAULT欄で編集）','SOURCE')
+        self.default_mode.setCurrentIndex(self.default_mode.findData(form.default_mode))
+        layout.insertWidget(2,self.default_mode)
         self.keep_default=QCheckBox('取り込んだDEFAULTの定義を空でも保持')
         self.keep_default.setChecked(form.keep_default)
         layout.insertWidget(2,self.keep_default)
         self.mode.currentIndexChanged.connect(self.update_mode)
+        self.default_mode.currentIndexChanged.connect(self.update_mode)
         self.update_mode()
         self.editors={};self.highlighters=[]
         extras='\n\n'.join(f'Define Method .{m.name}{m.signature}\n{m.body}\nEndmethod' for m in form.extra_methods)
         for key,title,value in (('preamble_code','フォーム定義前',form.preamble_code),
                                 ('constructor_body','コンストラクタ',form.constructor_body),
-                                ('default_body','DEFAULT',form.default_body),
+                                ('default_body','DEFAULT',form.default_body or next((g.body for g in form.gadgets if g.callback.lower()=='default' and g.body),'')),
                                 ('extra_methods','その他のメソッド',extras)):
             editor=QPlainTextEdit(value);self.editors[key]=editor;tabs.addTab(editor,title)
             editor.setStyleSheet('font-family: monospace; font-size: 12px;')
@@ -43,7 +49,8 @@ class ImportCodeDialog(QDialog):
         buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);layout.addWidget(buttons)
 
     def update_mode(self):
-        self.auto_default.setEnabled(self.mode.currentData()=='GENERATED')
+        self.auto_default.setEnabled(self.mode.currentData()=='GENERATED' and self.default_mode.currentData()=='GENERATED')
+        self.auto_default.setToolTip('元コードを保持中は、コンストラクタ欄の呼び出しを編集してください。' if not self.auto_default.isEnabled() else '')
 
     def accept(self):
         candidate=copy.deepcopy(self.draft)
@@ -55,7 +62,10 @@ class ImportCodeDialog(QDialog):
             if remaining.strip():candidate.preamble_code+='\n'+remaining
             candidate.constructor_body=self.editors['constructor_body'].toPlainText()
             candidate.default_body=self.editors['default_body'].toPlainText()
+            for gadget in candidate.gadgets:
+                if gadget.callback.lower()=='default':gadget.body=''
             candidate.constructor_mode=self.mode.currentData()
+            candidate.default_mode=self.default_mode.currentData()
             candidate.auto_default=self.auto_default.isChecked()
             candidate.keep_default=self.keep_default.isChecked()
             candidate.extra_methods=methods

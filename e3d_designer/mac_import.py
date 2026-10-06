@@ -360,16 +360,24 @@ class Importer:
             for row,line in enumerate(program.splitlines())).strip('\n')
         constructor=source_methods.pop(self.form.name.lower(),None)
         default=source_methods.pop('default',None)
+        self.form.auto_default=False
         self.form.keep_default=default is not None
         if default and default.signature.strip()!='()':raise MacImportError(index+method_rows['default'],'DEFAULTの引数には対応していません。')
         before_defaults=copy.deepcopy(self.form)
-        if default:self.read_defaults(default.body)
+        defaults_structured=self.read_defaults(default.body) if default else False
+        if not defaults_structured:
+            self.form=copy.deepcopy(before_defaults)
+            self.form.default_mode='SOURCE'
+            if default:
+                self.form.default_body=default.body
+                self.warn('DEFAULTは元コードとして保持しました。初期値は「取り込みコード」のDEFAULT欄で編集してください。')
         if constructor:
             if constructor.signature.strip()!='()':raise MacImportError(index+method_rows[self.form.name.lower()],'フォームのコンストラクタに引数があります。')
             if self.read_constructor(constructor.body,source_methods):
                 pass
             else:
                 self.form=before_defaults
+                self.form.default_mode='SOURCE'
                 if default:self.form.default_body=default.body
                 self.form.constructor_body=constructor.body;self.form.constructor_mode='SOURCE'
                 self.warn('複雑なコンストラクタは元の処理として保持しました。選択肢などの初期化は「取り込みコード」で編集してください。')
@@ -412,6 +420,17 @@ class Importer:
                 flag=assignment.group(1);value=literal[0]
             gadget.action_mode='MACRO';gadget.macro_path=path[0];gadget.macro_flag=flag;gadget.macro_value=value;gadget.callback='';gadget.body=''
         self.form.extra_methods=[method for key,method in source_methods.items() if key not in linked]
+        if defaults_structured and self.form.default_mode=='GENERATED':
+            source_targets=[m.group(1).lower() for _,line in self.significant(default.body)
+                            if (m:=PROPERTY.fullmatch(line))]
+            generated_targets=[m.group(1).lower() for line in self.form.initial_lines()
+                               if (m:=PROPERTY.fullmatch(line.strip()))]
+            if source_targets!=generated_targets:
+                self.form.default_mode='SOURCE';self.form.default_body=default.body
+                if self.form.auto_default:
+                    self.form.constructor_body=(self.form.constructor_body+'\n!this.DEFAULT()').strip('\n')
+                    self.form.auto_default=False
+                self.warn('DEFAULTの代入順や設定対象を維持するため、元コードとして保持しました。')
         self.fit_dimensions()
         self.form.sync_tabs()
         try:self.form.validate()
@@ -447,7 +466,7 @@ class Importer:
         return cursor+1,gadget,target.group(2).upper(),[cells[(i,)] for i in range(1,len(cells)+1)]
 
     def read_defaults(self,body):
-        raw=body.splitlines();lines=self.significant(body);removed=set();seen=set();cursor=0
+        raw=body.splitlines();lines=self.significant(body);removed=set();seen=set();cursor=0;radio_values={}
         while cursor<len(lines):
             block=self.array_block(lines,cursor)
             if block:
@@ -471,9 +490,13 @@ class Importer:
                 radios=[g for g in self.form.ordered_children(gadget.name) if g.kind=='rtoggle']
                 selected=float(text)
                 if not radios or not selected.is_integer() or not 0<=selected<=len(radios):break
+                previous=radio_values.setdefault(gadget.name,[])
+                if previous and (previous!=[0] or selected==0):break
+                previous.append(selected)
                 for index,radio in enumerate(radios,1):radio.initial='TRUE' if index==selected else 'FALSE'
                 removed.add(lines[cursor][0]);cursor+=1;continue
-            if gadget.kind=='slider' and kind=='number':gadget.slider_value=float(text)
+            if gadget.kind=='slider' and kind=='number':
+                if float(text)!=gadget.slider_value:break
             elif gadget.kind=='text' and kind==('number' if gadget.value_type=='REAL' else 'string'):gadget.initial=text
             elif gadget.kind=='paragraph' and gadget.display_mode!='PIXMAP' and kind=='string':gadget.initial=text
             elif gadget.kind in ('option','combo','list') and kind=='number' and float(text).is_integer() and float(text)>0:
@@ -483,6 +506,7 @@ class Importer:
             seen.add(gadget.name);removed.add(lines[cursor][0]);cursor+=1
         comments=comment_lines(body)
         self.form.default_body='\n'.join(comments[index].rstrip() if index in removed else line for index,line in enumerate(raw))
+        return cursor==len(lines)
 
     def read_table(self,method):
         if any(line.strip() for line in comment_lines(method.body)):return None

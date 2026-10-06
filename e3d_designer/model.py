@@ -196,6 +196,7 @@ class Form:
     extra_methods: list[Method] = field(default_factory=list)
     auto_default: bool = True
     keep_default: bool = False
+    default_mode: str = 'GENERATED'
     source_mac_path: str = ''
 
     def docking_side(self):
@@ -343,6 +344,7 @@ class Form:
             if not isinstance(getattr(self, key), str): raise ValueError(f'{key} は文字列で指定してください。')
         if not isinstance(self.auto_default,bool):raise ValueError('DEFAULTの自動呼び出し設定は真偽値にしてください。')
         if not isinstance(self.keep_default,bool):raise ValueError('取り込んだDEFAULTの保持設定は真偽値にしてください。')
+        if self.default_mode not in ('GENERATED','SOURCE'):raise ValueError('DEFAULTの生成形式が不正です。')
         if self.constructor_mode not in ('GENERATED','SOURCE'):raise ValueError('コンストラクタの生成形式が不正です。')
         if '\x00' in self.source_mac_path:raise ValueError('取り込み元のパスにNULを使用できません。')
         if not isinstance(self.extra_methods,list) or any(not isinstance(method,Method) for method in self.extra_methods):
@@ -618,6 +620,7 @@ class Form:
 
     def initial_lines(self):
         """Validated initial values emitted only in DEFAULT, after choices are ready."""
+        if self.default_mode=='SOURCE':return []
         lines=[];radio_groups=set()
         for g in self.gadgets:
             target='_'+g.name.lstrip('_') if uses_pairs(g) else g.name
