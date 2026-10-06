@@ -175,6 +175,7 @@ class Item(QGraphicsObject):
         self._move_origin = None
         self._move_children = []
         self._move_names = []
+        self._tab_press = None
         self._cancelled = False
         self._sync_geometry = False
         image_path = gadget.pixmap_path if gadget.kind != 'option' else (gadget.items[0] if gadget.items else '')
@@ -210,6 +211,7 @@ class Item(QGraphicsObject):
     def mousePressEvent(self, event):
         if event.button()!=Qt.LeftButton:event.ignore();return
         self._cancelled=False
+        self._tab_press=None
         g = self.gadget
         if event.modifiers() & (Qt.ControlModifier|Qt.ShiftModifier):
             self.setSelected(not self.isSelected());event.accept();return
@@ -219,7 +221,7 @@ class Item(QGraphicsObject):
             event.accept(); return
         page = self.tab_page_at(event.pos())
         if page:
-            self.pageChosen.emit(page.name); event.accept(); return
+            self._tab_press=(page.name,event.screenPos())
         scene=self.scene();changed=not self.isSelected();previous=scene.blockSignals(True)
         if changed:
             for item in scene.selectedItems():item.setSelected(False)
@@ -243,13 +245,14 @@ class Item(QGraphicsObject):
             self._sync_geometry=True;self.setPos(self._move_pos);self._sync_geometry=False
             for child,origin in self._move_children:
                 child._sync_geometry=True;child.setPos(origin);child._sync_geometry=False
+        elif self._tab_press is not None:pass
         else:return False
-        self._move_start=None;self._move_children=[];self._cancelled=True
+        self._move_start=None;self._move_children=[];self._tab_press=None;self._cancelled=True
         return True
 
     def mouseDoubleClickEvent(self,event):
         if event.button()==Qt.LeftButton:
-            self._move_start=None
+            self._move_start=None;self._move_children=[];self._tab_press=None
             page = self.tab_page_at(event.pos())
             self.labelEditRequested.emit(page.name if page else self.gadget.name);event.accept();return
         super().mouseDoubleClickEvent(event)
@@ -283,6 +286,10 @@ class Item(QGraphicsObject):
         if self._cancelled:event.accept();return
         if self._resize is None:
             if self._move_start is not None:
+                if self._tab_press is not None:
+                    if (event.screenPos()-self._tab_press[1]).manhattanLength()<QApplication.startDragDistance():
+                        event.accept();return
+                    self._tab_press=None
                 # Move each selected object and descendant once from its original position.
                 self.setPos(self._move_pos+event.scenePos()-self._move_origin)
                 delta=self.pos()-self._move_pos
@@ -291,7 +298,8 @@ class Item(QGraphicsObject):
                     child.setPos(origin+delta)
                     child._sync_geometry=False
                 event.accept();return
-            super().mouseMoveEvent(event); return
+            # All movement is model-owned; Qt's fallback can move only the TABSET outline.
+            event.accept();return
         handle, origin, width, height, _ = self._resize
         delta = event.scenePos()-origin; g = self.gadget
         old_width, old_height = g.width,g.height
@@ -429,6 +437,9 @@ class Item(QGraphicsObject):
             _,_,width,height,old = self._resize; self._resize = None
             if (self.gadget.width,self.gadget.height) != (width,height): self.resized.emit(old)
             event.accept(); return
+        if self._tab_press is not None:
+            name,_=self._tab_press;self._tab_press=None;self._move_start=None;self._move_children=[]
+            self.pageChosen.emit(name);event.accept();return
         event.accept()
         old=self._move_start;self._move_start=None
         if old is None or self.pos()==self._move_pos:return
