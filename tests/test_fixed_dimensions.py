@@ -159,8 +159,8 @@ class FixedDimensionsTests(unittest.TestCase):
     def test_switching_from_image_restores_dimension_controls(self):
         self.load(Gadget(kind='paragraph',display_mode='PIXMAP',width=100,height=52))
         self.w.fields['display_mode'].setCurrentText('TEXT')
-        self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(10,2))
-        self.assertTrue(self.w.fields['width'].isEnabled());self.assertTrue(self.w.fields['height'].isEnabled())
+        self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(10,1))
+        self.assertTrue(self.w.fields['width'].isEnabled());self.assertFalse(self.w.fields['height'].isEnabled())
 
     def test_paragraph_declares_filename_once_before_show(self):
         for path in (r'\\server\Images$\Logo One.png',r"C:\Images\O'Brien.png",'assets/red.png'):

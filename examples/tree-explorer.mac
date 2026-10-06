@@ -24,11 +24,6 @@ Exit
 
 Show !!EquipmentTool
 
-Define Method .EquipmentTool()
-  !this.populate_Results()
-  !this.DEFAULT()
-Endmethod
-
 Define Method .populate_Results()
   !HEAD = Array()
   !HEAD[1] = '‹@Ší–¼'
@@ -47,4 +42,9 @@ Endmethod
 Define Method .DEFAULT()
   !this.SearchText.val = 'P-101'
   !this.Visible.val = TRUE
+Endmethod
+
+Define Method .EquipmentTool()
+  !this.populate_Results()
+  !this.DEFAULT()
 Endmethod

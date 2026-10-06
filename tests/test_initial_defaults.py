@@ -19,7 +19,10 @@ class InitialTests(unittest.TestCase):
             Gadget(kind='list',name='rows',items=['A','B','C'],selection_mode='MULTIPLE',initial='1,3'),
             Gadget(kind='slider',name='level',slider_value=25),
             Gadget(kind='textpane',name='notes',pane_lines=['  line'])])
-        pml=form.pml(normalize=False);constructor,default=pml.split('DEFINE METHOD .DEFAULT()')
+        pml=form.pml(normalize=False)
+        default=pml.split('DEFINE METHOD .DEFAULT()',1)[1].split('ENDMETHOD',1)[0]
+        constructor=pml.split('define method .userform()',1)[1].split('endmethod',1)[0]
+        self.assertLess(pml.index('DEFINE METHOD .DEFAULT()'),pml.index('define method .userform()'))
         self.assertNotIn("!this.name.val = 'Pump'",constructor)
         self.assertIn('!this.DEFAULT()',constructor)
         self.assertLess(constructor.index('!this.rows.dtext'),constructor.index('!this.DEFAULT()'))

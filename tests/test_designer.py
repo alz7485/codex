@@ -315,7 +315,8 @@ class ModelTests(unittest.TestCase):
     def test_line_orientations_and_roundtrip(self):
         for orientation in ('HORIZ', 'VERT'):
             f=Form(gadgets=[Gadget(kind='line',name='separator',label='',x=2,y=3,width=20,height=2,orientation=orientation)])
-            self.assertIn(f"LINE .separator AT X 2 Y 3 '' {orientation} WIDTH 20 HEIGHT 2",Form.loads(f.dumps()).pml(normalize=False))
+            size='WIDTH 20 HEIGHT 1' if orientation=='HORIZ' else 'WIDTH 1 HEIGHT 2'
+            self.assertIn(f"LINE .separator AT X 2 Y 3 '' {orientation} {size}",Form.loads(f.dumps()).pml(normalize=False))
         f.gadgets[0].orientation='INVALID'
         with self.assertRaises(ValueError): f.pml(normalize=False)
 
@@ -375,7 +376,8 @@ class ModelTests(unittest.TestCase):
     def test_show_then_program_before_method_definitions(self):
         f=Form(after_show_code="$p 'Ready'",gadgets=[Gadget(callback='onRun',body="$p 'Run'")])
         pml=Form.loads(f.dumps()).pml(normalize=False)
-        self.assertIn("exit\n\nSHOW !!userform\n\n$p 'Ready'\n\ndefine method .userform()",pml)
+        self.assertIn("exit\n\nSHOW !!userform\n\n$p 'Ready'\n\ndefine method .onRun()",pml)
+        self.assertLess(pml.index("$p 'Ready'"),pml.index('define method .userform()'))
         self.assertLess(pml.index('SHOW !!userform'),pml.index('define method .onRun()'))
         self.assertEqual(pml.count('SHOW !!userform'),1)
         f.show_form=False
@@ -821,7 +823,7 @@ class GuiTests(unittest.TestCase):
         self.w.add('line')
         self.assertFalse(self.w.fields['label'].isEnabled())
         self.w.fields['orientation'].setCurrentText('VERT')
-        self.assertIn(canonical_pml("LINE .line1 AT X 0 Y 0 '' VERT WIDTH 18 HEIGHT 1"),self.w.code.toPlainText())
+        self.assertIn(canonical_pml("LINE .line1 AT X 0 Y 0 '' VERT WIDTH 1 HEIGHT 18"),self.w.code.toPlainText())
         self.w.undo()
         self.assertEqual(self.w.form.gadgets[0].orientation,'HORIZ')
 

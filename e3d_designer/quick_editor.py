@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLine
     QComboBox,QDoubleSpinBox,QPushButton,QDialogButtonBox,QTableWidget,QTableWidgetItem,QLabel)
 from .names import rename
 from .color_picker import ColorPicker
+from .model import dimension_editable,normalize_dimensions,change_orientation
 
 
 class ItemsDialog(QDialog):
@@ -105,6 +106,7 @@ class MiniProperties(QDialog):
         from .images import sync_image_size
         self.image_directories=parent.image_directories() if hasattr(parent,'image_directories') else ()
         sync_image_size(g,self.image_directories)
+        normalize_dimensions(g)
         self.setWindowTitle(f'{g.kind.upper()} の設定');self.setMinimumWidth(350)
         layout=QVBoxLayout(self);fields=QFormLayout();layout.addLayout(fields)
         def text(key,title):
@@ -112,9 +114,16 @@ class MiniProperties(QDialog):
         def number(key,title):
             widget=QDoubleSpinBox();widget.setDecimals(1);widget.setSingleStep(.1);widget.setRange(.1,100000) if key in ('width','height') else widget.setRange(-100000,100000)
             widget.setValue(getattr(g,key));widget.setProperty('baseline',widget.value());self.fields[key]=widget;fields.addRow(title,widget)
-            if g.display_mode == 'PIXMAP' and key in ('width','height'):
-                widget.setEnabled(False);widget.setToolTip('元画像のサイズで固定されます。')
+            if key in ('width','height'):
+                widget.setEnabled(dimension_editable(g,key))
+                if not dimension_editable(g,key):widget.setToolTip('元画像のサイズ、1行の高さ、または部品の太さで固定されます。')
         text('name','オブジェクト名')
+        direction_key='orientation' if g.kind=='line' else 'slider_orientation' if g.kind=='slider' else None
+        if direction_key:
+            widget=QComboBox()
+            for title,value in (('横','HORIZ' if g.kind=='line' else 'HORIZONTAL'),('縦','VERT' if g.kind=='line' else 'VERTICAL')):widget.addItem(title,value)
+            widget.setCurrentIndex(widget.findData(getattr(g,direction_key)))
+            self.fields[direction_key]=widget;fields.addRow('向き',widget)
         if g.kind=='combo':text('combo_tagwid','TAGWID（表示名の幅）')
         if g.kind!='line':text('label','表示名')
         if g.kind in ('option','combo','list'):
@@ -135,11 +144,12 @@ class MiniProperties(QDialog):
         sized=g.kind not in ('toggle','rtoggle','option','frame') or g.display_mode=='PIXMAP' or (g.kind=='frame' and g.frame_style in ('TABSET','TOOLBAR'))
         if g.kind=='combo':text('combo_scroll','SCROLL（表示量）')
         if sized:number('width','WIDTH')
-        if g.kind in ('line','list','view','alpha','container','textpane','selector') or (g.kind=='slider' and g.slider_orientation=='VERTICAL') or g.display_mode=='PIXMAP' or (g.kind=='frame' and g.frame_style=='TOOLBAR'):number('height','HEIGHT')
+        if g.kind in ('line','slider','list','view','alpha','container','textpane','selector') or g.display_mode=='PIXMAP' or (g.kind=='frame' and g.frame_style=='TOOLBAR'):number('height','HEIGHT')
         self.error=QLabel();self.error.setWordWrap(True);layout.addWidget(self.error)
         buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);layout.addWidget(buttons)
         if 'pixmap_path' in self.fields:self.fields['pixmap_path'].textChanged.connect(self.preview_image_dimensions)
+        if direction_key:self.fields[direction_key].currentIndexChanged.connect(lambda:self.edit_direction(direction_key))
     def exec(self):
         return super().exec()
 
@@ -149,6 +159,19 @@ class MiniProperties(QDialog):
         sync_image_size(self.gadget,self.image_directories)
         for key in ('width','height'):
             if key in self.fields:self.fields[key].setValue(getattr(self.gadget,key))
+
+    def edit_direction(self,key):
+        for dimension in ('width','height'):
+            widget=self.fields[dimension]
+            if dimension_editable(self.gadget,dimension) and widget.value()!=widget.property('baseline'):
+                setattr(self.gadget,dimension,widget.value())
+        try:resolved_size=self.draft.geometry(self.gadget)[2:]
+        except ValueError:resolved_size=None
+        change_orientation(self.gadget,self.fields[key].currentData(),resolved_size)
+        for dimension in ('width','height'):
+            widget=self.fields[dimension];widget.setValue(getattr(self.gadget,dimension))
+            widget.setProperty('baseline',widget.value());widget.setEnabled(dimension_editable(self.gadget,dimension))
+            widget.setToolTip('' if dimension_editable(self.gadget,dimension) else '部品の太さは固定されます。')
 
     def choose_color(self):
         dialog=ColorPicker(self,self.fields['background'].text())
@@ -164,9 +187,10 @@ class MiniProperties(QDialog):
         candidate=copy.deepcopy(self.draft);g=candidate.gadgets[self.index]
         for key,widget in self.fields.items():
             if key in ('name','action'):continue
-            if g.display_mode == 'PIXMAP' and key in ('width','height'):continue
+            if key in ('width','height') and not dimension_editable(g,key):continue
             if isinstance(widget,QDoubleSpinBox):
                 if widget.value()!=widget.property('baseline'):setattr(g,key,widget.value())
+            elif key in ('orientation','slider_orientation'):setattr(g,key,widget.currentData())
             else:setattr(g,key,widget.currentText() if isinstance(widget,QComboBox) else widget.text())
         if 'action' in self.fields:
             g.callback=self.fields['action'].text() if self.call_mode.currentIndex()==0 else ''
@@ -174,6 +198,7 @@ class MiniProperties(QDialog):
         try:
             from .images import sync_image_size
             sync_image_size(g,self.image_directories)
+            normalize_dimensions(g)
             candidate=rename(candidate,'gadget',self.index,self.fields['name'].text())
             candidate.validate()
         except ValueError as error:self.error.setText(str(error));return

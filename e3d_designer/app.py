@@ -18,7 +18,7 @@ from .explorer import ObjectExplorer
 from .form_item import FormItem
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
-from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size
+from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size, fixed_dimensions, dimension_editable, normalize_dimensions, change_orientation
 from .images import resolve_image_path, sync_image_size
 
 LABELS = {'textpane':'複数行テキスト (TEXTPANE)','selector':'DB セレクタ (SELECTOR)','button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
@@ -279,10 +279,10 @@ class Item(QGraphicsObject):
         if len(self.selected_names())>1:return {}
         if self.gadget.display_mode == 'PIXMAP':return {}
         r = self.boundingRect(); size = 8
-        result = {} if self.gadget.kind == 'text' else {'height':QRectF(r.center().x()-size/2,r.bottom()-size,size,size)}
-        if not self.gadget.width_ref:
+        result = {'height':QRectF(r.center().x()-size/2,r.bottom()-size,size,size)} if dimension_editable(self.gadget,'height') else {}
+        if dimension_editable(self.gadget,'width'):
             result['width'] = QRectF(r.right()-size,r.center().y()-size/2,size,size)
-            if self.gadget.kind != 'text':result['both'] = QRectF(r.right()-size,r.bottom()-size,size,size)
+            if 'height' in result:result['both'] = QRectF(r.right()-size,r.bottom()-size,size,size)
         return result
 
     def handle_at(self, point):
@@ -315,8 +315,8 @@ class Item(QGraphicsObject):
         delta = event.scenePos()-origin; g = self.gadget
         old_width, old_height = g.width,g.height
         if g.display_mode != 'PIXMAP':
-            if handle in ('width','both'): g.width = max(1,round((width+delta.x()/SX)*2)/2)
-            if handle in ('height','both') and g.kind != 'text': g.height = max(1,round((height+delta.y()/SY)*2)/2)
+            if handle in ('width','both') and dimension_editable(g,'width'): g.width = max(1,round((width+delta.x()/SX)*2)/2)
+            if handle in ('height','both') and dimension_editable(g,'height'): g.height = max(1,round((height+delta.y()/SY)*2)/2)
         try:
             for candidate in self.form.gadgets:
                 x,y,w,h = self.form.geometry(candidate)
@@ -1309,12 +1309,14 @@ class Window(QMainWindow):
         for key in ('x','y'): self.fields[key].setEnabled(mode == 'ABSOLUTE')
         for key in ('path','halign','valign','hgap','vgap'): self.fields[key].setEnabled(mode == 'AUTO')
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): self.fields[key].setEnabled(mode == 'RELATIVE')
-        self.fields['width_ref'].setEnabled(gadget.display_mode != 'PIXMAP' and gadget.kind not in ('toggle','option','rtoggle'))
-        self.fields['width'].setEnabled(gadget.display_mode != 'PIXMAP' and not gadget.width_ref)
-        self.fields['height'].setEnabled(gadget.display_mode != 'PIXMAP' and gadget.kind != 'text')
+        self.fields['width_ref'].setEnabled(gadget.display_mode != 'PIXMAP' and 'width' not in fixed_dimensions(gadget) and gadget.kind not in ('toggle','option','rtoggle'))
+        self.fields['width'].setEnabled(dimension_editable(gadget,'width'))
+        self.fields['height'].setEnabled(dimension_editable(gadget,'height'))
         hint='元画像のサイズで固定。収まらない場合はフォーム／フレームを広げてください。' if gadget.display_mode == 'PIXMAP' else ''
         self.fields['width'].setToolTip(hint)
-        self.fields['height'].setToolTip(hint or ('TEXTは1行固定です。複数行にはTEXTPANEを使ってください。' if gadget.kind == 'text' else ''))
+        self.fields['height'].setToolTip(hint)
+        for key,value in fixed_dimensions(gadget).items():
+            self.fields[key].setToolTip('文字表示は1行固定です。' if gadget.kind in ('text','paragraph') else f'太さは{value:.1f}固定です。長さだけ変更できます。')
         parent = self.form.parent_gadget(gadget)
         if parent and parent.frame_style == 'TOOLBAR':
             for key in ('x','y','layout_mode','xref','yref','path','width_ref'): self.fields[key].setEnabled(False)
@@ -1363,7 +1365,7 @@ class Window(QMainWindow):
             'database':gadget.kind == 'selector', 'button_role':gadget.kind == 'button',
             'action_mode':gadget.kind == 'button' and gadget.button_role not in ('OK','CANCEL','HELP'),
             'macro_path':macro,'macro_flag':macro,'macro_value':macro,
-            'width_ref':gadget.display_mode != 'PIXMAP' and gadget.kind not in ('toggle','option','rtoggle'),
+            'width_ref':gadget.display_mode != 'PIXMAP' and 'width' not in fixed_dimensions(gadget) and gadget.kind not in ('toggle','option','rtoggle'),
         }
         relevant['callback'] = self.fields['callback'].isEnabled()
         relevant['command'] = gadget.kind in ('button','text','toggle') and gadget.button_role not in ('OK','CANCEL','HELP') and not macro
@@ -1624,14 +1626,20 @@ class Window(QMainWindow):
         old_name = g.name
         old_role = g.button_role
         old_display = g.display_mode
+        old_fixed = fixed_dimensions(g)
+        direction_key = 'orientation' if g.kind == 'line' else 'slider_orientation' if g.kind == 'slider' else None
+        old_direction = getattr(g,direction_key) if direction_key else None
         old_command,old_callback=g.command,g.callback
         from .names import actual_name,code_slots,read_slot,write_slot,rewrite_code
         old_actual = actual_name(g)
         for key, w in self.fields.items():
             if key=='name':continue
-            if (old_display == 'PIXMAP' and key in ('width','height','width_ref')) or (g.kind == 'text' and key == 'height'):continue
+            if (old_display == 'PIXMAP' and key in ('width','height','width_ref')) or key in old_fixed:continue
             value = w.currentData() if key in ('parent','xref','yref','width_ref','popup_menu','action_mode') else self.edited_number(w,getattr(g,key)) if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
             setattr(g, key, value)
+        if direction_key and getattr(g,direction_key) != old_direction:
+            new_direction = getattr(g,direction_key);setattr(g,direction_key,old_direction)
+            change_orientation(g,new_direction,preview_geometry(self.form,g)[2:])
         if g.command and g.command!=old_command:g.callback=''
         elif g.callback and g.callback!=old_callback:g.command=''
         if old_display != g.display_mode:
@@ -1697,7 +1705,7 @@ class Window(QMainWindow):
         image_directories = self.image_directories()
         for gadget in self.form.gadgets:
             if sync_image_size(gadget,image_directories):self.dirty=True
-            if gadget.kind == 'text':gadget.height=1
+            if normalize_dimensions(gadget):self.dirty=True
         self.inspector_tabs.setEnabled(True)
         if self.selected is not None:self._multi_selection.clear()
         self._multi_selection.intersection_update(g.name for g in self.form.gadgets)
@@ -2066,6 +2074,9 @@ class Window(QMainWindow):
         height = min(5 if vertical or direction == 'PIXMAP' or kind in ('list', 'frame', 'view', 'commandline', 'container','textpane','selector') else 1, height_limit)
         if container and container.frame_style=='FRAME':height=min(height,max(1,height_limit-1))
         g = Gadget(kind=kind, name=name, label={'textpane':'Notes','selector':'Owner','button':'Run','paragraph':'Message','text':'Name','toggle':'Enabled','option':'Mode','list':'Results','line':'','frame':'Group','slider':'Level','rtoggle':'Choice','combo':'Choice','view':'Model view','commandline':'Command line','container':'External control'}[kind],
+                   orientation=direction if kind == 'line' and direction else 'HORIZ',
+                   slider_orientation=direction if kind == 'slider' and direction else 'HORIZONTAL',
+                   display_mode='PIXMAP' if direction == 'PIXMAP' else 'TEXT',
                    width=min((1 if kind == 'line' else 3) if vertical else 18,width_limit), height=height,
                    x=0, y=0 if container else min(len(self.form.gadgets) * 1.5, height_limit-height),
                    parent=container.name if container else '')
@@ -2088,6 +2099,7 @@ class Window(QMainWindow):
         if kind in ('option', 'list', 'combo'): g.items = ['Item A', 'Item B']
         if direction == 'PIXMAP' and kind == 'option': g.items = []
         if direction == 'PIXMAP': g.width *= SX;g.height *= SY
+        normalize_dimensions(g)
         if container is None or container.frame_style=='FRAME':
             rectangles=[preview_geometry(draft,child) for child in draft.children(container.name if container else '')]
             gw,gh=display_size(g)

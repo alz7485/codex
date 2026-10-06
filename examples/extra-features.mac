@@ -18,6 +18,14 @@ Exit
 
 Show !!featuredemo
 
+Define Method .DEFAULT()
+  !paneLines = Array()
+  !paneLines[1] = 'Name    Type'
+  !paneLines[2] = 'P-101   Pump'
+  !paneLines[3] = '  Indented note'
+  !this.notes.val = !paneLines
+Endmethod
+
 Define Method .featuredemo()
   !this.modelPopup.Add('CALLBACK', 'Query current element', 'Q ATT')
   !this.modelPopup.Add('CALLBACK', 'Query members', 'Q MEM')
@@ -34,12 +42,4 @@ Define Method .featuredemo()
   !this.pumpChoice.rtext = !values
   !this.model.SetPopup(!this.modelPopup)
   !this.DEFAULT()
-Endmethod
-
-Define Method .DEFAULT()
-  !paneLines = Array()
-  !paneLines[1] = 'Name    Type'
-  !paneLines[2] = 'P-101   Pump'
-  !paneLines[3] = '  Indented note'
-  !this.notes.val = !paneLines
 Endmethod

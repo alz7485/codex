@@ -8,10 +8,46 @@ IDENTIFIER = re.compile(r'[A-Za-z][A-Za-z0-9_]*\Z')
 CHAR_WIDTH, LINE_HEIGHT = 10, 26
 
 
+def fixed_dimensions(gadget):
+    if gadget.display_mode == 'PIXMAP':return {}
+    if gadget.kind in ('text','paragraph'):return {'height':1}
+    if gadget.kind == 'line':
+        return {'width':1} if gadget.orientation == 'VERT' else {'height':1}
+    if gadget.kind == 'slider':
+        return {'width':3} if gadget.slider_orientation == 'VERTICAL' else {'height':1}
+    return {}
+
+
+def dimension_editable(gadget, dimension):
+    return gadget.display_mode != 'PIXMAP' and dimension not in fixed_dimensions(gadget) and not (dimension == 'width' and gadget.width_ref)
+
+
+def normalize_dimensions(gadget):
+    before = gadget.width,gadget.height,gadget.width_ref
+    fixed = fixed_dimensions(gadget)
+    for key,value in fixed.items():
+        current = getattr(gadget,key)
+        if type(current) in (int,float) and math.isfinite(current) and current > 0:
+            setattr(gadget,key,value)
+    if 'width' in fixed:gadget.width_ref = ''
+    return before != (gadget.width,gadget.height,gadget.width_ref)
+
+
+def change_orientation(gadget, direction, resolved_size=None):
+    key = 'orientation' if gadget.kind == 'line' else 'slider_orientation'
+    if gadget.kind not in ('line','slider') or getattr(gadget,key) == direction:return
+    width,height = resolved_size if resolved_size is not None else display_size(gadget)
+    gadget.width,gadget.height = height,width
+    gadget.width_ref = ''
+    setattr(gadget,key,direction)
+    normalize_dimensions(gadget)
+
+
 def display_size(gadget):
     if gadget.display_mode == 'PIXMAP':
         return gadget.width/CHAR_WIDTH,gadget.height/LINE_HEIGHT
-    return gadget.width,1 if gadget.kind == 'text' else gadget.height
+    fixed = fixed_dimensions(gadget)
+    return fixed.get('width',gadget.width),fixed.get('height',gadget.height)
 
 
 def native_size(gadget,width,height):
@@ -107,8 +143,7 @@ class Gadget:
 
     def __post_init__(self):
         if self.selection_mode == 'MULTI': self.selection_mode = 'MULTIPLE'
-        if self.kind == 'text' and type(self.height) in (int,float) and math.isfinite(self.height) and self.height > 0:
-            self.height = 1
+        normalize_dimensions(self)
 
 
 @dataclass
@@ -223,7 +258,7 @@ class Form:
             return 0,0,width,height
         dependencies = {g.name.lower(): self.geometry(g, trail) for g in self.layout_dependencies(gadget)}
         width,height = display_size(gadget)
-        if gadget.width_ref: width = dependencies[gadget.width_ref.lower()][2]
+        if gadget.width_ref and 'width' not in fixed_dimensions(gadget): width = dependencies[gadget.width_ref.lower()][2]
         x, y = gadget.x, gadget.y
         parent = self.parent_gadget(gadget)
         if parent and parent.frame_style == 'TOOLBAR':
@@ -343,6 +378,8 @@ class Form:
             if g.hgap < 0 or g.vgap < 0: raise ValueError('配置間隔は0以上で指定してください。')
             if g.width_ref and g.kind in ('toggle','option','rtoggle'):
                 raise ValueError('TOGGLE / OPTION / RTOGGLE の幅参照は未対応です。')
+            if g.width_ref and 'width' in fixed_dimensions(g):
+                raise ValueError(f'{g.name}: 太さが固定の部品には幅参照を指定できません。')
             self.layout_dependencies(g)
             parent = self.parent_gadget(g)
             if g.frame_style == 'TOOLBAR' and (g.kind != 'frame' or self.form_type != 'MAIN' or parent):
@@ -635,7 +672,8 @@ class Form:
                 previous = self.previous(g)
                 lines.append(indent+f'-- Auto placement follows {previous.name}')
                 position = ''
-            width_clause = f'WIDTH.{g.width_ref}' if g.width_ref else f'WIDTH {n(g.width)}'
+            width,height = (g.width,g.height) if g.display_mode == 'PIXMAP' else display_size(g)
+            width_clause = f'WIDTH.{g.width_ref}' if g.width_ref else f'WIDTH {n(width)}'
             at = (f'at x{n(g.x)} y{n(g.y)}' if g.layout_mode == 'ABSOLUTE' else position) + ' ' + width_clause
             callback = f" callback '!this.{g.callback}()'" if active_callback(g) else ''
             label = literal(g.label)
@@ -651,7 +689,7 @@ class Form:
                     if g.layout_mode != 'ABSOLUTE': line += ' '+position
                     if g.width_ref: line += ' '+width_clause
             elif g.kind == 'line':
-                line = f"LINE .{g.name} {position} '' {g.orientation} {width_clause} HEIGHT {n(g.height)}"
+                line = f"LINE .{g.name} {position} '' {g.orientation} {width_clause} HEIGHT {n(height)}"
             elif g.kind == 'paragraph':
                 line = f'PARAGRAPH .{g.name} {position}'
                 if g.background: line += f' BACKGROUND {int(g.background)}'
@@ -695,7 +733,7 @@ class Form:
             elif g.kind == 'slider':
                 line = (f'SLIDER .{g.name} {position} {g.slider_orientation} RANGE {n(g.slider_min)} {n(g.slider_max)} '
                         f'STEP {n(g.slider_step)} VAL {n(g.slider_value)} {width_clause}')
-                if g.slider_orientation == 'VERTICAL': line += f' HEIGHT {n(g.height)}'
+                if g.slider_orientation == 'VERTICAL': line += f' HEIGHT {n(height)}'
             elif g.kind == 'rtoggle':
                 line = f'RTOGGLE .{g.name} {label} {position} STATES {literal(g.off_value)} {literal(g.on_value)}'
             elif g.kind in ('view','commandline'):
@@ -733,6 +771,8 @@ class Form:
         lines.extend(['exit', ''])
         lines += [f'SHOW !!{self.name}', '']
         if self.after_show_code: lines += [user_code(self.after_show_code), '']
+        method_start = len(lines)
+        method_offsets = [method_start]
         lines.append(f'define method .{self.name}()')
         for menu in self.menus:
             if menu.popup:
@@ -767,6 +807,7 @@ class Form:
         lines.extend(['endmethod', ''])
         for g in self.gadgets:
             if g.kind != 'list' or g.list_mode != 'TABLE': continue
+            method_offsets.append(len(lines))
             lines += [f'define method .{g.table_method or "populate_"+g.name}()', '  !HEAD = ARRAY()']
             for column, heading in enumerate(g.headings,1): lines.append(f'  !HEAD[{column}] = {literal(heading)}')
             lines += [f'  !THIS.{g.name}.setheadings(!HEAD)', '  !ROWS = ARRAY()']
@@ -775,9 +816,11 @@ class Form:
                 for column, cell in enumerate(cells,1): lines.append(f'  !ROWS[{row}][{column}] = {literal(cell)}')
             lines += [f'  !THIS.{g.name}.setrows(!ROWS)', 'endmethod', '']
         if 'default' in active_methods:
+            method_offsets.append(len(lines))
             lines += ['DEFINE METHOD .DEFAULT()', *initial_lines, *([user_code(default_code)] if has_code(default_code) else []), 'ENDMETHOD', '']
         for g in self.gadgets:
             if g.action_mode == 'MACRO':
+                method_offsets.append(len(lines))
                 lines += [f'define method .macro_{g.name}()']
                 if g.macro_flag:lines.append(f'  !!{g.macro_flag} = {literal(g.macro_value)}')
                 lines += [f'  $M "{g.macro_path.replace(chr(92), chr(47))}"', 'endmethod', '']
@@ -786,7 +829,13 @@ class Form:
             if active_callback(g) and g.callback.lower() not in seen:
                 seen.add(g.callback.lower())
                 signature = '(!gad is GADGET, !event is STRING)' if g.kind in ('slider','combo') else '()'
+                method_offsets.append(len(lines))
                 lines += [f'define method .{g.callback}{signature}', user_code(g.body), 'endmethod', '']
+        from .method_order import order_methods
+        ends = method_offsets[1:] + [len(lines)]
+        blocks = [lines[start:end] for start,end in zip(method_offsets,ends)]
+        blocks = order_methods(blocks[1:]+blocks[:1],self.name,protected)
+        lines = lines[:method_start] + [line for block in blocks for line in block]
         from .formatting import canonical_pml
         text='\n'.join(lines)
         if normalize:text=canonical_pml(text,external_types={g.control_type for g in self.gadgets if g.kind=='container' and g.assembly})
