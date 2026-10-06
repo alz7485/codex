@@ -164,6 +164,7 @@ class Item(QGraphicsObject):
     resizing = Signal()
     resized = Signal(object)
     pageChosen = Signal(str)
+    selectionToggled = Signal(str)
     labelEditRequested = Signal(str)
 
     def __init__(self, gadget, form, image_directories=()):
@@ -198,7 +199,16 @@ class Item(QGraphicsObject):
         path = QPainterPath(); rect = self.boundingRect()
         parent = self.form.parent_gadget(self.gadget)
         if self.gadget.kind == 'frame' and parent and parent.frame_style == 'TABSET': rect = rect.adjusted(0, 26, 0, 0)
-        path.addRect(rect); return path
+        path.addRect(rect)
+        if self.scene():
+            # Overlapping children must leave selected resize handles reachable.
+            selected_items=self.scene().selectedItems()
+            for selected in selected_items if len(selected_items)==1 else ():
+                if selected is self or not isinstance(selected,(Item,FormItem)):continue
+                for handle in selected.handles().values():
+                    hole=QPainterPath();hole.addRect(self.mapRectFromScene(selected.mapRectToScene(handle)))
+                    path=path.subtracted(hole)
+        return path
 
     def tab_page_at(self, pos):
         if self.gadget.kind == 'frame' and self.gadget.frame_style == 'TABSET' and 0 <= pos.y() < 26:
@@ -214,7 +224,7 @@ class Item(QGraphicsObject):
         self._tab_press=None
         g = self.gadget
         if event.modifiers() & (Qt.ControlModifier|Qt.ShiftModifier):
-            self.setSelected(not self.isSelected());event.accept();return
+            self.selectionToggled.emit(g.name);event.accept();return
         handle = self.handle_at(event.pos())
         if event.button() == Qt.LeftButton and handle:
             self._resize = (handle,event.scenePos(),g.width,g.height,copy.deepcopy(self.form))
@@ -919,7 +929,7 @@ class Window(QMainWindow):
         self.clear_backup();self.recovery.restored_path=Path(path);self.recovery.restored_lock=claim
         self.project_key=uuid.uuid4().hex;self.form=form
         self.path=Path(data['source']) if data['source'] else None
-        self.selected=None;self.history.clear();self.future.clear()
+        self.selected=None;self._multi_selection.clear();self.active_pages.clear();self.history.clear();self.future.clear()
         self.variable_error=False;self.dirty=True;self.refresh()
         self.set_workflow('layout')
         if data['pending_variables'] is not None:self.variables.setPlainText(data['pending_variables'])
@@ -1709,6 +1719,7 @@ class Window(QMainWindow):
         for index, g in enumerate(self.form.gadgets):
             item = Item(g, self.form, image_directories); item.setData(0, index)
             item.pageChosen.connect(self.choose_page)
+            item.selectionToggled.connect(self.toggle_selection)
             item.labelEditRequested.connect(self.request_object_label)
             item.resizing.connect(self.resize_preview); item.resized.connect(self.resize_committed)
             item.moved.connect(self.move_committed);item.groupMoved.connect(self.move_multiple_committed); self.scene.addItem(item)
@@ -1848,6 +1859,12 @@ class Window(QMainWindow):
     def selection_names(self):
         if self._multi_selection:return set(self._multi_selection)
         return {self.form.gadgets[self.selected].name} if self.selected is not None else set()
+
+    def toggle_selection(self,name):
+        names=self.selection_names()
+        if name in names:names.remove(name)
+        else:names.add(name)
+        self.choose_rows([i for i,g in enumerate(self.form.gadgets) if g.name in names])
 
     def choose_rows(self,indices):
         if self.loading:return
@@ -2170,7 +2187,7 @@ class Window(QMainWindow):
         if not self.confirm_discard(): return
         self.clear_backup()
         self.project_key = uuid.uuid4().hex
-        self.variable_error = False; self.form = Form(); self.path = None; self.selected = None; self._multi_selection.clear(); self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
+        self.variable_error = False; self.form = Form(); self.path = None; self.selected = None; self._multi_selection.clear(); self.active_pages.clear(); self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
         self.set_workflow('form')
 
     def open(self):
@@ -2188,7 +2205,7 @@ class Window(QMainWindow):
             QMessageBox.warning(self, '読込エラー', str(e)); return False
         self.clear_backup()
         self.project_key = uuid.uuid4().hex
-        self.variable_error = False; self.form = form; self.path = Path(path); self.selected = None; self._multi_selection.clear(); self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
+        self.variable_error = False; self.form = form; self.path = Path(path); self.selected = None; self._multi_selection.clear(); self.active_pages.clear(); self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
         self.set_workflow('layout')
         warning=self.remember_project()
         if warning:self.statusBar().showMessage(warning)

@@ -146,7 +146,12 @@ class NameManager(QDialog):
         try:self.draft.validate()
         except ValueError as error:self.status.setText(str(error));return False
         if self.owner.form!=self.draft:
-            self.owner.checkpoint();self.owner.form=copy.deepcopy(self.draft);self.owner.refresh()
+            name_map={old.name:new.name for old,new in zip(self.owner.form.gadgets,self.draft.gadgets)}
+            selected={name_map.get(name,name) for name in self.owner._multi_selection}
+            lower_names={old.lower():new.lower() for old,new in name_map.items()}
+            pages={lower_names.get(owner,owner):lower_names.get(page,page) for owner,page in self.owner.active_pages.items()}
+            self.owner.checkpoint();self.owner.form=copy.deepcopy(self.draft)
+            self.owner._multi_selection=selected;self.owner.active_pages=pages;self.owner.refresh()
         self.status.setText('適用しました。保存はメイン画面の「保存」で行います。');return True
 
 
