@@ -102,6 +102,9 @@ class MiniProperties(QDialog):
     def __init__(self,parent,form,index):
         super().__init__(parent);self.draft=copy.deepcopy(form);self.index=index
         self.gadget=self.draft.gadgets[index];g=self.gadget;self.fields={};self.result_form=None
+        from .images import sync_image_size
+        self.image_directories=parent.image_directories() if hasattr(parent,'image_directories') else ()
+        sync_image_size(g,self.image_directories)
         self.setWindowTitle(f'{g.kind.upper()} の設定');self.setMinimumWidth(350)
         layout=QVBoxLayout(self);fields=QFormLayout();layout.addLayout(fields)
         def text(key,title):
@@ -109,6 +112,8 @@ class MiniProperties(QDialog):
         def number(key,title):
             widget=QDoubleSpinBox();widget.setDecimals(1);widget.setSingleStep(.1);widget.setRange(.1,100000) if key in ('width','height') else widget.setRange(-100000,100000)
             widget.setValue(getattr(g,key));widget.setProperty('baseline',widget.value());self.fields[key]=widget;fields.addRow(title,widget)
+            if g.display_mode == 'PIXMAP' and key in ('width','height'):
+                widget.setEnabled(False);widget.setToolTip('元画像のサイズで固定されます。')
         text('name','オブジェクト名')
         if g.kind=='combo':text('combo_tagwid','TAGWID（表示名の幅）')
         if g.kind!='line':text('label','表示名')
@@ -134,8 +139,16 @@ class MiniProperties(QDialog):
         self.error=QLabel();self.error.setWordWrap(True);layout.addWidget(self.error)
         buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);layout.addWidget(buttons)
+        if 'pixmap_path' in self.fields:self.fields['pixmap_path'].textChanged.connect(self.preview_image_dimensions)
     def exec(self):
         return super().exec()
+
+    def preview_image_dimensions(self):
+        from .images import sync_image_size
+        if 'pixmap_path' in self.fields:self.gadget.pixmap_path=self.fields['pixmap_path'].text()
+        sync_image_size(self.gadget,self.image_directories)
+        for key in ('width','height'):
+            if key in self.fields:self.fields[key].setValue(getattr(self.gadget,key))
 
     def choose_color(self):
         dialog=ColorPicker(self,self.fields['background'].text())
@@ -145,11 +158,13 @@ class MiniProperties(QDialog):
         dialog=ItemsDialog(self,self.gadget)
         if dialog.exec()==QDialog.Accepted:
             self.gadget=dialog.gadget;self.draft.gadgets[self.index]=self.gadget
+            if self.gadget.display_mode=='PIXMAP':self.preview_image_dimensions()
         dialog.deleteLater()
     def accept(self):
         candidate=copy.deepcopy(self.draft);g=candidate.gadgets[self.index]
         for key,widget in self.fields.items():
             if key in ('name','action'):continue
+            if g.display_mode == 'PIXMAP' and key in ('width','height'):continue
             if isinstance(widget,QDoubleSpinBox):
                 if widget.value()!=widget.property('baseline'):setattr(g,key,widget.value())
             else:setattr(g,key,widget.currentText() if isinstance(widget,QComboBox) else widget.text())
@@ -157,6 +172,8 @@ class MiniProperties(QDialog):
             g.callback=self.fields['action'].text() if self.call_mode.currentIndex()==0 else ''
             g.command=self.fields['action'].text() if self.call_mode.currentIndex()==1 else ''
         try:
+            from .images import sync_image_size
+            sync_image_size(g,self.image_directories)
             candidate=rename(candidate,'gadget',self.index,self.fields['name'].text())
             candidate.validate()
         except ValueError as error:self.error.setText(str(error));return

@@ -24,7 +24,10 @@ class ExtraModelTests(unittest.TestCase):
                     form=Form(gadgets=[Gadget(kind=kind,name='Picture',display_mode='PIXMAP',pixmap_path=path,width=100,height=50)])
                     loaded=Form.loads(form.dumps());self.assertEqual(loaded.gadgets[0].pixmap_path,path)
                     delimiter='|' if "'" in path else "'"
-                    self.assertIn(f'!this.Picture.AddPixmap({delimiter}{path}{delimiter})',loaded.pml(normalize=False))
+                    pml=loaded.pml(normalize=False)
+                    expected=f'PIXMAP {delimiter}{path}{delimiter}' if kind=='paragraph' else f'!this.Picture.AddPixmap({delimiter}{path}{delimiter})'
+                    self.assertIn(expected,pml)
+                    if kind=='paragraph':self.assertNotIn('AddPixmap(',pml)
                     self.assertIn(path,loaded.pml().encode('cp932').decode('cp932'))
         option=Form(gadgets=[Gadget(kind='option',name='Pictures',display_mode='PIXMAP',items=paths,item_values=['A','B','C'],width=100,height=50)])
         loaded=Form.loads(option.dumps());self.assertEqual(loaded.gadgets[0].items,paths)
@@ -45,8 +48,8 @@ class ExtraModelTests(unittest.TestCase):
         gadgets=[Gadget(kind=kind,name=kind+'Pic',display_mode='PIXMAP',pixmap_path=r'C:\Images\sample.png') for kind in ('paragraph','button','toggle')]
         gadgets.append(Gadget(kind='option',name='imageChoice',display_mode='PIXMAP',items=[r'/C:\Images\red.gif',r'/C:\Images\yellow.gif'],item_values=['RED','YELLOW'],callback='imageChanged',body='q var !this.imageChoice.val'))
         form=Form(gadgets=gadgets);pml=Form.loads(form.dumps()).pml(normalize=False)
-        self.assertIn('PARAGRAPH .paragraphPic AT X 2 Y 1 PIXMAP WIDTH 14 HEIGHT 1',pml)
-        for name in ('paragraphPic','buttonPic','togglePic'): self.assertIn(f"!this.{name}.AddPixmap('C:\\Images\\sample.png')",pml)
+        self.assertIn("PARAGRAPH .paragraphPic AT X 2 Y 1 PIXMAP 'C:\\Images\\sample.png' WIDTH 14 HEIGHT 1",pml)
+        for name in ('buttonPic','togglePic'): self.assertIn(f"!this.{name}.AddPixmap('C:\\Images\\sample.png')",pml)
         self.assertIn("OPTION .imageChoice AT X 2 Y 1 'Run' PIXMAP WIDTH 14 HEIGHT 1 callback '!this.imageChanged()'",pml)
         self.assertIn('!this.imageChoice.dtext = !choices',pml);self.assertIn('!this.imageChoice.rtext = !values',pml)
         self.assertNotIn('VAR LIST',pml);self.assertEqual(actual_name(gadgets[-1]),'imageChoice')
@@ -189,7 +192,8 @@ class ExtraGuiTests(unittest.TestCase):
         self.w.docking.setCurrentIndex(5);self.w.palette_buttons['toolbar'].click()
         self.w.palette_actions['image_option'].trigger();self.w.form.validate()
         self.assertEqual(self.w.form.gadgets[1].height,78)
-        self.w.fields['width'].setValue(690);self.w.form.validate()
+        # Simulate a previously saved, full-width image (image dimensions are now read-only).
+        self.w.form.gadgets[1].width=690;self.w.refresh();self.w.form.validate()
         before=self.w.form.dumps();history=len(self.w.history);self.w.dirty=False
         self.w.add('button')
         self.assertEqual(self.w.form.dumps(),before);self.assertEqual(len(self.w.history),history);self.assertFalse(self.w.dirty)

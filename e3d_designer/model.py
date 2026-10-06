@@ -9,7 +9,9 @@ CHAR_WIDTH, LINE_HEIGHT = 10, 26
 
 
 def display_size(gadget):
-    return (gadget.width/CHAR_WIDTH,gadget.height/LINE_HEIGHT) if gadget.display_mode == 'PIXMAP' else (gadget.width,gadget.height)
+    if gadget.display_mode == 'PIXMAP':
+        return gadget.width/CHAR_WIDTH,gadget.height/LINE_HEIGHT
+    return gadget.width,1 if gadget.kind == 'text' else gadget.height
 
 
 def native_size(gadget,width,height):
@@ -105,6 +107,8 @@ class Gadget:
 
     def __post_init__(self):
         if self.selection_mode == 'MULTI': self.selection_mode = 'MULTIPLE'
+        if self.kind == 'text' and type(self.height) in (int,float) and math.isfinite(self.height) and self.height > 0:
+            self.height = 1
 
 
 @dataclass
@@ -651,7 +655,13 @@ class Form:
             elif g.kind == 'paragraph':
                 line = f'PARAGRAPH .{g.name} {position}'
                 if g.background: line += f' BACKGROUND {int(g.background)}'
-                line += (f' PIXMAP {width_clause} HEIGHT {n(g.height)}' if g.display_mode == 'PIXMAP' else f' TEXT {label} {width_clause}')
+                if g.display_mode == 'PIXMAP' and g.pixmap_path:
+                    # Supply the file at declaration time, avoiding an empty-file lookup.
+                    line += f' PIXMAP {image_path_literal(g.pixmap_path)} {width_clause} HEIGHT {n(g.height)}'
+                elif g.display_mode == 'PIXMAP':
+                    line += f" TEXT '' WIDTH {n(display_size(g)[0])}"
+                else:
+                    line += f' TEXT {label} {width_clause}'
             elif g.kind == 'text':
                 line = f'TEXT .{g.name} {position} {label}'
                 command = f'!this.macro_{g.name}()' if g.action_mode == 'MACRO' else g.command or (f'!this.{g.callback}()' if active_callback(g) else '')
@@ -732,7 +742,7 @@ class Form:
             value = getattr(self,event)
             if value: lines.append(f'  !this.{event} = {literal(value,allow_expansion=True)}')
         for g in self.gadgets:
-            if g.display_mode == 'PIXMAP' and g.kind != 'option' and g.pixmap_path:
+            if g.display_mode == 'PIXMAP' and g.kind in ('button','toggle') and g.pixmap_path:
                 lines.append(f'  !this.{g.name}.AddPixmap({image_path_literal(g.pixmap_path)})')
             if g.popup_menu: lines.append(f'  !this.{g.name}.SetPopup(!this.{g.popup_menu})')
             if g.kind == 'list' and g.list_mode == 'TABLE':

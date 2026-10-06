@@ -19,6 +19,7 @@ from .form_item import FormItem
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
 from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size
+from .images import resolve_image_path, sync_image_size
 
 LABELS = {'textpane':'複数行テキスト (TEXTPANE)','selector':'DB セレクタ (SELECTOR)','button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
           'toggle': 'チェックボックス', 'option': 'ドロップダウン', 'list': 'リスト', 'line': '線 (LINE)', 'frame': '枠 (FRAME)', 'slider':'スライダー', 'rtoggle':'ラジオボタン', 'combo':'コンボボックス', 'view':'ビュー', 'commandline':'コマンド欄 (ALPHA)', 'container':'外部部品 (CONTAINER)'}
@@ -180,8 +181,7 @@ class Item(QGraphicsObject):
         self._cancelled = False
         self._sync_geometry = False
         image_path = gadget.pixmap_path if gadget.kind != 'option' else (gadget.items[0] if gadget.items else '')
-        if image_path and not Path(image_path).is_absolute():
-            image_path = next((str(folder/image_path) for folder in image_directories if (folder/image_path).is_file()), image_path)
+        if image_path: image_path = resolve_image_path(image_path,image_directories)
         self.pixmap = QPixmap(image_path) if gadget.display_mode == 'PIXMAP' and image_path else QPixmap()
         self.setAcceptHoverEvents(True)
         self.setFlags(QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
@@ -277,11 +277,12 @@ class Item(QGraphicsObject):
     def handles(self):
         if not self.isSelected() or self.form.is_tab_page(self.gadget): return {}
         if len(self.selected_names())>1:return {}
+        if self.gadget.display_mode == 'PIXMAP':return {}
         r = self.boundingRect(); size = 8
-        result = {'height':QRectF(r.center().x()-size/2,r.bottom()-size,size,size)}
+        result = {} if self.gadget.kind == 'text' else {'height':QRectF(r.center().x()-size/2,r.bottom()-size,size,size)}
         if not self.gadget.width_ref:
             result['width'] = QRectF(r.right()-size,r.center().y()-size/2,size,size)
-            result['both'] = QRectF(r.right()-size,r.bottom()-size,size,size)
+            if self.gadget.kind != 'text':result['both'] = QRectF(r.right()-size,r.bottom()-size,size,size)
         return result
 
     def handle_at(self, point):
@@ -313,12 +314,9 @@ class Item(QGraphicsObject):
         handle, origin, width, height, _ = self._resize
         delta = event.scenePos()-origin; g = self.gadget
         old_width, old_height = g.width,g.height
-        if g.display_mode == 'PIXMAP':
-            if handle in ('width','both'): g.width = max(1,round(width+delta.x()))
-            if handle in ('height','both'): g.height = max(1,round(height+delta.y()))
-        else:
+        if g.display_mode != 'PIXMAP':
             if handle in ('width','both'): g.width = max(1,round((width+delta.x()/SX)*2)/2)
-            if handle in ('height','both'): g.height = max(1,round((height+delta.y()/SY)*2)/2)
+            if handle in ('height','both') and g.kind != 'text': g.height = max(1,round((height+delta.y()/SY)*2)/2)
         try:
             for candidate in self.form.gadgets:
                 x,y,w,h = self.form.geometry(candidate)
@@ -383,8 +381,7 @@ class Item(QGraphicsObject):
         text = g.label
         if g.display_mode == 'PIXMAP':
             if not self.pixmap.isNull():
-                fitted = self.pixmap.size().scaled(r.size().toSize(),Qt.KeepAspectRatio)
-                target = QRectF((r.width()-fitted.width())/2,(r.height()-fitted.height())/2,fitted.width(),fitted.height())
+                target = QRectF((r.width()-self.pixmap.width())/2,(r.height()-self.pixmap.height())/2,self.pixmap.width(),self.pixmap.height())
                 painter.drawPixmap(target,self.pixmap,QRectF(self.pixmap.rect()));text = ''
             else: text = '🖼 PIXMAP\n'+(g.pixmap_path if g.kind != 'option' else (g.items[0] if g.items else '画像未設定'))
         if g.kind == 'textpane':
@@ -1306,14 +1303,18 @@ class Window(QMainWindow):
         self.fields['layout_mode'].setEnabled(True)
         for key in ('width','height'):
             pixel = gadget.display_mode == 'PIXMAP'
-            self.fields[key].setMaximum(8192 if pixel else 300)
+            self.fields[key].setMaximum(max(8192,getattr(gadget,key)) if pixel else 300)
             self.fields[key].setDecimals(1)
             self.fields[key].setSingleStep(.1)
         for key in ('x','y'): self.fields[key].setEnabled(mode == 'ABSOLUTE')
         for key in ('path','halign','valign','hgap','vgap'): self.fields[key].setEnabled(mode == 'AUTO')
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): self.fields[key].setEnabled(mode == 'RELATIVE')
-        self.fields['width_ref'].setEnabled(gadget.kind not in ('toggle','option','rtoggle'))
-        self.fields['width'].setEnabled(not gadget.width_ref)
+        self.fields['width_ref'].setEnabled(gadget.display_mode != 'PIXMAP' and gadget.kind not in ('toggle','option','rtoggle'))
+        self.fields['width'].setEnabled(gadget.display_mode != 'PIXMAP' and not gadget.width_ref)
+        self.fields['height'].setEnabled(gadget.display_mode != 'PIXMAP' and gadget.kind != 'text')
+        hint='元画像のサイズで固定。収まらない場合はフォーム／フレームを広げてください。' if gadget.display_mode == 'PIXMAP' else ''
+        self.fields['width'].setToolTip(hint)
+        self.fields['height'].setToolTip(hint or ('TEXTは1行固定です。複数行にはTEXTPANEを使ってください。' if gadget.kind == 'text' else ''))
         parent = self.form.parent_gadget(gadget)
         if parent and parent.frame_style == 'TOOLBAR':
             for key in ('x','y','layout_mode','xref','yref','path','width_ref'): self.fields[key].setEnabled(False)
@@ -1362,7 +1363,7 @@ class Window(QMainWindow):
             'database':gadget.kind == 'selector', 'button_role':gadget.kind == 'button',
             'action_mode':gadget.kind == 'button' and gadget.button_role not in ('OK','CANCEL','HELP'),
             'macro_path':macro,'macro_flag':macro,'macro_value':macro,
-            'width_ref':gadget.kind not in ('toggle','option','rtoggle'),
+            'width_ref':gadget.display_mode != 'PIXMAP' and gadget.kind not in ('toggle','option','rtoggle'),
         }
         relevant['callback'] = self.fields['callback'].isEnabled()
         relevant['command'] = gadget.kind in ('button','text','toggle') and gadget.button_role not in ('OK','CANCEL','HELP') and not macro
@@ -1628,6 +1629,7 @@ class Window(QMainWindow):
         old_actual = actual_name(g)
         for key, w in self.fields.items():
             if key=='name':continue
+            if (old_display == 'PIXMAP' and key in ('width','height','width_ref')) or (g.kind == 'text' and key == 'height'):continue
             value = w.currentData() if key in ('parent','xref','yref','width_ref','popup_menu','action_mode') else self.edited_number(w,getattr(g,key)) if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
             setattr(g, key, value)
         if g.command and g.command!=old_command:g.callback=''
@@ -1686,9 +1688,16 @@ class Window(QMainWindow):
                 self.statusBar().showMessage(str(error));return
         self.refresh(rebuild=table_changed or name_changed)
 
+    def image_directories(self):
+        return ((self.path.resolve().parent,) if self.path else ()) + (self.settings.app_directory,)
+
     def refresh(self, rebuild=True):
         if self._closing or not isValid(self) or not isValid(self.scene): return
         self.loading = True
+        image_directories = self.image_directories()
+        for gadget in self.form.gadgets:
+            if sync_image_size(gadget,image_directories):self.dirty=True
+            if gadget.kind == 'text':gadget.height=1
         self.inspector_tabs.setEnabled(True)
         if self.selected is not None:self._multi_selection.clear()
         self._multi_selection.intersection_update(g.name for g in self.form.gadgets)
@@ -1715,7 +1724,6 @@ class Window(QMainWindow):
         self.form_item.setSelected(self.selected is None and not self._multi_selection)
         self.form_item.resizing.connect(self.form_resize_preview);self.form_item.resized.connect(self.resize_committed)
         self.form_item.editRequested.connect(lambda:QTimer.singleShot(0,self.edit_form_properties))
-        image_directories = ((self.path.resolve().parent,) if self.path else ()) + (self.settings.app_directory,)
         for index, g in enumerate(self.form.gadgets):
             item = Item(g, self.form, image_directories); item.setData(0, index)
             item.pageChosen.connect(self.choose_page)

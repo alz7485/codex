@@ -137,29 +137,17 @@ class AuditGuiRegressionTests(unittest.TestCase):
         self.w.menu_popup.setChecked(False);self.assertEqual(self.w.form.gadgets[0].popup_menu,'');self.w.form.validate()
         self.w.undo();self.assertTrue(self.w.form.menus[0].popup);self.assertEqual(self.w.form.gadgets[0].popup_menu,'context')
 
-    def test_pixel_dimensions_preview_bounds_save_and_resize(self):
+    def test_unavailable_image_keeps_saved_pixel_dimensions_and_locks_resize(self):
         self.load(Form(gadgets=[Gadget(kind='paragraph',name='image',display_mode='PIXMAP',width=150,height=50,x=2,y=1)]))
         item=next(item for item in self.w.scene.items() if isinstance(item,Item))
         self.assertEqual((item.boundingRect().width(),item.boundingRect().height()),(150,50))
-        self.assertIn('PIXMAP WIDTH 150 HEIGHT 50',self.w.form.pml(normalize=False))
-        self.w.fields['width'].setValue(200);self.assertEqual(self.w.form.gadgets[0].width,200)
+        self.assertIn("TEXT '' WIDTH 15",self.w.form.pml(normalize=False))
+        self.assertEqual(item.handles(),{})
+        self.assertFalse(self.w.fields['width'].isEnabled());self.assertFalse(self.w.fields['height'].isEnabled())
+        self.w.fields['width'].setValue(200);self.assertEqual(self.w.form.gadgets[0].width,150)
         with tempfile.TemporaryDirectory() as folder:
             self.w.path=Path(folder)/'image.json';self.assertTrue(self.w.save())
-            self.assertEqual(Form.loads(self.w.path.read_text()).gadgets[0].width,200)
-        self.app.processEvents();item=next(item for item in self.w.scene.items() if isinstance(item,Item))
-        start=self.w.view.mapFromScene(item.mapToScene(item.handles()['width'].center()))
-        end=start+type(start)(30,0)
-        QTest.mousePress(self.w.view.viewport(),Qt.LeftButton,Qt.NoModifier,start)
-        self.app.processEvents();QTest.mouseMove(self.w.view.viewport(),end,30)
-        QTest.mouseRelease(self.w.view.viewport(),Qt.LeftButton,Qt.NoModifier,end);self.app.processEvents()
-        self.assertEqual(self.w.form.gadgets[0].width,230);self.w.undo();self.assertEqual(self.w.form.gadgets[0].width,200)
-        self.w.choose_row(0);self.app.processEvents()
-        item=next(item for item in self.w.scene.items() if isinstance(item,Item))
-        start=self.w.view.mapFromScene(item.mapToScene(item.handles()['height'].center()));end=start+type(start)(0,30)
-        QTest.mousePress(self.w.view.viewport(),Qt.LeftButton,Qt.NoModifier,start)
-        self.app.processEvents();QTest.mouseMove(self.w.view.viewport(),end,30)
-        QTest.mouseRelease(self.w.view.viewport(),Qt.LeftButton,Qt.NoModifier,end);self.app.processEvents()
-        self.assertEqual(self.w.form.gadgets[0].height,80);self.w.undo();self.assertEqual(self.w.form.gadgets[0].height,50)
+            self.assertEqual(Form.loads(self.w.path.read_text()).gadgets[0].width,150)
         self.w.form.gadgets[0].width=800
         with self.assertRaises(ValueError):self.w.form.validate()
 

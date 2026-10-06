@@ -59,7 +59,11 @@ class FinishingTests(unittest.TestCase):
         w=self.w;w.settings.app_directory=appdir;w.path=project/'design.json'
         w.form=Form(gadgets=[Gadget(kind='paragraph',name='image',display_mode='PIXMAP',width=100,height=50,pixmap_path='sample.png'),
             Gadget(kind='option',name='choice',display_mode='PIXMAP',width=100,height=50,x=20,items=['sample.png'])])
-        before=w.form.dumps();w.refresh()
+        w.refresh()
+        self.assertEqual(w.form.gadgets[0].pixmap_path,'sample.png')
+        self.assertEqual(w.form.gadgets[1].items,['sample.png'])
+        for gadget in w.form.gadgets:self.assertEqual((gadget.width,gadget.height),(20,10))
+        before=w.form.dumps()
         for item in w.scene.items():
             if isinstance(item,Item):self.assertEqual(item.pixmap.toImage().pixelColor(0,0),QColor('red'))
         (project/'sample.png').unlink();w.refresh()

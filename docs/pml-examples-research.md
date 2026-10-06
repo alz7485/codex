@@ -357,6 +357,10 @@ GUI に CONTAINER を追加するときは、配置だけでなく import、名�
 
 ## 画像と追加機能の実装
 
+2026-10-06 更新: 実機で「表示はできるが起動時に f&m: PIXMAP file not found が出る」との報告を受け、画像PARAGRAPHはファイル名なしのPIXMAP宣言と後続のAddPixmapを組み合わせず、宣言時に画像パスを指定する形へ変更しました。[Button Gadgets（冒頭のpixmap paragraphの説明）](https://github.com/mikhalchankasm/vscode-pml-aveva-e3d/blob/07971b883c53ae665d3c02c7670c1e8cdaa76343/hide_examples/Button%20Gadget/Button%20Gadgets.md)には `pixmap /filename width 256 height 200` の例があります。エディタでは空白や共有名の$を保持するためパスを引用符で囲みます。画像未指定のPARAGRAPHは空のTEXTとして出力します。BUTTON／TOGGLEは、[Button Gadget Methods](https://github.com/mikhalchankasm/vscode-pml-aveva-e3d/blob/07971b883c53ae665d3c02c7670c1e8cdaa76343/hide_examples/Button%20Gadget/Button%20Gadget%20Methods.md)の説明どおりコンストラクタのAddPixmapを使用します。この変更で警告が解消するか、引用符付きパスがE3D 4.0で受け付けられるかは実機で未検証です。
+
+元画像のピクセル寸法をQtの画像読み込み機能で取り込み、PIXMAPのサイズを固定しました。画像OPTIONは読める選択肢の最大寸法を使います。TEXTは高さを1行に固定しています。これらの編集・保存・プレビューは回帰テストで確認しています。
+
 2026-10-05 更新: PARAGRAPH / BUTTON / TOGGLE の単一 PIXMAP、画像 OPTION の DTEXT / RTEXT、TEXTPANE の配列 VAL と FIXCHARS、DATABASE SELECTOR、MAIN の FRAME TOOLBAR、フォーム INITCALL / OKCALL / CANCELCALL、BUTTON の制御属性、POPUP メニューと SetPopup を実装しました。設計 JSON は既存バージョン 1 の未指定項目に既定値を補い、保存・読み込み、Undo / Redo、名前管理、キー操作でも新しい設定を保持します。
 
 今回、次の固定コミットの公開資料をネットから再取得し、構文例を確認しました。
