@@ -270,5 +270,38 @@ class MacImportGuiTests(unittest.TestCase):
         d=ImportCodeDialog(self.w,f);d.editors['extra_methods'].setPlainText('Define Method .DEFAULT()\n$P bad\nEndmethod')
         d.accept();self.assertIsNone(d.result_form);self.assertTrue(d.error.text());d.reject();d.deleteLater()
 
+    def test_adding_parts_avoids_imported_method_names(self):
+        self.w.form=import_mac(source('',"""Define Method .button1()
+$P reserved object name
+Endmethod
+Define Method .on_button2()
+$P reserved event name
+Endmethod""")).form
+        self.w.refresh();self.w.add('button')
+        g=self.w.form.gadgets[0]
+        self.assertEqual(g.name,'button2')
+        self.assertEqual(g.callback,'on_button2_2')
+        self.w.form.pml()
+
+    def test_source_default_editor_and_empty_definition_setting(self):
+        f=Form(constructor_mode='SOURCE',constructor_body='!this.DEFAULT()',keep_default=True)
+        d=ImportCodeDialog(self.w,f)
+        self.assertFalse(d.auto_default.isEnabled())
+        self.assertTrue(d.keep_default.isChecked())
+        self.assertIn('default_body',d.editors)
+        d.editors['default_body'].setPlainText("$P 'edited DEFAULT'")
+        d.accept();self.assertIsNotNone(d.result_form)
+        self.assertIn("$P 'edited DEFAULT'",d.result_form.pml())
+        self.assertEqual(f.default_body,'');d.deleteLater()
+
+    def test_invalid_attribute_import_preserves_current_design(self):
+        self.w.form=Form(gadgets=[Gadget(name='Existing')]);self.w.selected=0;self.w.checkpoint()
+        original=self.w.form.dumps();history=copy.deepcopy(self.w.history)
+        path=self.write_mac(source("Line .Line At X 1 Y 1 '' Horiz Width 20 Height 1 Scroll 3"))
+        with patch('e3d_designer.app.QMessageBox.warning') as warning:
+            self.assertFalse(self.w.open_design(path,confirmed=True))
+        self.assertIn('SCROLL',warning.call_args.args[2])
+        self.assertEqual(self.w.form.dumps(),original);self.assertEqual(self.w.history,history)
+
 
 if __name__=='__main__':unittest.main()

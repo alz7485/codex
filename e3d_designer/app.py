@@ -2143,6 +2143,7 @@ class Window(QMainWindow):
     @staticmethod
     def reserved_names(form):
         used={form.name.lower(),'default',*(name.lower() for name in form.variables),*(menu.name.lower() for menu in form.menus)}
+        used.update(method.name.lower() for method in form.extra_methods)
         for gadget in form.gadgets:
             used.update((gadget.name.lower(),gadget.callback.lower()))
             if gadget.kind=='list':used.add((gadget.table_method or 'populate_'+gadget.name).lower())

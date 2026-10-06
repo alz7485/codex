@@ -195,6 +195,7 @@ class Form:
     constructor_mode: str = 'GENERATED'
     extra_methods: list[Method] = field(default_factory=list)
     auto_default: bool = True
+    keep_default: bool = False
     source_mac_path: str = ''
 
     def docking_side(self):
@@ -341,6 +342,7 @@ class Form:
         for key in ('name', 'title', 'after_show_code', 'default_body','form_type','initcall','okcall','cancelcall','dock_side','preamble_code','constructor_body','source_mac_path'):
             if not isinstance(getattr(self, key), str): raise ValueError(f'{key} は文字列で指定してください。')
         if not isinstance(self.auto_default,bool):raise ValueError('DEFAULTの自動呼び出し設定は真偽値にしてください。')
+        if not isinstance(self.keep_default,bool):raise ValueError('取り込んだDEFAULTの保持設定は真偽値にしてください。')
         if self.constructor_mode not in ('GENERATED','SOURCE'):raise ValueError('コンストラクタの生成形式が不正です。')
         if '\x00' in self.source_mac_path:raise ValueError('取り込み元のパスにNULを使用できません。')
         if not isinstance(self.extra_methods,list) or any(not isinstance(method,Method) for method in self.extra_methods):
@@ -669,7 +671,7 @@ class Form:
         initial_lines = self.initial_lines()
         default_code = self.default_body or next((g.body for g in self.gadgets if g.callback.lower() == 'default' and g.body), '')
         active_methods = {g.callback.lower() for g in self.gadgets if g.callback and has_code(g.body) and g.callback.lower() != 'default'}
-        if initial_lines or has_code(default_code):active_methods.add('default')
+        if initial_lines or has_code(default_code) or self.keep_default:active_methods.add('default')
         def active_callback(g):return bool(g.callback and g.callback.lower() in active_methods)
         n = lambda v: format(v, '.8g')
         lines = [f'VAR !!{name} {literal(value)}' for name, value in self.variables.items()]
@@ -689,6 +691,9 @@ class Form:
             if g.kind == 'container' and g.assembly:
                 lines += [f'  import {literal(g.assembly)}', f"  using namespace '{g.namespace}'",
                           f'  member .{g.name}Control is {g.control_type}']
+        def member_name(name):
+            target=self.named(name)
+            return '_'+name.lstrip('_') if uses_pairs(target) else name
         def render(g, depth):
             indent = '  '*depth
             for comment in g.comment.splitlines():lines.append(indent+'-- '+comment)
@@ -696,7 +701,7 @@ class Form:
             if g.layout_mode == 'RELATIVE':
                 delta = lambda value: ('+' if value > 0 else '') + n(value) if value else ''
                 right = '-SIZE' if g.xanchor == 'RIGHT' else ''
-                position = f'AT {g.xedge}.{g.xref}{right}{delta(g.xoffset)} {g.yedge}.{g.yref}{delta(g.yoffset)}'
+                position = f'AT {g.xedge}.{member_name(g.xref)}{right}{delta(g.xoffset)} {g.yedge}.{member_name(g.yref)}{delta(g.yoffset)}'
             elif g.layout_mode == 'AUTO':
                 for command in (f'PATH {g.path}',f'HDIST {n(g.hgap)}',f'VDIST {n(g.vgap)}',f'HALIGN {g.halign}',f'VALIGN {g.valign}'):
                     lines.append(indent+command)
@@ -704,7 +709,7 @@ class Form:
                 lines.append(indent+f'-- Auto placement follows {previous.name}')
                 position = ''
             width,height = (g.width,g.height) if g.display_mode == 'PIXMAP' else display_size(g)
-            width_clause = f'WIDTH.{g.width_ref}' if g.width_ref else f'WIDTH {n(width)}'
+            width_clause = f'WIDTH.{member_name(g.width_ref)}' if g.width_ref else f'WIDTH {n(width)}'
             at = (f'at x{n(g.x)} y{n(g.y)}' if g.layout_mode == 'ABSOLUTE' else position) + ' ' + width_clause
             callback = f" callback '!this.{g.callback}()'" if active_callback(g) else ''
             label = literal(g.label)
@@ -855,7 +860,7 @@ class Form:
             lines += [f'  !THIS.{g.name}.setrows(!ROWS)', 'endmethod', '']
         if 'default' in active_methods:
             method_offsets.append(len(lines))
-            lines += ['DEFINE METHOD .DEFAULT()', *initial_lines, *([user_code(default_code)] if has_code(default_code) else []), 'ENDMETHOD', '']
+            lines += ['DEFINE METHOD .DEFAULT()', *initial_lines, *([user_code(default_code)] if has_code(default_code) or (self.keep_default and default_code) else []), 'ENDMETHOD', '']
         for g in self.gadgets:
             if g.action_mode == 'MACRO':
                 method_offsets.append(len(lines))
