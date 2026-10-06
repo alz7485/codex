@@ -1213,7 +1213,7 @@ class Window(QMainWindow):
         excluded = {gadget.name.lower(), *(name.lower() for name in self.form.descendants(gadget.name))}
         for g in self.form.gadgets:
             if g.kind == 'frame' and g.name.lower() not in excluded:
-                if g.frame_style == 'TABSET' and (gadget.kind != 'frame' or gadget.frame_style != 'FRAME'): continue
+                if g.frame_style == 'TABSET': continue
                 combo.addItem(g.name, g.name)
         if gadget.parent and combo.findData(gadget.parent) < 0: combo.addItem(gadget.parent, gadget.parent)
         combo.setCurrentIndex(max(0, combo.findData(gadget.parent)))
@@ -1487,7 +1487,7 @@ class Window(QMainWindow):
         name=self.tabset_picker.currentData()
         index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name),None)
         if index is None:return
-        self.selected=index;self.add('frame')
+        self.selected=index;self.add('frame','PAGE')
 
     def edit_page(self):
         name=self.page_tabs.tabData(self.page_tabs.currentIndex())
@@ -1702,6 +1702,11 @@ class Window(QMainWindow):
     def move_tree_gadget(self,index,parent_name,before=-1):
         if self.loading or not 0<=index<len(self.form.gadgets):return
         g=self.form.gadgets[index];parent=self.form.named(parent_name) if parent_name else None
+        if parent and parent.frame_style=='TABSET' and not self.form.is_tab_page(g):
+            parent=self.current_tab_page(parent)
+            if parent is None:
+                self.statusBar().showMessage('「＋ タブ」でタブを追加してから部品を配置してください。');return
+            parent_name=parent.name;before=-1
         excluded={g.name.lower(),*(name.lower() for name in self.form.descendants(g.name))}
         if parent_name and (parent is None or parent.kind!='frame' or parent.name.lower() in excluded):
             self.statusBar().showMessage('移動先には自分や子孫以外のフレームを指定してください。');return
@@ -1859,6 +1864,10 @@ class Window(QMainWindow):
         self.history.append(old);self.history=self.history[-100:];self.future.clear();self.dirty=True
         QTimer.singleShot(0, self.refresh)
 
+    def current_tab_page(self,tabset):
+        active=self.active_pages.get(tabset.name.lower())
+        return next((page for page in self.form.children(tabset.name) if page.name.lower()==active),None)
+
     def add(self, kind, direction=None):
         container = self.form.gadgets[self.selected] if self.selected is not None else None
         if container and container.kind != 'frame': container = self.form.parent_gadget(container)
@@ -1870,9 +1879,8 @@ class Window(QMainWindow):
             self.statusBar().showMessage('ツールバーにはボタン・チェック・OPTION・入力・COMBO・SLIDER を追加できます。');return
         if self.form.form_type == 'MAIN' and not container and direction != 'TOOLBAR' and kind not in ('button','toggle','option','text','combo','slider'):
             self.statusBar().showMessage('MAIN フォームではツールバー対応部品を追加してください。');return
-        if container and container.frame_style == 'TABSET' and (kind != 'frame' or direction=='TABSET'):
-            pages=self.form.children(container.name)
-            container=next((page for page in pages if page.name.lower()==self.active_pages.get(container.name.lower())),None)
+        if container and container.frame_style == 'TABSET' and direction!='PAGE':
+            container=self.current_tab_page(container)
             if container is None:
                 self.statusBar().showMessage('「＋ タブ」でタブを追加してから部品を配置してください。');return
         available = None

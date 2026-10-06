@@ -736,7 +736,7 @@ class GuiTests(unittest.TestCase):
     def test_nested_frame_add_rename_copy_delete_and_switch(self):
         self.w.add('frame'); self.w.fields['frame_style'].setCurrentText('TABSET')
         self.w.fields['height'].setValue(10)
-        self.w.add('frame')
+        self.w.add_page()
         self.assertEqual(self.w.form.gadgets[1].parent,'frame1')
         self.w.add('button')
         self.assertEqual(self.w.form.gadgets[2].parent,'frame2')
