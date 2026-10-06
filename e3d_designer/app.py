@@ -170,6 +170,8 @@ class Item(QGraphicsObject):
         self._resize = None
         self._move_start = None
         self._move_pos = None
+        self._move_origin = None
+        self._move_children = []
         self._sync_geometry = False
         image_path = gadget.pixmap_path if gadget.kind != 'option' else (gadget.items[0] if gadget.items else '')
         if image_path and not Path(image_path).is_absolute():
@@ -215,7 +217,10 @@ class Item(QGraphicsObject):
         # This editor moves one object at a time; Qt otherwise drags every selected item.
         event.setModifiers(event.modifiers() & ~(Qt.ControlModifier|Qt.ShiftModifier))
         if self.flags() & QGraphicsItem.ItemIsMovable:
-            self._move_start=copy.deepcopy(self.form);self._move_pos=self.pos()
+            self._move_start=copy.deepcopy(self.form);self._move_pos=self.pos();self._move_origin=event.scenePos()
+            descendants={name.lower() for name in self.form.descendants(g.name)}
+            self._move_children=[(item,item.pos()) for item in self.scene().items()
+                                 if isinstance(item,Item) and item.gadget.name.lower() in descendants]
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self,event):
@@ -244,6 +249,15 @@ class Item(QGraphicsObject):
 
     def mouseMoveEvent(self, event):
         if self._resize is None:
+            if self._move_start is not None:
+                # Keep Qt's selected-item drag cache out of single-object moves.
+                self.setPos(self._move_pos+event.scenePos()-self._move_origin)
+                delta=self.pos()-self._move_pos
+                for child,origin in self._move_children:
+                    child._sync_geometry=True
+                    child.setPos(origin+delta)
+                    child._sync_geometry=False
+                event.accept();return
             super().mouseMoveEvent(event); return
         handle, origin, width, height, _ = self._resize
         delta = event.scenePos()-origin; g = self.gadget

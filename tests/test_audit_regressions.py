@@ -389,6 +389,94 @@ class AuditGuiRegressionTests(unittest.TestCase):
         self.drag_object('run',25,5)
         self.assertEqual(w.form.named('run').parent,'') # Center is inside, right edge is outside.
 
+    def test_child_drag_after_frame_drag_keeps_frame_position(self):
+        w=self.w
+        self.load(Form(gadgets=[Gadget(kind='frame',name='group',x=10,y=3,width=25,height=12),
+                               Gadget(name='run',parent='group',x=2,y=2,width=8)]),0)
+        self.drag_object('group',15,5)
+        self.assertEqual((w.form.named('group').x,w.form.named('group').y),(15,5))
+        self.drag_object('run',19,9)
+        self.assertEqual((w.form.named('group').x,w.form.named('group').y),(15,5))
+        self.assertEqual((w.form.named('run').parent,w.form.named('run').x,w.form.named('run').y),('group',4,4))
+
+    def test_nested_child_drag_isolated_even_if_parent_selection_changes_mid_drag(self):
+        w=self.w
+        self.load(Form(gadgets=[Gadget(kind='frame',name='outer',x=5,y=2,width=40,height=20),
+            Gadget(kind='frame',name='inner',parent='outer',x=5,y=3,width=25,height=12),
+            Gadget(name='run',parent='inner',x=2,y=2,width=8)]),2)
+        item=next(i for i in w.scene.items() if isinstance(i,Item) and i.gadget.name=='run')
+        parents=[i for i in w.scene.items() if isinstance(i,Item) and i.gadget.kind=='frame']
+        original={i.gadget.name:i.pos() for i in parents}
+        start=w.view.mapFromScene(item.mapToScene(item.boundingRect().center()))
+        end=start+type(start)(2*SX,2*SY)
+        QTest.mousePress(w.view.viewport(),Qt.LeftButton,Qt.NoModifier,start)
+        self.app.processEvents()
+        w.scene.blockSignals(True)
+        for parent in parents:parent.setSelected(True)
+        w.scene.blockSignals(False)
+        QTest.mouseMove(w.view.viewport(),end,30)
+        for parent in parents:self.assertEqual(parent.pos(),original[parent.gadget.name])
+        QTest.mouseRelease(w.view.viewport(),Qt.LeftButton,Qt.NoModifier,end);self.app.processEvents()
+        self.assertEqual((w.form.named('outer').x,w.form.named('outer').y),(5,2))
+        self.assertEqual((w.form.named('inner').x,w.form.named('inner').y),(5,3))
+        self.assertEqual((w.form.named('run').parent,w.form.named('run').x,w.form.named('run').y),('inner',4,4))
+        w.form.validate();w.undo()
+        self.assertEqual((w.form.named('run').x,w.form.named('run').y),(2,2))
+
+    def test_tab_child_drag_preserves_tabset_and_page_positions(self):
+        w=self.w
+        self.load(Form(gadgets=[Gadget(kind='frame',name='tabs',frame_style='TABSET',x=10,y=3,width=30,height=15,
+            tabs=[Gadget(kind='frame',name='pageA'),Gadget(kind='frame',name='pageB')]),
+            Gadget(name='run',parent='pageA',x=2,y=3,width=8),
+            Gadget(name='other',parent='pageB',x=3,y=3,width=8)]))
+        original=w.form.dumps()
+        for page,name,x,y in [('pageA','run',15,9),('pageB','other',16,10),('pageA','run',17,11)]:
+            w.choose_row(next(i for i,g in enumerate(w.form.gadgets) if g.name==name))
+            self.app.processEvents()
+            self.drag_object(name,x,y)
+            self.assertEqual((w.form.named('tabs').x,w.form.named('tabs').y),(10,3))
+            self.assertEqual(w.form.geometry(w.form.named(page))[:2],(0,0))
+            self.assertEqual((w.form.named(name).parent,w.form.named(name).x,w.form.named(name).y),(page,x-10,y-3))
+            for item in w.scene.items():
+                if isinstance(item,Item) and item.gadget.name in ('tabs','pageA','pageB'):
+                    self.assertEqual((item.pos().x(),item.pos().y()),(10*SX,3*SY))
+            w.form.validate()
+        for _ in range(3):w.undo()
+        self.assertEqual(w.form.dumps(),original)
+
+    def test_normal_frame_drag_inside_tab_page_preserves_ancestors(self):
+        w=self.w
+        self.load(Form(height=30,gadgets=[Gadget(kind='frame',name='tabs',frame_style='TABSET',x=10,y=3,width=40,height=20,
+            tabs=[Gadget(kind='frame',name='pageA'),Gadget(kind='frame',name='pageB')]),
+            Gadget(kind='frame',name='inner',parent='pageA',x=2,y=3,width=20,height=10),
+            Gadget(name='run',parent='inner',x=2,y=2,width=8)]))
+        original=w.form.dumps()
+        frame=next(i for i in w.scene.items() if isinstance(i,Item) and i.gadget.name=='inner')
+        child=next(i for i in w.scene.items() if isinstance(i,Item) and i.gadget.name=='run')
+        child_origin=child.pos();frame_origin=frame.pos()
+        start=w.view.mapFromScene(frame.mapToScene(frame.boundingRect().center()))
+        end=start+type(start)(3*SX,3*SY)
+        QTest.mousePress(w.view.viewport(),Qt.LeftButton,Qt.NoModifier,start);self.app.processEvents()
+        QTest.mouseMove(w.view.viewport(),end,30)
+        self.assertEqual(child.pos(),child_origin+frame.pos()-frame_origin)
+        for item in w.scene.items():
+            if isinstance(item,Item) and item.gadget.name in ('tabs','pageA','pageB'):
+                self.assertEqual((item.pos().x(),item.pos().y()),(10*SX,3*SY))
+        QTest.mouseRelease(w.view.viewport(),Qt.LeftButton,Qt.NoModifier,end);self.app.processEvents()
+        self.assertEqual((w.form.named('tabs').x,w.form.named('tabs').y),(10,3))
+        self.assertEqual(w.form.geometry(w.form.named('pageA'))[:2],(0,0))
+        inner=w.form.named('inner')
+        self.assertEqual((inner.parent,inner.x,inner.y),('pageA',5,6))
+        self.assertEqual((w.form.named('run').parent,w.form.named('run').x,w.form.named('run').y),('inner',2,2))
+        self.drag_object('run',19,13)
+        self.assertEqual((w.form.named('tabs').x,w.form.named('tabs').y),(10,3))
+        self.assertEqual((w.form.named('inner').x,w.form.named('inner').y),(5,6))
+        self.assertEqual((w.form.named('run').x,w.form.named('run').y),(4,4))
+        for name in ('tabs','pageA','pageB'):
+            item=next(i for i in w.scene.items() if isinstance(i,Item) and i.gadget.name==name)
+            self.assertEqual((item.pos().x(),item.pos().y()),(10*SX,3*SY))
+        w.form.validate();w.undo();w.undo();self.assertEqual(w.form.dumps(),original)
+
     def test_slider_drag_moves_only_pressed_object_even_with_stale_multi_selection(self):
         w=self.w
         self.load(Form(gadgets=[Gadget(kind='slider',name='level',x=2,y=2,width=8),Gadget(name='run',x=20,y=2,width=8)]))
