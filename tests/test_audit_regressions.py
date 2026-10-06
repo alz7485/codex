@@ -477,7 +477,7 @@ class AuditGuiRegressionTests(unittest.TestCase):
             self.assertEqual((item.pos().x(),item.pos().y()),(10*SX,3*SY))
         w.form.validate();w.undo();w.undo();self.assertEqual(w.form.dumps(),original)
 
-    def test_slider_drag_moves_only_pressed_object_even_with_stale_multi_selection(self):
+    def test_slider_drag_moves_selected_objects_as_one_group(self):
         w=self.w
         self.load(Form(gadgets=[Gadget(kind='slider',name='level',x=2,y=2,width=8),Gadget(name='run',x=20,y=2,width=8)]))
         for item in w.scene.items():
@@ -487,7 +487,7 @@ class AuditGuiRegressionTests(unittest.TestCase):
         original=w.form.dumps();history=len(w.history)
         self.drag_object('level',5,5)
         self.assertEqual((w.form.named('level').x,w.form.named('level').y),(5,5))
-        self.assertEqual((w.form.named('run').x,w.form.named('run').y),(20,2))
+        self.assertEqual((w.form.named('run').x,w.form.named('run').y),(23,5))
         self.assertEqual(len(w.history),history+1)
         w.undo();self.assertEqual(w.form.dumps(),original)
 

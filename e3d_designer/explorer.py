@@ -1,20 +1,22 @@
 """Frame hierarchy explorer with atomic model-owned drag operations."""
-from PySide6.QtCore import Qt,Signal
+from PySide6.QtCore import Qt,Signal,QItemSelectionModel
 from PySide6.QtGui import QDrag
 from PySide6.QtWidgets import QTreeWidget,QTreeWidgetItem,QAbstractItemView
 
 class ObjectExplorer(QTreeWidget):
     currentRowChanged=Signal(int)
+    selectionRowsChanged=Signal(object)
     moveRequested=Signal(int,str,int)
     def __init__(self):
         super().__init__();self.nodes={};self.root=None;self._drag_index=-1
         self.setExpandsOnDoubleClick(False)
         self.setHeaderHidden(True);self.setIndentation(16);self.setUniformRowHeights(True)
-        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setDragDropMode(QAbstractItemView.InternalMove)
         self.setAutoExpandDelay(500)
         self.setDefaultDropAction(Qt.MoveAction);self.setDragDropOverwriteMode(False);self.setDropIndicatorShown(True)
         self.currentItemChanged.connect(lambda item,previous:self.currentRowChanged.emit(item.data(0,Qt.UserRole) if item and item is not self.root else -1))
+        self.itemSelectionChanged.connect(lambda:self.selectionRowsChanged.emit([item.data(0,Qt.UserRole) for item in self.selectedItems()]))
     def rebuild(self,form,title,icon_for=None):
         expanded={item.data(0,Qt.UserRole+1):item.isExpanded() for item in self.nodes.values() if item.childCount()}
         root_expanded=self.root.isExpanded() if self.root else True
@@ -44,10 +46,24 @@ class ObjectExplorer(QTreeWidget):
             while parent:
                 if not parent.isExpanded():collapsed.append(parent)
                 parent=parent.parent()
-        self.setCurrentItem(item)
+        self.setCurrentItem(item,0,QItemSelectionModel.ClearAndSelect)
         for parent in collapsed:parent.setExpanded(False)
         if reveal and item:self.scrollToItem(item)
+    def setRows(self,indices,reveal=True):
+        previous=self.blockSignals(True)
+        try:
+            self.clearSelection()
+            for index in indices:
+                item=self.nodes.get(index)
+                if not item:continue
+                if reveal:
+                    parent=item.parent()
+                    while parent:parent.setExpanded(True);parent=parent.parent()
+                item.setSelected(True)
+        finally:self.blockSignals(previous)
+
     def startDrag(self,actions):
+        if len(self.selectedItems())>1:return
         self._drag_index=self.currentRow()
         if self._drag_index<0:return
         # Own the drag so Qt cannot remove tree rows after our model transaction.

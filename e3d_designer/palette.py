@@ -6,19 +6,19 @@ from PySide6.QtWidgets import QWidget,QToolButton,QMenu,QGridLayout,QLayout,QSiz
 
 GROUPS = (
     ('button',(('button','button',None,'🖱️','ボタン'),)),
-    ('paragraph',(('paragraph','paragraph',None,'🏷️','ラベル'),('image','paragraph','PIXMAP','🖼️','画像'))),
-    ('text',(('text','text',None,'✏️','入力'),)),
-    ('toggle',(('toggle','toggle',None,'☑️','チェック'),('rtoggle','rtoggle',None,'🔘','ラジオ'))),
     ('option',(('option','option',None,'🔽','プルダウン'),('combo','combo',None,'📝','コンボ'),('image_option','option','PIXMAP','🖼️','画像選択'))),
     ('frame',(('frame','frame',None,'📁','フレーム'),('tabset','frame','TABSET','🗂️','タブ'))),
+    ('toggle',(('toggle','toggle',None,'☑️','チェック'),('rtoggle','rtoggle',None,'🔘','ラジオ'))),
     ('line',(('line_horiz','line','HORIZ','📏','横線'),('line_vert','line','VERT','↕️','縦線'))),
-    ('slider',(('slider_horiz','slider','HORIZONTAL','🎚️','横スライダー'),('slider_vert','slider','VERTICAL','🎚️','縦スライダー'))),
-    ('list',(('list','list',None,'📋','リスト'),('textpane','textpane',None,'📄','複数行'))),
-    ('commandline',(('commandline','commandline',None,'⌨️','コマンド'),('view','view',None,'👁️','ビュー'))),
+    ('menubar',(('menubar',None,None,'📑','メニューバー'),)),
     ('container',(('container','container',None,'🧩','コンテナ'),)),
+    ('text',(('text','text',None,'✏️','入力'),)),
+    ('paragraph',(('paragraph','paragraph',None,'🏷️','ラベル'),('image','paragraph','PIXMAP','🖼️','画像'))),
+    ('list',(('list','list',None,'📋','リスト'),('textpane','textpane',None,'📄','複数行'))),
+    ('slider',(('slider_horiz','slider','HORIZONTAL','🎚️','横スライダー'),('slider_vert','slider','VERTICAL','🎚️','縦スライダー'))),
+    ('commandline',(('commandline','commandline',None,'⌨️','コマンド'),('view','view',None,'👁️','ビュー'))),
     ('selector',(('selector','selector',None,'🗃️','DBセレクタ'),)),
     ('toolbar',(('toolbar','frame','TOOLBAR','🛠️','ツールバー'),)),
-    ('menubar',(('menubar',None,None,'📑','メニューバー'),)),
 )
 
 

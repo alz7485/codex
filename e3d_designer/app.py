@@ -160,6 +160,7 @@ def preview_offset(form, gadget):
 
 class Item(QGraphicsObject):
     moved = Signal(object,str,float,float)
+    groupMoved = Signal(object,object,float,float)
     resizing = Signal()
     resized = Signal(object)
     pageChosen = Signal(str)
@@ -173,6 +174,7 @@ class Item(QGraphicsObject):
         self._move_pos = None
         self._move_origin = None
         self._move_children = []
+        self._move_names = []
         self._cancelled = False
         self._sync_geometry = False
         image_path = gadget.pixmap_path if gadget.kind != 'option' else (gadget.items[0] if gadget.items else '')
@@ -209,6 +211,8 @@ class Item(QGraphicsObject):
         if event.button()!=Qt.LeftButton:event.ignore();return
         self._cancelled=False
         g = self.gadget
+        if event.modifiers() & (Qt.ControlModifier|Qt.ShiftModifier):
+            self.setSelected(not self.isSelected());event.accept();return
         handle = self.handle_at(event.pos())
         if event.button() == Qt.LeftButton and handle:
             self._resize = (handle,event.scenePos(),g.width,g.height,copy.deepcopy(self.form))
@@ -216,16 +220,19 @@ class Item(QGraphicsObject):
         page = self.tab_page_at(event.pos())
         if page:
             self.pageChosen.emit(page.name); event.accept(); return
-        for item in self.scene().selectedItems():
-            if item is not self:item.setSelected(False)
-        # This editor moves one object at a time; Qt otherwise drags every selected item.
-        event.setModifiers(event.modifiers() & ~(Qt.ControlModifier|Qt.ShiftModifier))
+        scene=self.scene();changed=not self.isSelected();previous=scene.blockSignals(True)
+        if changed:
+            for item in scene.selectedItems():item.setSelected(False)
+        self.setSelected(True);scene.blockSignals(previous)
+        if changed and not previous:scene.selectionChanged.emit()
         if self.flags() & QGraphicsItem.ItemIsMovable:
             self._move_start=copy.deepcopy(self.form);self._move_pos=self.pos();self._move_origin=event.scenePos()
-            descendants={name.lower() for name in self.form.descendants(g.name)}
-            self._move_children=[(item,item.pos()) for item in self.scene().items()
-                                 if isinstance(item,Item) and item.gadget.name.lower() in descendants]
-        super().mousePressEvent(event)
+            self._move_names=list(self.selected_names())
+            moving=set(self._move_names)
+            for name in self._move_names:moving.update(self.form.descendants(name))
+            self._move_children=[(item,item.pos()) for item in scene.items()
+                                 if isinstance(item,Item) and item is not self and item.gadget.name in moving]
+        event.accept()
 
     def cancel_interaction(self):
         if self._resize is not None:
@@ -247,8 +254,16 @@ class Item(QGraphicsObject):
             self.labelEditRequested.emit(page.name if page else self.gadget.name);event.accept();return
         super().mouseDoubleClickEvent(event)
 
+    def selected_names(self):
+        scene=self.scene()
+        if not scene:return set()
+        selected_names=getattr(scene.parent(),'selection_names',None)
+        if callable(selected_names):return selected_names()
+        return {item.gadget.name for item in scene.selectedItems() if isinstance(item,Item)}
+
     def handles(self):
         if not self.isSelected() or self.form.is_tab_page(self.gadget): return {}
+        if len(self.selected_names())>1:return {}
         r = self.boundingRect(); size = 8
         result = {'height':QRectF(r.center().x()-size/2,r.bottom()-size,size,size)}
         if not self.gadget.width_ref:
@@ -268,7 +283,7 @@ class Item(QGraphicsObject):
         if self._cancelled:event.accept();return
         if self._resize is None:
             if self._move_start is not None:
-                # Keep Qt's selected-item drag cache out of single-object moves.
+                # Move each selected object and descendant once from its original position.
                 self.setPos(self._move_pos+event.scenePos()-self._move_origin)
                 delta=self.pos()-self._move_pos
                 for child,origin in self._move_children:
@@ -414,10 +429,13 @@ class Item(QGraphicsObject):
             _,_,width,height,old = self._resize; self._resize = None
             if (self.gadget.width,self.gadget.height) != (width,height): self.resized.emit(old)
             event.accept(); return
-        super().mouseReleaseEvent(event)
+        event.accept()
         old=self._move_start;self._move_start=None
         if old is None or self.pos()==self._move_pos:return
-        self.moved.emit(old,self.gadget.name,round(self.pos().x()/SX,2),round(self.pos().y()/SY,2))
+        if len(self._move_names)>1:
+            delta=self.pos()-self._move_pos
+            self.groupMoved.emit(old,self._move_names,round(delta.x()/SX,2),round(delta.y()/SY,2))
+        else:self.moved.emit(old,self.gadget.name,round(self.pos().x()/SX,2),round(self.pos().y()/SY,2))
 
 
 class TableCell(QLineEdit):
@@ -449,6 +467,7 @@ class Window(QMainWindow):
         self.backup_timer.timeout.connect(self.backup_work)
         self.setWindowIcon(QIcon(str(Path(__file__).parent/'assets'/'app-icon.ico')))
         self.form, self.path, self.selected = Form(), None, None
+        self._multi_selection=set()
         self.project_key = uuid.uuid4().hex
         self.selected_menu = None
         self.preview_menus = []
@@ -497,7 +516,9 @@ class Window(QMainWindow):
         self.palette_actions=self.palette_panel.actions
         self.placement_hint=QLabel();self.placement_hint.setWordWrap(True)
         self.placement_hint.setStyleSheet('color: #185fa8; padding: 4px; background: #eaf3ff;')
-        self.objects = ObjectExplorer(); self.objects.currentRowChanged.connect(self.choose_row)
+        self.objects = ObjectExplorer(); self.objects.selectionRowsChanged.connect(self.choose_rows)
+        self.objects.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.objects.customContextMenuRequested.connect(self.tree_popup)
         self.objects.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.objects.setTextElideMode(Qt.ElideRight)
         self.objects.moveRequested.connect(self.move_tree_gadget);ll.addWidget(self.objects,1);ll.addWidget(self.placement_hint)
@@ -524,7 +545,8 @@ class Window(QMainWindow):
         self.preview_menu_bar = QMenuBar(); self.preview_menu_bar.setNativeMenuBar(False)
         self.preview_menu_frame=QFrame();self.preview_menu_frame.setObjectName("previewMenuFrame")
         self.preview_menu_frame.setStyleSheet("QFrame#previewMenuFrame { border: 1px solid #7f91a5; border-radius: 3px; background: white; }")
-        self.preview_menu_frame.setToolTip("フォームのメニューバー")
+        self.preview_menu_frame.setToolTip("フォームのメニューバー：ダブルクリックで編集")
+        self.preview_menu_bar.installEventFilter(self);self.preview_menu_frame.installEventFilter(self)
         menu_layout=QVBoxLayout(self.preview_menu_frame);menu_layout.setContentsMargins(3,2,3,2)
         menu_layout.addWidget(self.preview_menu_bar);preview_layout.addWidget(self.preview_menu_frame)
         self.tab_editor=QWidget();tab_layout=QHBoxLayout(self.tab_editor);tab_layout.setContentsMargins(0,0,0,0)
@@ -606,6 +628,9 @@ class Window(QMainWindow):
         rl.addStretch()
         part_page=QWidget();rl=QVBoxLayout(part_page)
         self.selection_stack=QStackedWidget();self.selection_stack.addWidget(form_page);self.selection_stack.addWidget(part_page)
+        multiple_page=QWidget();multiple_page.setStyleSheet('background: #eceff2; color: #8b95a3;')
+        multiple_layout=QVBoxLayout(multiple_page);self.multiple_hint=QLabel();self.multiple_hint.setWordWrap(True)
+        multiple_layout.addWidget(self.multiple_hint);multiple_layout.addStretch();self.selection_stack.addWidget(multiple_page)
         right.addTab(self.selection_stack,'プロパティ');right.setCurrentIndex(0)
         self.selection_hint=QLabel();self.selection_hint.setWordWrap(True)
         self.selection_hint.setStyleSheet('color: #46566b; padding: 4px;')
@@ -1000,7 +1025,10 @@ class Window(QMainWindow):
 
     def preview_popup(self,position):
         item = self.view.itemAt(position)
-        if not isinstance(item,Item) or not item.gadget.popup_menu: return
+        if not isinstance(item,Item):return
+        if item.gadget.kind=='frame':
+            self.frame_selection_popup(item.gadget.name,self.view,self.view.viewport().mapToGlobal(position));return
+        if not item.gadget.popup_menu:return
         source = next((menu for menu in self.form.menus if menu.popup and menu.name.lower() == item.gadget.popup_menu.lower()),None)
         if source is None: return
         popup = QMenu(self.view)
@@ -1009,6 +1037,28 @@ class Window(QMainWindow):
             action.triggered.connect(lambda checked=False,command=entry.command:self.statusBar().showMessage('E3D で実行するコマンド: '+command))
         popup.setAttribute(Qt.WA_DeleteOnClose)
         popup.popup(self.view.viewport().mapToGlobal(position))
+
+    def tree_popup(self,position):
+        item=self.objects.itemAt(position)
+        index=item.data(0,Qt.UserRole) if item else -1
+        if not isinstance(index,int) or not 0<=index<len(self.form.gadgets):return
+        gadget=self.form.gadgets[index]
+        if gadget.kind=='frame':
+            self.frame_selection_popup(gadget.name,self.objects,self.objects.viewport().mapToGlobal(position))
+
+    def frame_selection_popup(self,name,parent,position):
+        popup=QMenu(parent)
+        action=popup.addAction('子を含めてすべて選択')
+        action.triggered.connect(lambda checked=False:self.select_frame_subtree(name))
+        popup.setAttribute(Qt.WA_DeleteOnClose);popup.popup(position)
+
+    def select_frame_subtree(self,name):
+        index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name and g.kind=='frame'),None)
+        if index is None:return
+        names={name,*self.form.descendants(name)}
+        # Reveal the frame's tab before selecting its descendants, including hidden pages.
+        self.choose_row(index)
+        self.choose_rows([i for i,g in enumerate(self.form.gadgets) if g.name in names])
 
     def refresh_menus(self, rebuild=True):
         self.preview_menu_bar.clear()
@@ -1618,6 +1668,12 @@ class Window(QMainWindow):
     def refresh(self, rebuild=True):
         if self._closing or not isValid(self) or not isValid(self.scene): return
         self.loading = True
+        self.inspector_tabs.setEnabled(True)
+        if self.selected is not None:self._multi_selection.clear()
+        self._multi_selection.intersection_update(g.name for g in self.form.gadgets)
+        if len(self._multi_selection)==1:
+            name=next(iter(self._multi_selection));self.selected=next(i for i,g in enumerate(self.form.gadgets) if g.name==name)
+            self._multi_selection.clear()
         for highlighter in self.pml_highlighters:highlighter.set_symbols(self.form)
         self.refresh_menus(rebuild)
         variable_text = '\n'.join(f'{k}={v}' for k,v in self.form.variables.items())
@@ -1631,11 +1687,11 @@ class Window(QMainWindow):
             if editor.text() != getattr(self.form,event): editor.setText(getattr(self.form,event))
         self.load_number(self.fw,self.form.width); self.load_number(self.fh,self.form.height)
         self.objects.rebuild(self.form,gadget_title,lambda g:PALETTE[g.kind][0])
-        if self.selected is None:self.objects.setCurrentRow(-1,reveal=False)
+        if self.selected is None and not self._multi_selection:self.objects.setCurrentRow(-1,reveal=False)
         self.scene.blockSignals(True); self.scene.clear()
         self.scene.setSceneRect(-12,-30,self.form.width*SX+24,self.form.height*SY+42)
         self.form_item=FormItem(self.form,SX,SY);self.scene.addItem(self.form_item)
-        self.form_item.setSelected(self.selected is None)
+        self.form_item.setSelected(self.selected is None and not self._multi_selection)
         self.form_item.resizing.connect(self.form_resize_preview);self.form_item.resized.connect(self.resize_committed)
         self.form_item.editRequested.connect(lambda:QTimer.singleShot(0,self.edit_form_properties))
         image_directories = ((self.path.resolve().parent,) if self.path else ()) + (self.settings.app_directory,)
@@ -1644,8 +1700,8 @@ class Window(QMainWindow):
             item.pageChosen.connect(self.choose_page)
             item.labelEditRequested.connect(self.request_object_label)
             item.resizing.connect(self.resize_preview); item.resized.connect(self.resize_committed)
-            item.moved.connect(self.move_committed); self.scene.addItem(item)
-            item.setSelected(index == self.selected)
+            item.moved.connect(self.move_committed);item.groupMoved.connect(self.move_multiple_committed); self.scene.addItem(item)
+            item.setSelected(index == self.selected or g.name in self._multi_selection)
         self.scene.blockSignals(False)
         self.apply_page_visibility()
         if self.selected is not None and self.selected < len(self.form.gadgets):
@@ -1681,9 +1737,11 @@ class Window(QMainWindow):
         self.sync_output_summary()
         self.edit_method_button.setEnabled(self.selected is not None and self.fields['callback'].isEnabled() and not self.form.gadgets[self.selected].command)
         self.setWindowTitle(('● ' if self.dirty else '') + 'E3D PML Form Designer — ' + (self.path.name if self.path else '新規設計'))
+        if self._multi_selection:self.show_multiple_selection(reveal=False)
 
     def choose_row(self, index):
         if self.loading: return
+        self._multi_selection.clear()
         self.selected = index if index >= 0 else None
         # Hidden pages must become visible before Qt can select their outline.
         self.apply_page_visibility()
@@ -1776,26 +1834,91 @@ class Window(QMainWindow):
         from PySide6.QtCore import QTimer
         QTimer.singleShot(0,self.refresh)
 
+    def selection_names(self):
+        if self._multi_selection:return set(self._multi_selection)
+        return {self.form.gadgets[self.selected].name} if self.selected is not None else set()
+
+    def choose_rows(self,indices):
+        if self.loading:return
+        indices=[index for index in indices if 0<=index<len(self.form.gadgets)]
+        if len(indices)<2:
+            self.choose_row(indices[0] if indices else -1);return
+        self._multi_selection={self.form.gadgets[index].name for index in indices};self.selected=None
+        previous=self.scene.blockSignals(True)
+        for item in self.scene.items():
+            item.setSelected(isinstance(item,Item) and item.gadget.name in self._multi_selection)
+        self.scene.blockSignals(previous);self.show_multiple_selection()
+
+    def show_multiple_selection(self,reveal=True):
+        self.loading=True
+        self.form_item.setSelected(False)
+        self.objects.setRows([i for i,g in enumerate(self.form.gadgets) if g.name in self._multi_selection],reveal)
+        self.selection_stack.setCurrentIndex(2)
+        self.multiple_hint.setText(f'{len(self._multi_selection)} 個の部品を選択中\n個別のプロパティは1個選択すると編集できます。')
+        self.inspector_tabs.setEnabled(False);self.sync_context_hints();self.loading=False
+
+    def move_selection(self,dx,dy,names=None,old=None):
+        names=set(names) if names is not None else self.selection_names()
+        if not names:return False
+        candidate=copy.deepcopy(self.form)
+        roots=[]
+        for g in candidate.gadgets:
+            if g.name not in names:continue
+            parent=candidate.parent_gadget(g);seen=set();covered=False
+            while parent and parent.name not in seen:
+                seen.add(parent.name)
+                if parent.name in names:covered=True;break
+                parent=candidate.parent_gadget(parent)
+            if not covered:roots.append(g)
+        try:
+            for g in roots:
+                parent=candidate.parent_gadget(g)
+                if g.layout_mode!='ABSOLUTE' or candidate.is_tab_page(g) or (parent and parent.frame_style=='TOOLBAR'):
+                    raise ValueError('選択した部品は座標で移動できません。配置方式と所属を確認してください。')
+                g.x=round(g.x+dx,2);g.y=round(g.y+dy,2)
+            candidate.validate()
+        except ValueError as error:
+            if old is not None:self.refresh()
+            self.statusBar().showMessage(str(error));return False
+        if old is None:self.checkpoint()
+        else:
+            self.history.append(old);self.history=self.history[-100:];self.future.clear();self.dirty=True
+        self.form=candidate;self.refresh();return True
+
+    def move_multiple_committed(self,old,names,dx,dy):
+        QTimer.singleShot(0,lambda:self.move_selection(dx,dy,names,old))
+
     def eventFilter(self,watched,event):
-        if event.type()==QEvent.KeyPress and event.key()==Qt.Key_Escape:
-            if watched in (self.view,self.view.viewport()):
-                item=self.scene.mouseGrabberItem()
+        if event.type()==QEvent.MouseButtonDblClick and event.button()==Qt.LeftButton:
+            if watched in (self.preview_menu_bar,self.preview_menu_frame):
+                for menu in self.preview_menus:menu.close()
+                QTimer.singleShot(0,self.add_palette_menu);event.accept();return True
+        if event.type()==QEvent.KeyPress and watched in (self.view,self.view.viewport()):
+            item=self.scene.mouseGrabberItem()
+            if event.key()==Qt.Key_Escape:
                 if isinstance(item,(Item,FormItem)) and item.cancel_interaction():
-                    self.statusBar().showMessage('操作を取り消しました。')
-                    event.accept();return True
+                    self.statusBar().showMessage('操作を取り消しました。');event.accept();return True
+            directions={Qt.Key_Left:(-1,0),Qt.Key_Right:(1,0),Qt.Key_Up:(0,-1),Qt.Key_Down:(0,1)}
+            if event.key() in directions:
+                if not item or not (getattr(item,'_move_start',None) or getattr(item,'_resize',None)):
+                    step=.1 if event.modifiers() & Qt.AltModifier else .5
+                    x,y=directions[event.key()];self.move_selection(x*step,y*step)
+                event.accept();return True
         return super().eventFilter(watched,event)
 
     def selection_changed(self):
-        if self._closing or not isValid(self) or not isValid(self.scene) or self.loading: return
-        items = self.scene.selectedItems()
-        self.selected = items[0].data(0) if items else None
-        # Defer rebuilding the scene until mouse event delivery completes.
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(0, self.sync_selection)
+        if self._closing or not isValid(self) or not isValid(self.scene) or self.loading:return
+        indices=[item.data(0) for item in self.scene.selectedItems() if isinstance(item,Item)]
+        self._multi_selection={self.form.gadgets[index].name for index in indices} if len(indices)>1 else set()
+        self.selected=indices[0] if len(indices)==1 else None
+        QTimer.singleShot(0,self.sync_selection)
 
     def sync_selection(self):
         if self._closing or not isValid(self) or not isValid(self.scene): return
         # Property loading only: keep the grabbed graphics item alive while dragging.
+        if self._multi_selection:
+            self.show_multiple_selection();return
+        self.inspector_tabs.setEnabled(True)
         self.loading = True
         self.form_item.setSelected(self.selected is None)
         if self.selected is None:
@@ -2011,19 +2134,20 @@ class Window(QMainWindow):
         self.refresh();self.statusBar().showMessage('部品を貼り付けました。')
 
     def delete(self):
-        if self.selected is None: return
-        self.checkpoint(); g = self.form.gadgets[self.selected]
-        removed = {g.name.lower(), *(n.lower() for n in self.form.descendants(g.name))}
-        self.form.gadgets = [g for g in self.form.gadgets if g.name.lower() not in removed]
-        self.selected = None; self.refresh()
+        names=self.selection_names()
+        if not names:return
+        removed=set(names)
+        for name in names:removed.update(self.form.descendants(name))
+        self.checkpoint();self.form.gadgets=[g for g in self.form.gadgets if g.name not in removed]
+        self.selected=None;self._multi_selection.clear();self.refresh()
 
     def undo(self):
         if not self.history: return
-        self.future.append(copy.deepcopy(self.form)); self.form = self.history.pop(); self.variable_error = False; self.selected = None; self.dirty = True; self.refresh()
+        self.future.append(copy.deepcopy(self.form)); self.form = self.history.pop(); self.variable_error = False; self.selected = None; self._multi_selection.clear(); self.dirty = True; self.refresh()
 
     def redo(self):
         if not self.future: return
-        self.history.append(copy.deepcopy(self.form)); self.form = self.future.pop(); self.variable_error = False; self.selected = None; self.dirty = True; self.refresh()
+        self.history.append(copy.deepcopy(self.form)); self.form = self.future.pop(); self.variable_error = False; self.selected = None; self._multi_selection.clear(); self.dirty = True; self.refresh()
 
     def confirm_discard(self):
         if not self.dirty: return True
@@ -2035,7 +2159,7 @@ class Window(QMainWindow):
         if not self.confirm_discard(): return
         self.clear_backup()
         self.project_key = uuid.uuid4().hex
-        self.variable_error = False; self.form = Form(); self.path = None; self.selected = None; self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
+        self.variable_error = False; self.form = Form(); self.path = None; self.selected = None; self._multi_selection.clear(); self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
         self.set_workflow('form')
 
     def open(self):
@@ -2053,7 +2177,7 @@ class Window(QMainWindow):
             QMessageBox.warning(self, '読込エラー', str(e)); return False
         self.clear_backup()
         self.project_key = uuid.uuid4().hex
-        self.variable_error = False; self.form = form; self.path = Path(path); self.selected = None; self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
+        self.variable_error = False; self.form = form; self.path = Path(path); self.selected = None; self._multi_selection.clear(); self.history.clear(); self.future.clear(); self.dirty = False; self.refresh()
         self.set_workflow('layout')
         warning=self.remember_project()
         if warning:self.statusBar().showMessage(warning)
