@@ -234,6 +234,7 @@ class Importer:
             preamble.append(self.raw[index])
         self.form.preamble_code='\n'.join(preamble).strip('\n')
         stack=[];layout={};comments=[];assembly=namespace='';members={};member_rows={};imports=[];index=start+1
+        bar_entries=[];bar_row=None
         kinds={'BUTTON':'button','PARAGRAPH':'paragraph','PARA':'paragraph','TEXT':'text','TOGGLE':'toggle','OPTION':'option',
                'LIST':'list','LINE':'line','FRAME':'frame','SLIDER':'slider','RTOGGLE':'rtoggle','COMBO':'combo','COMBOBOX':'combo',
                'VIEW':'view','CONTAINER':'container','TEXTPANE':'textpane','TEXTPANEL':'textpane','SELECTOR':'selector'}
@@ -273,6 +274,22 @@ class Importer:
                 member=tokens.pop().lstrip('.');tokens.word('IS');members[member.lower()]=(assembly,namespace,tokens.pop())
                 member_rows[member.lower()]=row
                 if tokens.more():raise MacImportError(row,'MEMBERの後に未対応の指定があります。')
+                continue
+            if key=='BAR':
+                if stack or bar_row is not None:raise MacImportError(row,'BARはフォーム直下に1つだけ指定してください。')
+                if tokens.more():raise MacImportError(row,'BARの後に未対応の指定があります。')
+                bar_row=row
+                while index<len(self.raw):
+                    value=self.code[index].strip();entry_row=index+1
+                    if not value:index+=1;continue
+                    if not re.match(r'^ADD\b',value,re.I):break
+                    index+=1;item=Tokens(value,entry_row);item.word('ADD')
+                    label=item.quoted();target=item.pop()
+                    if not re.fullmatch(r'\.'+NAME,target):raise MacImportError(entry_row,'BARのADDには.メニュー名を指定してください。')
+                    if item.more():raise MacImportError(entry_row,'BARの項目に未対応の指定があります。')
+                    if any(name.lower()==target[1:].lower() for _,name,_ in bar_entries):raise MacImportError(entry_row,'同じメニューをBARへ複数回登録できません。')
+                    bar_entries.append((label,target[1:],entry_row))
+                if not bar_entries:raise MacImportError(row,'BARにはADDでタイトルとメニュー名を指定してください。')
                 continue
             if key=='MENU':
                 if stack:raise MacImportError(row,'フレーム内でのMENU宣言は未対応です。')
@@ -344,6 +361,16 @@ class Importer:
         for row,field,value in imports:
             if not any(getattr(g,field)==value for g in containers):
                 raise MacImportError(row,'CONTAINERの設定用以外のIMPORT／USING宣言は未対応です。')
+        if bar_row is not None:
+            ordered=[]
+            for menu in self.form.menus:menu.on_bar=False
+            for label,name,row in bar_entries:
+                menu=next((m for m in self.form.menus if m.name.lower()==name.lower()),None)
+                if menu is None or menu.popup:raise MacImportError(row,'BARの登録先には定義済みの通常MENUを指定してください: '+name)
+                menu.label=label;menu.on_bar=True;ordered.append(menu)
+            self.form.menus=ordered+[m for m in self.form.menus if not m.on_bar]
+        elif any(not menu.popup for menu in self.form.menus):
+            self.warn('BARのない旧形式のMENUは、メニュー名をタイトルとしてBARへ登録しました。')
         for gadget in self.form.gadgets:
             for field in ('xref','yref','width_ref'):
                 target=self.gadget_named(getattr(gadget,field))

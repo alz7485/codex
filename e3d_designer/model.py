@@ -163,6 +163,12 @@ class Menu:
     name: str = 'menu1'
     items: list[MenuItem] = field(default_factory=list)
     popup: bool = False
+    label: str | None = None
+    on_bar: bool = True
+
+    @property
+    def display_label(self):
+        return self.name if self.label is None else self.label
 
 
 @dataclass
@@ -328,8 +334,11 @@ class Form:
             raise ValueError('メニューは配列で指定してください。')
         for menu in self.menus:
             if not isinstance(menu.popup,bool): raise ValueError('メニューの POPUP は真偽値で指定してください。')
+            if not isinstance(menu.on_bar,bool):raise ValueError('BARへの登録設定は真偽値で指定してください。')
+            if menu.label is not None and not isinstance(menu.label,str):raise ValueError('メニューのタイトル表示名は文字列で指定してください。')
             if not isinstance(menu.name,str) or not IDENTIFIER.fullmatch(menu.name):
                 raise ValueError('メニュー名は英字で始まる英数字・_ にしてください。')
+            literal(menu.display_label)
             if menu.name.lower() in names:
                 raise ValueError('メニュー名が重複しています。')
             names.add(menu.name.lower())
@@ -340,6 +349,9 @@ class Form:
                     raise ValueError('メニュー項目の表示名・コマンドは文字列で指定してください。')
                 literal(item.label)
                 literal(item.command,allow_expansion=True)
+        if any(not menu.popup and menu.on_bar for menu in self.menus):
+            if 'bar' in names:raise ValueError('BARはメニューバー用の名前です。メニュー名には別の名前を指定してください。')
+            names.add('bar')
         for key in ('name', 'title', 'after_show_code', 'default_body','form_type','initcall','okcall','cancelcall','dock_side','preamble_code','constructor_body','source_mac_path'):
             if not isinstance(getattr(self, key), str): raise ValueError(f'{key} は文字列で指定してください。')
         if not isinstance(self.auto_default,bool):raise ValueError('DEFAULTの自動呼び出し設定は真偽値にしてください。')
@@ -684,6 +696,10 @@ class Form:
                  (f'setup form !!{self.name} MAIN' if self.form_type == 'MAIN' else f'setup form !!{self.name} DIALOG DOCK {self.docking_side()}' if self.docking_side() != 'NONE'
                   else f'setup form !!{self.name} size {n(self.width)} {n(self.height)} DIALOG'),
                  f'  title {literal(self.title)}']
+        bar_menus=[menu for menu in self.menus if not menu.popup and menu.on_bar]
+        if bar_menus:
+            lines.append('  bar')
+            lines.extend(f'    add {literal(menu.display_label)} .{menu.name}' for menu in bar_menus)
         for menu in self.menus:
             lines.append(f'  menu .{menu.name}'+(' POPUP' if menu.popup else ''))
             if not menu.popup:

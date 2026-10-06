@@ -511,6 +511,7 @@ class Window(QMainWindow):
             if shortcut:
                 a.setShortcut(QKeySequence(shortcut));a.setToolTip(f'{label} ({shortcut})')
             a.triggered.connect(fn)
+            if label=='保存':self.save_action=a
             (edit_menu if label in ('元に戻す','やり直す','複製','削除') else file_menu).addAction(a)
             if label not in ('名前を付けて保存','複製','削除'):toolbar.addAction(a)
         self.code_action=QAction('コードを表示',self);self.code_action.setShortcut(QKeySequence('Ctrl+Shift+C'))
@@ -784,7 +785,11 @@ class Window(QMainWindow):
         menu_layout.addLayout(menu_order)
         menu_name_layout = QFormLayout(); self.menu_name = QLineEdit()
         self.menu_name.textEdited.connect(self.update_menu_name)
-        menu_name_layout.addRow('メニュー名',self.menu_name); menu_layout.addLayout(menu_name_layout)
+        menu_name_layout.addRow('オブジェクト名',self.menu_name)
+        self.menu_label=QLineEdit();self.menu_label.textEdited.connect(self.update_menu_label)
+        menu_name_layout.addRow('タイトル表示名',self.menu_label);menu_layout.addLayout(menu_name_layout)
+        self.menu_on_bar=QCheckBox('BAR：メニューバーにタイトルを表示する')
+        self.menu_on_bar.toggled.connect(self.update_menu_on_bar);menu_layout.addWidget(self.menu_on_bar)
         self.menu_popup = QCheckBox('POPUP：部品の右クリックメニューとして使う')
         self.menu_popup.toggled.connect(self.update_menu_popup);menu_layout.addWidget(self.menu_popup)
         self.menu_items = QTableWidget(0,3); self.menu_items.setHorizontalHeaderLabels(['表示名','コマンド','操作'])
@@ -795,9 +800,10 @@ class Window(QMainWindow):
         menu_layout.addWidget(self.menu_items)
         self.menu_add_item = QPushButton('+ メニュー項目'); self.menu_add_item.clicked.connect(self.add_menu_item)
         menu_layout.addWidget(self.menu_add_item)
-        note = QLabel('プレビューの見出しはメニュー名です。項目のコマンドは E3D で実行されます。')
+        note = QLabel('BARのADDでタイトルとMENUを関連付け、MENUのADDで項目とコマンドを設定します。項目のコマンドはE3Dで実行されます。')
         note.setWordWrap(True); menu_layout.addWidget(note)
         self.menu_dialog=QDialog(self);self.menu_dialog.setWindowTitle('メニューバーの編集');self.menu_dialog.resize(760,620)
+        self.menu_dialog.addAction(self.save_action)
         menu_dialog_layout=QVBoxLayout(self.menu_dialog);menu_dialog_layout.addWidget(self.menu_group)
         close_menu=QPushButton('閉じる');close_menu.clicked.connect(self.menu_dialog.close);menu_dialog_layout.addWidget(close_menu)
         rl.addStretch()
@@ -1089,12 +1095,12 @@ class Window(QMainWindow):
         for menu in self.preview_menus: menu.deleteLater()
         self.preview_menus = []
         for menu in self.form.menus:
-            if menu.popup: continue
-            preview = QMenu(menu.name,self.preview_menu_bar)
+            if menu.popup or not menu.on_bar: continue
+            preview = QMenu(menu.display_label,self.preview_menu_bar)
             self.preview_menus.append(preview)
             self.preview_menu_bar.addMenu(preview)
             for item in menu.items: preview.addAction(item.label)
-        menu_visible=any(not menu.popup for menu in self.form.menus)
+        menu_visible=any(not menu.popup and menu.on_bar for menu in self.form.menus)
         self.preview_menu_bar.setVisible(menu_visible)
         self.preview_menu_frame.setVisible(menu_visible)
         if self.current_menu() is None:
@@ -1108,6 +1114,11 @@ class Window(QMainWindow):
         self.menu_actions['right'].setEnabled(menu is not None and self.selected_menu < len(self.form.menus)-1)
         self.menu_name.setEnabled(menu is not None); self.menu_items.setEnabled(menu is not None)
         self.menu_popup.setEnabled(menu is not None);self.menu_popup.setChecked(menu.popup if menu else False)
+        self.menu_label.setEnabled(menu is not None and not menu.popup)
+        self.menu_on_bar.setEnabled(menu is not None and not menu.popup)
+        self.menu_on_bar.setChecked(menu.on_bar and not menu.popup if menu else False)
+        label=menu.display_label if menu else ''
+        if self.menu_label.text()!=label:self.menu_label.setText(label)
         self.menu_add_item.setEnabled(menu is not None)
         name = menu.name if menu else ''
         if self.menu_name.text() != name: self.menu_name.setText(name)
@@ -1207,6 +1218,16 @@ class Window(QMainWindow):
         try:result=rename(self.form,'menu',self.selected_menu,text)
         except ValueError as error:self.statusBar().showMessage(str(error));return
         self.checkpoint();self.form=result;self.refresh()
+
+    def update_menu_label(self,text):
+        menu=self.current_menu()
+        if self.loading or menu is None or menu.label==text:return
+        self.checkpoint();menu.label=text;self.refresh(rebuild=False)
+
+    def update_menu_on_bar(self,checked):
+        menu=self.current_menu()
+        if self.loading or menu is None or menu.on_bar==checked:return
+        self.checkpoint();menu.on_bar=checked;self.refresh()
 
     def add_menu_item(self):
         menu = self.current_menu()

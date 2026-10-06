@@ -3,6 +3,8 @@ Kill !!menuDemo
 -- Target: E3D 4.0 (runtime compatibility not yet verified)
 Setup Form !!menuDemo Dialog Dock Right
   Title 'Menu demo'
+  Bar
+    Add 'ƒc[ƒ‹' .tools
   Menu .tools
     Add '‰Šú‰»' '!this.DEFAULT()'
     Add 'Às' '$p |Run|'
