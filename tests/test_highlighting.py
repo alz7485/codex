@@ -56,6 +56,22 @@ class HighlightTests(unittest.TestCase):
         self.assertEqual(self.color_at(document,'_choice'),COLORS['object'])
         self.assertIsNone(self.color_at(document,'_mode'))
 
+    def test_block_comment_state_and_code_after_closing_delimiter(self):
+        text="$( 開始 🛠️\n!this.Run() ' -- $* \n$) SHOW !!flag\n$p '$( text $)' $( comment $) WIDTH"
+        document,highlighter=self.make_document(text)
+        self.assertEqual(self.color_at(document,'開始'),COLORS['comment'])
+        self.assertEqual(self.color_at(document,'!this.Run()',1),COLORS['comment'])
+        self.assertEqual(self.color_at(document,'$)',2),COLORS['comment'])
+        self.assertEqual(self.color_at(document,'SHOW',2),COLORS['command'])
+        self.assertEqual(self.color_at(document,'!!flag',2),COLORS['variable'])
+        self.assertEqual(self.color_at(document,'text',3),COLORS['string'])
+        self.assertEqual(self.color_at(document,'comment',3),COLORS['comment'])
+        self.assertEqual(self.color_at(document,'WIDTH',3),COLORS['command'])
+        self.assertEqual(document.toPlainText(),text)
+        document.setPlainText('$( closed $) SHOW\n!!flag');highlighter.rehighlight()
+        self.assertEqual(self.color_at(document,'SHOW'),COLORS['command'])
+        self.assertEqual(self.color_at(document,'!!flag',1),COLORS['variable'])
+
     def test_highlighting_does_not_modify_text_or_undo_history(self):
         editor=QPlainTextEdit();highlighter=PmlHighlighter(editor.document())
         editor.setPlainText('!!flag = 1');editor.document().setModified(False)

@@ -33,7 +33,13 @@ def sync_image_size(gadget, directories=()):
         if size.isValid() and size.width() > 0 and size.height() > 0:
             sizes.append((size.width(), size.height()))
     if sizes:
-        gadget.width = max(width for width, _ in sizes)
-        gadget.height = max(height for _, height in sizes)
-    # An unavailable share keeps the last known dimensions saved in the project.
+        width = max(width for width, _ in sizes)
+        height = max(height for _, height in sizes)
+        if len(sizes) != len(filenames):
+            # Unreadable options may contain the largest image. Do not lose its
+            # last known extent while still allowing readable images to grow.
+            width = max(gadget.width,width)
+            height = max(gadget.height,height)
+        gadget.width,gadget.height = width,height
+    # With every file readable, refreshes and intentional removals can shrink.
     return before != (gadget.width, gadget.height, gadget.width_ref)

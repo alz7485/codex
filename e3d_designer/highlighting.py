@@ -8,8 +8,9 @@ COLORS={'command':'#1755ad','object':'#007b83','variable':'#7c3eaa',
 from .pml_syntax import KEYWORDS
 
 PROPERTIES=set('VAL DTEXT RTEXT VISIBLE ACTIVE WIDTH HEIGHT CALLBACK INITCALL OKCALL CANCELCALL CONTROL'.split())
-TOKEN=re.compile(r"--.*|\$\*.*|['\"|]|!![A-Za-z][A-Za-z0-9_]*|![A-Za-z_][A-Za-z0-9_]*|\.[A-Za-z_][A-Za-z0-9_]*|(?<![\w.])[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?(?!\w)|\$[A-Za-z][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*")
+TOKEN=re.compile(r"--.*|\$\*.*|\$\(|['\"|]|!![A-Za-z][A-Za-z0-9_]*|![A-Za-z_][A-Za-z0-9_]*|\.[A-Za-z_][A-Za-z0-9_]*|(?<![\w.])[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?(?!\w)|\$[A-Za-z][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*")
 QUOTES={"'":1,'"':2,'|':3}
+BLOCK_COMMENT=4
 
 
 class PmlHighlighter(QSyntaxHighlighter):
@@ -36,7 +37,12 @@ class PmlHighlighter(QSyntaxHighlighter):
         def paint(start,end,kind):self.setFormat(offsets[start],offsets[end]-offsets[start],self.formats[kind])
         self.setCurrentBlockState(0)
         start=0;state=self.previousBlockState()
-        if state in QUOTES.values():
+        if state==BLOCK_COMMENT:
+            end=text.find('$)')
+            if end<0:
+                paint(0,len(text),'comment');self.setCurrentBlockState(state);return
+            paint(0,end+2,'comment');start=end+2
+        elif state in QUOTES.values():
             quote=next(char for char,value in QUOTES.items() if value==state)
             end=text.find(quote)
             if end<0:
@@ -48,7 +54,12 @@ class PmlHighlighter(QSyntaxHighlighter):
             token=match.group();end=match.end();kind=None
             if token.startswith(('--','$*')):
                 paint(match.start(),len(text),'comment');break
-            if token in QUOTES:
+            if token=='$(':
+                close=text.find('$)',end)
+                end=len(text) if close<0 else close+2
+                paint(match.start(),end,'comment')
+                if close<0:self.setCurrentBlockState(BLOCK_COMMENT)
+            elif token in QUOTES:
                 close=text.find(token,end)
                 end=len(text) if close<0 else close+1
                 paint(match.start(),end,'string')

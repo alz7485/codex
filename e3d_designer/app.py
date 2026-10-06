@@ -36,6 +36,7 @@ PALETTE = {
 # Independent character-width and line-height scales; approximate preview only.
 SX, SY = CHAR_WIDTH, LINE_HEIGHT
 GADGET_MIME = 'application/x-e3d-designer-gadgets'
+PREVIEW_WIDTH_HINT = 'プレビュー用の幅です。現在のTOGGLE／OPTION出力にはWIDTHを指定せず、E3Dの幅には反映されません。'
 INSPECTOR_STYLE = '''QTabWidget::pane { border: 1px solid #d6dfeb; background: #ffffff; }
 QTabBar::tab { padding: 6px 9px; background: #f2f5f9; color: #46566b; }
 QTabBar::tab:selected { background: #eaf3ff; color: #185fa8; border-bottom: 2px solid #2277cc; }
@@ -290,6 +291,7 @@ class Item(QGraphicsObject):
 
     def hoverMoveEvent(self, event):
         handle = self.handle_at(event.pos())
+        self.setToolTip(PREVIEW_WIDTH_HINT if handle=='width' and self.gadget.kind in ('toggle','option') and self.gadget.display_mode=='TEXT' else '')
         self.setCursor({'width':Qt.SizeHorCursor,'height':Qt.SizeVerCursor,'both':Qt.SizeFDiagCursor}.get(handle,Qt.ArrowCursor))
         super().hoverMoveEvent(event)
 
@@ -1315,6 +1317,7 @@ class Window(QMainWindow):
         hint='元画像のサイズで固定。収まらない場合はフォーム／フレームを広げてください。' if gadget.display_mode == 'PIXMAP' else ''
         self.fields['width'].setToolTip(hint)
         self.fields['height'].setToolTip(hint)
+        if gadget.kind in ('toggle','option') and gadget.display_mode=='TEXT':self.fields['width'].setToolTip(PREVIEW_WIDTH_HINT)
         for key,value in fixed_dimensions(gadget).items():
             self.fields[key].setToolTip('高さは1行固定です。' if gadget.kind not in ('line','slider') else f'太さは{value:.1f}固定です。長さだけ変更できます。')
         parent = self.form.parent_gadget(gadget)
@@ -1393,7 +1396,8 @@ class Window(QMainWindow):
         self.choices.setPlaceholderText('画像のファイルパスを1行1件で指定' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢の表示文字を1行1件で指定')
         self.prop_layout.setCaption(self.choices,'画像ファイル (1行1画像)' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢 (1行1項目)')
         self.prop_layout.setCaption(self.item_values,'RTEXT 実値 (1行1項目)')
-        self.prop_layout.setCaption(self.fields['width'],'幅 (px)' if gadget.display_mode == 'PIXMAP' else '幅')
+        width_caption = '幅 (px)' if gadget.display_mode == 'PIXMAP' else '幅（プレビューのみ）' if gadget.kind in ('toggle','option') else '幅'
+        self.prop_layout.setCaption(self.fields['width'],width_caption)
         self.prop_layout.setCaption(self.fields['height'],'高さ (px)' if gadget.display_mode == 'PIXMAP' else '高さ / 行数')
         basis='フレーム基準' if gadget.parent else 'フォーム基準'
         self.prop_layout.setCaption(self.fields['x'],f'X ({basis})')

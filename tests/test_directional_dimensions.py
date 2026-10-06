@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from PySide6.QtCore import Qt,QPoint
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication,QDialog
+from PySide6.QtWidgets import QApplication,QDialog,QLabel
 
 from e3d_designer.app import Window,Item
 from e3d_designer.model import Form,Gadget
@@ -71,6 +71,26 @@ class DirectionalDimensionsTests(unittest.TestCase):
                 self.assertEqual(loaded.gadgets[0].height,1)
                 restored=Form.loads(loaded.dumps())
                 self.assertEqual(restored.geometry(restored.gadgets[1])[1],2.5)
+
+    def test_preview_only_width_is_identified_in_inspector_and_handle_hint(self):
+        for kind in ('toggle','option','combo'):
+            with self.subTest(kind=kind):
+                self.load([Gadget(kind=kind)])
+                editor=self.w.fields['width'];grid=self.w.prop_layout.owners[editor]
+                entry=next(entry for entry in grid.entries if entry[0] is editor)
+                caption=entry[1].findChild(QLabel).text()
+                point=self.w.view.mapFromScene(self.item().mapToScene(self.item().handles()['width'].center()))
+                QTest.mouseMove(self.w.view.viewport(),point+QPoint(-20,20),10)
+                QTest.mouseMove(self.w.view.viewport(),point,10);self.app.processEvents()
+                if kind in ('toggle','option'):
+                    self.assertIn('プレビューのみ',caption)
+                    self.assertIn('E3Dの幅には反映されません',editor.toolTip())
+                    self.assertEqual(self.item().toolTip(),editor.toolTip())
+                else:
+                    self.assertEqual(caption,'幅');self.assertEqual(editor.toolTip(),'')
+                    self.assertEqual(self.item().toolTip(),'')
+        self.load([Gadget(kind='option',display_mode='PIXMAP',width=100,height=50)])
+        self.assertNotIn('プレビュー用',self.w.fields['width'].toolTip())
 
     def test_line_and_slider_only_expose_length_handle_and_input(self):
         for kind in ('line','slider'):

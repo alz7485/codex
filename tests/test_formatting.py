@@ -8,6 +8,12 @@ class FormattingTests(unittest.TestCase):
         source="BUTTON .RunButton AT X 2 Y 3 'Run now' CALL 'SaVeWoRk' WIDTH 14\nVAR !!Mode 'Mixed'\nOPTION _Choice CALL '$$_Choice'\n-- Keep Comment"
         expected="Button .RunButton At X 2 Y 3 'Run now' Call 'SaVeWoRk' Width 14\nVar !!Mode 'Mixed'\nOption _Choice Call '$$_Choice'\n-- Keep Comment"
         self.assertEqual(canonical_pml(source),expected);self.assertEqual(canonical_pml(expected),expected)
+    def test_block_comments_are_preserved_when_formatting_adjacent_code(self):
+        comment="$(\nBUTTON !!Flag 'Mixed -- $*'\nWIDTH HEIGHT\n$)"
+        source="SHOW\n"+comment+" DEFINE METHOD .Run()\nENDMETHOD"
+        expected="Show\n"+comment+" Define Method .Run()\nEndmethod"
+        self.assertEqual(canonical_pml(source),expected)
+        self.assertEqual(canonical_pml(expected),expected)
     def test_user_code_names_values_and_paths_are_preserved(self):
         body="iF (!!Mode EQ 'a') tHeN\n  $p 'Mixed Value'\neNdIf"
         form=Form(name='MyForm',variables={'Mode':'Mixed'},default_body=body,after_show_code='sAvEwOrK',gadgets=[Gadget(name='RunButton',label='Run now',callback='DoWork',body=body),Gadget(kind='text',name='InputValue',initial='MiXeD')],menus=[Menu(name='Tools',items=[MenuItem(label='Run menu',command='SaVeWoRk')])])

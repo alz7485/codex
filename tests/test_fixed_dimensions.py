@@ -81,6 +81,49 @@ class FixedDimensionsTests(unittest.TestCase):
         self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(99,47))
         self.assertIn(filename,self.w.form.pml());self.assertEqual(self.w.validation_error,'')
 
+    def test_partial_image_option_failure_retains_saved_extent_after_refresh_save_and_reload(self):
+        small=self.image('small.png',40,20);large=self.image('large.png',200,80)
+        self.load(Gadget(kind='option',name='pictures',display_mode='PIXMAP',items=[small,large],width=200,height=80))
+        Path(large).unlink();self.w.dirty=False
+        self.w.refresh();self.assertFalse(self.w.dirty)
+        self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(200,80))
+        self.w.path=self.directory/'pictures.json';self.assertTrue(self.w.save())
+        self.assertTrue(self.w.open_design(self.w.path,confirmed=True))
+        self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(200,80))
+        self.assertIn('WIDTH 200 HEIGHT 80',self.w.form.pml(normalize=False))
+        dialog=MiniProperties(self.w,self.w.form,0)
+        self.assertEqual((dialog.fields['width'].value(),dialog.fields['height'].value()),(200,80))
+        dialog.accept();self.assertIsNotNone(dialog.result_form)
+        self.assertEqual((dialog.result_form.gadgets[0].width,dialog.result_form.gadgets[0].height),(200,80))
+        dialog.deleteLater()
+
+    def test_partial_image_option_failure_can_grow_without_shrinking_other_axis(self):
+        wide=self.image('wide.png',250,20)
+        gadget=Gadget(kind='option',display_mode='PIXMAP',items=[wide,str(self.directory/'unavailable.png')],width=200,height=80)
+        self.assertTrue(sync_image_size(gadget));self.assertEqual((gadget.width,gadget.height),(250,80))
+        self.assertFalse(sync_image_size(gadget))
+        self.image('unavailable.png',30,30)
+        self.assertTrue(sync_image_size(gadget));self.assertEqual((gadget.width,gadget.height),(250,30))
+        self.assertFalse(sync_image_size(gadget))
+
+    def test_removing_unavailable_image_shrinks_option_and_undo_restores_saved_extent(self):
+        small=self.image('small.png',40,20);large=str(self.directory/'unavailable.png')
+        self.load(Gadget(kind='option',display_mode='PIXMAP',items=[small,large],width=200,height=80))
+        self.w.history.clear();self.w.future.clear()
+        self.w.choices.setPlainText(small);self.app.processEvents()
+        self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(40,20))
+        self.assertEqual(self.w.form.gadgets[0].items,[small]);self.assertEqual(len(self.w.history),1)
+        self.w.undo()
+        self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(200,80))
+        self.assertEqual(self.w.form.gadgets[0].items,[small,large])
+        self.w.redo();self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(40,20))
+
+    def test_all_available_option_images_can_shrink_when_files_are_replaced(self):
+        first=self.image('first.png',200,80);second=self.image('second.png',40,20)
+        gadget=Gadget(kind='option',display_mode='PIXMAP',items=[first,second],width=200,height=80)
+        self.image('first.png',60,30)
+        self.assertTrue(sync_image_size(gadget));self.assertEqual((gadget.width,gadget.height),(60,30))
+
     def test_open_legacy_project_reads_relative_image_and_saves_correct_dimensions(self):
         self.image('relative.png', 157, 61)
         form = Form(gadgets=[Gadget(kind='paragraph', display_mode='PIXMAP', pixmap_path='relative.png', width=100, height=50)])

@@ -1,4 +1,28 @@
-"""Shared PML command vocabulary, independent of Qt."""
+"""Shared PML vocabulary and comment/string recognition, independent of Qt."""
+import re
+
+
+NON_CODE_PATTERN = (
+    r"--[^\n]*|\$\*[^\n]*|\$\(.*?(?:\$\)|\Z)|"
+    r"'[^']*(?:'|\Z)|\"[^\"]*(?:\"|\Z)|\|[^|]*(?:\||\Z)"
+)
+NON_CODE = re.compile(NON_CODE_PATTERN, re.S)
+
+
+def mask_non_code(text, strings=True):
+    """Mask comments, and optionally strings, without joining code across them."""
+    def replace(match):
+        token = match.group()
+        if not strings and token[0] in "'\"|":return token
+        fill = '?' if token[0] in "'\"|" else ' '
+        return ''.join('\n' if char == '\n' else fill for char in token)
+    return NON_CODE.sub(replace, text)
+
+
+def has_code(text):
+    return bool(mask_non_code(text, strings=False).strip())
+
+
 KEYWORDS=set('''VAR LIST PAIRS EXIT KILL SETUP FORM LAYOUT DIALOG MAIN DOCUMENT BLOCKING
 DOCK DOCKING LEFT RIGHT TOP BOTTOM FILL NONE ALL RESIZABLE SIZE TITLE
 BUTTON PARAGRAPH PARA TEXT TOGGLE RTOGGLE FRAME TABSET TOOLBAR OPTION

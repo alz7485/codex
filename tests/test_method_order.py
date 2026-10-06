@@ -43,6 +43,34 @@ class MethodOrderTests(unittest.TestCase):
         self.assertEqual(code.count('define method .Recursive()'),1)
         self.assertLess(code.index('define method .Recursive()'),code.index('define method .userform()'))
 
+    def test_block_comment_calls_do_not_create_false_cycles(self):
+        body="$(\n!this.Run()\n!!userform.Run()\n'-- Quoted comment text'\n$)\n$p 'Ready'"
+        form=Form(default_body=body,gadgets=[Gadget(callback='Run',body='!this.DEFAULT()')])
+        for normalized in (False,True):
+            with self.subTest(normalized=normalized):
+                code=form.pml(normalize=normalized);lower=code.lower()
+                self.assertIn(body,code)
+                self.assertLess(lower.index('define method .default()'),lower.index('define method .run()'))
+                self.assertEqual(Form.loads(form.dumps()).pml(normalize=normalized),code)
+
+    def test_code_after_inline_and_multiline_comments_still_orders_dependencies(self):
+        body="$( !this.Unused() $) !this.Run()\n$(\n!this.DEFAULT()\n$) !this.Finish()"
+        form=Form(default_body=body,gadgets=[Gadget(name='run',callback='Run',body="$(ignore$) $p 'Run'"),
+            Gadget(name='finish',callback='Finish',body="$p '$( Keep -- $* text $)'\n!this.Run()")])
+        for normalized in (False,True):
+            with self.subTest(normalized=normalized):
+                code=form.pml(normalize=normalized);lower=code.lower()
+                order=[lower.index('define method .'+name+'(') for name in ('run','finish','default','userform')]
+                self.assertEqual(order,sorted(order));self.assertIn(body,code)
+
+    def test_comment_delimiters_inside_strings_do_not_hide_real_calls(self):
+        for quote in ("'",'"','|'):
+            body=f'$p {quote}$( Keep -- $* markers $) {quote}\n!this.Run()'
+            form=Form(default_body=body,gadgets=[Gadget(callback='Run',body="$p 'Done'")])
+            with self.subTest(quote=quote):
+                code=form.pml();self.assertIn(body,code)
+                self.assertLess(code.lower().index('define method .run()'),code.lower().index('define method .default()'))
+
     def test_cycle_is_reported_without_changing_project(self):
         form=Form(gadgets=[Gadget(name='a',callback='First',body='!this.Second()'),Gadget(name='b',callback='Second',body='!this.First()')])
         original=form.dumps()

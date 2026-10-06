@@ -3,7 +3,7 @@ from e3d_designer.model import Form,Gadget
 
 class EmptyMethodTests(unittest.TestCase):
     def test_empty_or_comment_only_methods_have_no_calls_or_definitions(self):
-        for body in ('','  \n','-- 説明\n  $* コメント'):
+        for body in ('','  \n','-- 説明\n  $* コメント','$(\n!this.Run()\n$)','-- 説明\n$( 応答 $) $* 説明'):
             for kind in ('button','text','toggle','list','combo','slider','selector'):
                 with self.subTest(kind=kind,body=body):
                     f=Form(default_body=body,gadgets=[Gadget(kind=kind,name='part',callback='onPart',body=body)])

@@ -2,6 +2,7 @@ from dataclasses import dataclass, field, asdict
 import json
 import math
 import re
+from .pml_syntax import has_code
 
 KINDS = ('button', 'paragraph', 'text', 'toggle', 'option', 'list', 'line', 'frame', 'slider', 'rtoggle', 'combo', 'view', 'commandline', 'container', 'textpane', 'selector')
 IDENTIFIER = re.compile(r'[A-Za-z][A-Za-z0-9_]*\Z')
@@ -634,8 +635,6 @@ class Form:
             marker = '__user_code_'+uuid.uuid4().hex+'__'
             protected[marker]=value
             return marker
-        def has_code(body):
-            return any(line.strip() and not line.lstrip().startswith(('--','$*')) for line in body.splitlines())
         initial_lines = self.initial_lines()
         default_code = self.default_body or next((g.body for g in self.gadgets if g.callback.lower() == 'default' and g.body), '')
         active_methods = {g.callback.lower() for g in self.gadgets if g.callback and has_code(g.body) and g.callback.lower() != 'default'}
