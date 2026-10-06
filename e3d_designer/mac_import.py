@@ -249,6 +249,15 @@ class Importer:
                     comments.append(raw)
                 continue
             tokens=Tokens(line,row);key=tokens.pop().upper();parent=stack[-1] if stack else ''
+            if key=='SHOW':
+                if not re.fullmatch(r'SHOW\s+!!'+re.escape(self.form.name)+r'\s*',line,re.I):
+                    raise MacImportError(row,'フォーム宣言を終えるSHOWには!!'+self.form.name+'を指定してください。')
+                self.warn('SHOW !!'+self.form.name+'をフォーム宣言の終端として読み込み、省略されたフォームのEXITを補いました。')
+                if stack:
+                    self.warn('SHOWの前で閉じられていないFRAMEを補完しました: '+', '.join(stack))
+                # Keep SHOW and its complete comment spans in the program slice.
+                index-=1
+                break
             if key=='EXIT':
                 if tokens.more():raise MacImportError(row,'EXITの後に未対応の指定があります。')
                 if stack:stack.pop();continue
