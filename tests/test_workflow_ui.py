@@ -49,7 +49,7 @@ class WorkflowUiTests(unittest.TestCase):
         w.fname.selectAll();QTest.keyClicks(w.fname,'DEMO')
         w.ftitle.selectAll();QTest.keyClicks(w.ftitle,'Equipment')
         w.set_workflow('layout')
-        QTest.mouseClick(w.palette_buttons['tabset'],Qt.LeftButton)
+        w.palette_actions['tabset'].trigger()
         tabs=next(g for g in w.form.gadgets if g.frame_style=='TABSET')
         self.assertEqual(len(tabs.tabs),2)
         QTest.mouseClick(w.palette_buttons['text'],Qt.LeftButton)
@@ -78,7 +78,7 @@ class WorkflowUiTests(unittest.TestCase):
         w.set_workflow('layout');self.assertTrue(w.inspector_tabs.isVisible())
 
     def test_tab_palette_is_one_undo_and_each_page_has_own_parts(self):
-        w=self.w;before=w.form.dumps();w.palette_buttons['tabset'].click()
+        w=self.w;before=w.form.dumps();w.palette_actions['tabset'].trigger()
         self.assertEqual(len(w.history),1);tabs=w.form.gadgets[0]
         w.form.validate();self.assertEqual(len(tabs.tabs),2)
         w.add('button');first=w.form.gadgets[w.selected]
@@ -92,7 +92,7 @@ class WorkflowUiTests(unittest.TestCase):
     def test_tab_palette_rejects_no_space_without_mutation(self):
         w=self.w;w.form=Form(width=4,height=1,gadgets=[Gadget(kind='frame',name='frame',width=4,height=1,x=0,y=0)])
         w.selected=0;w.refresh();before=w.form.dumps()
-        w.palette_buttons['tabset'].click()
+        w.palette_actions['tabset'].trigger()
         self.assertEqual(w.form.dumps(),before);self.assertEqual(w.history,[])
         self.assertIn('空きがありません',w.statusBar().currentMessage())
 

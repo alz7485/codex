@@ -829,7 +829,7 @@ class GuiTests(unittest.TestCase):
         for key,kind,direction in [('line_horiz','line','HORIZ'),('line_vert','line','VERT'),
                                    ('slider_horiz','slider','HORIZONTAL'),('slider_vert','slider','VERTICAL')]:
             self.w.selected=None;self.w.refresh()
-            QTest.mouseClick(self.w.palette_buttons[key],Qt.LeftButton)
+            self.w.palette_actions[key].trigger()
             g=self.w.form.gadgets[-1]
             self.assertEqual(g.kind,kind)
             self.assertEqual(g.orientation if kind == 'line' else g.slider_orientation,direction)

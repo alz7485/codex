@@ -97,7 +97,7 @@ class ExtraGuiTests(unittest.TestCase):
         self.assertEqual(self.w.form.menus,[])
 
     def test_image_picker_preview_save_and_undo(self):
-        self.w.palette_buttons['image'].click();self.assertEqual(self.w.form.gadgets[0].display_mode,'PIXMAP')
+        self.w.palette_actions['image'].trigger();self.assertEqual(self.w.form.gadgets[0].display_mode,'PIXMAP')
         with tempfile.TemporaryDirectory() as folder:
             filename=Path(folder)/'sample.png';pixmap=QPixmap(20,10);pixmap.fill(QColor('red'));pixmap.save(str(filename))
             with patch('e3d_designer.app.QFileDialog.getOpenFileName',return_value=(str(filename),'')): self.w.browse_image.click()
@@ -108,7 +108,7 @@ class ExtraGuiTests(unittest.TestCase):
         self.w.undo();self.assertEqual(self.w.form.gadgets[0].pixmap_path,'')
 
     def test_image_option_and_textpane_editor(self):
-        self.w.palette_buttons['image_option'].click();self.w.choices.setPlainText('/C:/red.gif\n/C:/yellow.gif')
+        self.w.palette_actions['image_option'].trigger();self.w.choices.setPlainText('/C:/red.gif\n/C:/yellow.gif')
         self.w.item_values.setPlainText('RED\nYELLOW');self.assertIn(canonical_pml('!this.option1.rtext'),self.w.code.toPlainText())
         with patch('e3d_designer.app.QFileDialog.getOpenFileNames',return_value=(['/C:/blue.gif'],'')): self.w.browse_image.click()
         self.assertEqual(self.w.form.gadgets[0].items,['/C:/red.gif','/C:/yellow.gif','/C:/blue.gif'])
@@ -152,7 +152,7 @@ class ExtraGuiTests(unittest.TestCase):
 
     def test_toolbar_image_height_and_full_width_noop(self):
         self.w.docking.setCurrentIndex(5);self.w.palette_buttons['toolbar'].click()
-        self.w.palette_buttons['image_option'].click();self.w.form.validate()
+        self.w.palette_actions['image_option'].trigger();self.w.form.validate()
         self.assertEqual(self.w.form.gadgets[1].height,78)
         self.w.fields['width'].setValue(690);self.w.form.validate()
         before=self.w.form.dumps();history=len(self.w.history);self.w.dirty=False

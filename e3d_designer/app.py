@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
     QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
-    QGridLayout, QTabBar, QDialog, QDialogButtonBox, QTabWidget, QInputDialog, QToolButton, QStackedWidget)
+    QGridLayout, QTabBar, QDialog, QFrame, QDialogButtonBox, QTabWidget, QInputDialog, QToolButton, QStackedWidget)
+from .palette import GadgetPalette
 from .explorer import ObjectExplorer
 from .form_item import FormItem
 from .highlighting import PmlHighlighter,COLORS
@@ -489,32 +490,11 @@ class Window(QMainWindow):
         columns = QSplitter();self.columns=columns
         left = QWidget();self.library_panel=left;ll = QVBoxLayout(left)
         ll.addWidget(QLabel('ツリーエクスプローラ'))
-        palette=QWidget();self.palette_panel=palette;palette_layout=QGridLayout(palette)
-        palette_layout.setContentsMargins(0,0,0,0);palette_layout.setSpacing(4)
-        palette.setFixedHeight(55)
-        self.palette_buttons = {}
-        entries = []
-        palette_order = [kind for kind in KINDS if kind != 'frame']
-        palette_order.insert(palette_order.index('rtoggle'),'frame')
-        for kind in palette_order:
-            if kind == 'line':
-                entries += [('line_horiz',kind,'HORIZ','📏','横線'),('line_vert',kind,'VERT','↕️','縦線')]
-            elif kind == 'slider':
-                entries += [('slider_horiz',kind,'HORIZONTAL','🎚️','横スライダー'),('slider_vert',kind,'VERTICAL','🎚️','縦スライダー')]
-            else: entries.append((kind,kind,None,*PALETTE[kind]))
-        entries += [('tabset','frame','TABSET','🗂️','タブ'),('image','paragraph','PIXMAP','🖼️','画像'),('image_option','option','PIXMAP','🖼️','画像選択'),('toolbar','frame','TOOLBAR','🛠️','ツールバー'),('menubar',None,None,'📑','メニューバー')]
-        for index,(key,kind,direction,icon,label) in enumerate(entries):
-            b = QPushButton(f'{icon} {label}'); b.setFixedHeight(25);b.setAccessibleName(label)
-            b.setStyleSheet('font-size: 11px; padding: 1px 3px;')
-            if key == 'menubar':
-                b.setToolTip('別ウィンドウでメニューバーを編集します。')
-                b.clicked.connect(self.add_palette_menu)
-            else:
-                b.setToolTip(f'{label}: {LABELS[kind]} を追加' + (f' ({direction})' if direction else ''))
-                b.clicked.connect(lambda checked=False, k=kind, d=direction: self.add(k,d))
-            palette_layout.addWidget(b,index//12,index%12);self.palette_buttons[key]=b
-        for column in range(12):palette_layout.setColumnStretch(column,1)
-        outer.addWidget(palette)
+        self.palette_panel=GadgetPalette()
+        self.palette_panel.addRequested.connect(self.add)
+        self.palette_panel.menuRequested.connect(self.add_palette_menu)
+        self.palette_buttons=self.palette_panel.buttons
+        self.palette_actions=self.palette_panel.actions
         self.placement_hint=QLabel();self.placement_hint.setWordWrap(True)
         self.placement_hint.setStyleSheet('color: #185fa8; padding: 4px; background: #eaf3ff;')
         self.objects = ObjectExplorer(); self.objects.currentRowChanged.connect(self.choose_row)
@@ -538,9 +518,15 @@ class Window(QMainWindow):
                 action.triggered.connect(handler);widget.addAction(action)
                 self.edit_actions.append(action)
         self.view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        preview = QWidget(); preview_layout = QVBoxLayout(preview); preview_layout.setContentsMargins(0,0,0,0)
+        preview = QWidget();self.canvas_panel=preview
+        preview_layout = QVBoxLayout(preview); preview_layout.setContentsMargins(0,0,0,0)
+        preview_layout.addWidget(self.palette_panel)
         self.preview_menu_bar = QMenuBar(); self.preview_menu_bar.setNativeMenuBar(False)
-        preview_layout.addWidget(self.preview_menu_bar)
+        self.preview_menu_frame=QFrame();self.preview_menu_frame.setObjectName("previewMenuFrame")
+        self.preview_menu_frame.setStyleSheet("QFrame#previewMenuFrame { border: 1px solid #7f91a5; border-radius: 3px; background: white; }")
+        self.preview_menu_frame.setToolTip("フォームのメニューバー")
+        menu_layout=QVBoxLayout(self.preview_menu_frame);menu_layout.setContentsMargins(3,2,3,2)
+        menu_layout.addWidget(self.preview_menu_bar);preview_layout.addWidget(self.preview_menu_frame)
         self.tab_editor=QWidget();tab_layout=QHBoxLayout(self.tab_editor);tab_layout.setContentsMargins(0,0,0,0)
         tab_layout.addWidget(QLabel('編集するタブ'))
         self.tabset_picker=QComboBox();self.tabset_picker.currentIndexChanged.connect(self.change_tabset)
@@ -1034,7 +1020,9 @@ class Window(QMainWindow):
             self.preview_menus.append(preview)
             self.preview_menu_bar.addMenu(preview)
             for item in menu.items: preview.addAction(item.label)
-        self.preview_menu_bar.setVisible(any(not menu.popup for menu in self.form.menus))
+        menu_visible=any(not menu.popup for menu in self.form.menus)
+        self.preview_menu_bar.setVisible(menu_visible)
+        self.preview_menu_frame.setVisible(menu_visible)
         if self.current_menu() is None:
             self.selected_menu = 0 if self.form.menus else None
         self.menu_list.clear()

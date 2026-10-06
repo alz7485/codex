@@ -34,11 +34,12 @@ class ExplorerTests(unittest.TestCase):
         self.w.objects.move_item(index,'Group');self.app.processEvents();self.assertEqual(self.w.form.dumps(),original)
         self.w.objects.setCurrentItem(self.w.objects.root);self.app.processEvents();self.w.add('button')
         self.assertEqual(self.w.form.gadgets[self.w.selected].parent,'')
-    def test_palette_above_explorer_and_folder_state_preserved(self):
+    def test_palette_above_canvas_and_folder_state_preserved(self):
         self.load(Form(gadgets=[Gadget(kind='frame',name='Group',width=30,height=10),Gadget(name='Run',parent='Group')]))
         self.assertFalse(self.w.library_panel.isAncestorOf(self.w.palette_panel))
-        self.assertLessEqual(self.w.palette_panel.height(),60)
-        self.assertTrue(all(b.isVisible() and b.height()<=25 for b in self.w.palette_buttons.values()))
+        self.assertTrue(self.w.canvas_panel.isAncestorOf(self.w.palette_panel))
+        self.assertEqual(self.w.palette_panel.width(),self.w.view.width())
+        self.assertTrue(all(b.isVisible() and b.height()<=28 for b in self.w.palette_buttons.values()))
         self.node('Group').setExpanded(False);self.w.refresh();self.assertFalse(self.node('Group').isExpanded())
         self.w.objects.setCurrentItem(self.w.objects.root);self.app.processEvents();self.assertIsNone(self.w.selected)
         self.assertEqual(self.w.selection_stack.currentIndex(),0)
