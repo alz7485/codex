@@ -6,6 +6,7 @@ from .pml_syntax import mask_non_code
 
 GADGETS=set('BUTTON PARAGRAPH PARA TEXT TOGGLE RTOGGLE OPTION COMBO COMBOBOX LIST LINE FRAME SLIDER SELECTOR CONTAINER TEXTPANE TEXTPANEL VIEW'.split())
 LEAVES={'MENU','VIEW','VAR'}
+FORM_DIRECTIVES=set('TITLE PATH HDIST HDISTANCE VDIST VDISTANCE HALIGN VALIGN BAR IMPORT USING MEMBER'.split())
 
 
 def declaration_spans(text):
@@ -20,27 +21,42 @@ def declaration_spans(text):
     surplus=max(0,sum(key=='EXIT' for key in keys[start+1:boundary])-
                 sum(key=='FRAME' or key in LEAVES for key in keys[start+1:boundary])-1)
     spans=[];stack=[];i=start+1
-    def has_block_exit_before_sibling(begin):
+    def opaque_exit(begin):
+        """Inspect this declaration, never borrow another unknown object's EXIT."""
         depth=0;cursor=begin+1
+        body=False
         while cursor<boundary:
             key=keys[cursor]
+            if not key:cursor+=1;continue
+            if key in FORM_DIRECTIVES and depth==0:return None,body
+            unknown=bool(re.match(r'^\s*\w+\s+[._][A-Za-z_]',code[cursor])) and key not in GADGETS|LEAVES
+            if unknown and depth==0:return None,body
             if key in LEAVES:
                 cursor+=1
                 while cursor<boundary and keys[cursor]!='EXIT':cursor+=1
             elif key=='FRAME':depth+=1
             elif key=='EXIT':
                 if depth:depth-=1
-                else:return any(key in GADGETS|{'MENU','BAR'} for key in keys[cursor+1:boundary])
+                else:return cursor,body
+            elif key not in GADGETS and depth==0:body=True
             cursor+=1
-        return False
+        return None,body
+    # Reserve EXITs for blocks whose local body establishes their scope, rather
+    # than giving a later block's EXIT to an earlier unknown single-line gadget.
+    established=sum(1 for row in range(start+1,boundary)
+                    if re.match(r'^\s*\w+\s+[._][A-Za-z_]',code[row])
+                    and keys[row] not in GADGETS|LEAVES
+                    and (scope:=opaque_exit(row))[0] is not None and scope[1])
+    surplus=max(0,surplus-established)
     while i<boundary:
         key=keys[i]
         if not key:i+=1;continue
         unknown_object=bool(re.match(r'^\s*\w+\s+[._][A-Za-z_]',code[i])) and key not in GADGETS|LEAVES
-        opaque_block=unknown_object and (surplus or (not stack and has_block_exit_before_sibling(i)))
+        end,body=opaque_exit(i) if unknown_object else (None,False)
+        opaque_block=unknown_object and end is not None and (body or surplus)
         if key=='FRAME' or opaque_block:
             stack.append((i,key,unknown_object))
-            if unknown_object:surplus=max(0,surplus-1)
+            if unknown_object and not body:surplus=max(0,surplus-1)
         elif key in LEAVES:
             j=i+1
             while j<boundary and keys[j]!='EXIT':
@@ -128,6 +144,12 @@ def recover_mac(text):
                     continue
             raise ValueError('残った部品を安全に構築できないため、部分取り込みを中止しました: '+str(error)) from error
         else:
+            # A lost block EXIT must not move later declarations into executable
+            # program text. Ambiguous recovery leaves the current design intact.
+            program=mask_non_code(result.form.after_show_code).splitlines()
+            if any(re.match(r'^\s*(?:(?:'+ '|'.join(GADGETS|{'MENU'})+r')\s+[._]|BAR\s*$)',line,re.I)
+                   for line in program):
+                raise ValueError('フォーム終了後に部品宣言が残るため部分取り込みを中止しました。EXITの所属を確認してください。')
             if notes:
                 result.form.partial_import_source=original
                 result.form.partial_import_notes=notes

@@ -3,7 +3,7 @@ import copy
 import re
 from .model import uses_pairs,native_size
 from .names import actual_name,code_slots,read_slot,write_slot,rewrite_code
-from .pml_syntax import mask_non_code
+from .pml_syntax import reference_mask,method_call_sites
 
 
 def clone_subtree(target,source,index,restore_names=False):
@@ -60,7 +60,6 @@ def clone_subtree(target,source,index,restore_names=False):
     # A copied DEFAULT callback uses the form's canonical body.
     snippets.extend(gadget.body for _,_,gadget in copies)
     helpers={method.name.lower():method for method in source.extra_methods}
-    calls=re.compile(r'(?:!this|!!'+re.escape(source.name)+r')\.([A-Za-z_][A-Za-z0-9_]*)\s*\(',re.I)
     existing_helpers={method.name.lower():method for method in draft.extra_methods}
     def can_reuse(key):
         if not restore_names or source.name.lower()!=draft.name.lower():return False
@@ -71,14 +70,14 @@ def clone_subtree(target,source,index,restore_names=False):
             checked.add(dependency)
             original=helpers[dependency]
             if existing_helpers.get(dependency)!=original:return False
-            pending.extend(match.group(1).lower() for match in calls.finditer(mask_non_code(original.body,strings=False))
-                           if match.group(1).lower() in helpers)
+            pending.extend(name.lower() for _,_,name in method_call_sites(original.body,source.name)
+                           if name.lower() in helpers)
         return True
     queue=list(snippets);seen=set();helper_copies=[];helper_snippets=[]
     while queue:
         value=queue.pop()
-        for match in calls.finditer(mask_non_code(value,strings=False)):
-            key=match.group(1).lower()
+        for _,_,name in method_call_sites(value,source.name):
+            key=name.lower()
             if key not in helpers or key in seen:continue
             seen.add(key);original=helpers[key]
             helper_snippets.append(original.body);queue.append(original.body)
@@ -96,7 +95,7 @@ def clone_subtree(target,source,index,restore_names=False):
     globals_by_name={name.lower():(name,value) for name,value in source.variables.items()}
     occupied_globals={name.lower() for name in draft.variables}
     for value in snippets+helper_snippets:
-        for match in re.finditer(r'!!([A-Za-z_][A-Za-z0-9_]*)',mask_non_code(value,strings=False)):
+        for match in re.finditer(r'!!([A-Za-z_][A-Za-z0-9_]*)',reference_mask(value,source.name)):
             key=match.group(1).lower()
             if key in globals_by_name and key not in occupied_globals:
                 name,initial=globals_by_name[key];draft.variables[name]=initial;occupied_globals.add(key)
@@ -120,7 +119,7 @@ def clone_subtree(target,source,index,restore_names=False):
         else: draft.gadgets.append(gadget)
     for _,owner,key in code_slots(draft):
         if id(owner) in owners:
-            write_slot(owner,key,rewrite_code(read_slot(owner,key),source.name,draft.name,members,methods))
+            write_slot(owner,key,rewrite_code(read_slot(owner,key),source.name,draft.name,members,methods,preserve_literals=True))
     draft.validate()
     selected = next(i for i,g in enumerate(draft.gadgets) if g.name == mapping[root.name.lower()])
     return draft,selected

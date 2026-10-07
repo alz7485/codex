@@ -23,6 +23,26 @@ def has_code(text):
     return bool(mask_non_code(text, strings=False).strip())
 
 
+def reference_mask(text,form_name):
+    """Expose code and known callback assignments, keeping data literals masked."""
+    masked=mask_non_code(text)
+    callback=re.compile(r'(?:!this|!!'+re.escape(form_name)+r')\.(?:[A-Za-z_][A-Za-z0-9_]*\.)?'
+                        r'(?:CALL|CALLBACK|INITCALL|AUTOCALL|OKCALL|CANCELCALL)\s*=\s*$',re.I)
+    result=list(masked)
+    for token in NON_CODE.finditer(text):
+        if token.group()[0] not in "'\"|":continue
+        beginning=text.rfind('\n',0,token.start())+1
+        if callback.search(masked[beginning:token.start()]):
+            result[token.start()+1:token.end()-1]=reference_mask(token.group()[1:-1],form_name)
+    return ''.join(result)
+
+
+def method_call_sites(text,form_name):
+    pattern=re.compile(r'(!this|!!'+re.escape(form_name)+r')\.([A-Za-z_][A-Za-z0-9_]*)(?=\s*\()',re.I)
+    return [(match.start(),match.end(),match.group(2))
+            for match in pattern.finditer(reference_mask(text,form_name))]
+
+
 KEYWORDS=set('''VAR LIST PAIRS EXIT KILL SETUP FORM LAYOUT DIALOG MAIN DOCUMENT BLOCKING
 DOCK DOCKING LEFT RIGHT TOP BOTTOM FILL NONE ALL RESIZABLE SIZE TITLE
 BUTTON PARAGRAPH PARA TEXT TOGGLE RTOGGLE FRAME TABSET TOOLBAR OPTION

@@ -1,19 +1,17 @@
 """Edit independent helper methods without moving gadget commands or defaults."""
 import copy
-import re
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QListWidget,
     QLabel,QLineEdit,QPlainTextEdit,QPushButton,QDialogButtonBox)
 from .model import Method,IDENTIFIER
 from .mac_import import split_methods
 from .names import code_slots,read_slot,write_slot
-from .pml_syntax import mask_non_code,has_code
+from .pml_syntax import has_code,method_call_sites
 from .highlighting import PmlHighlighter
 
 
 def callers(form,name):
-    pattern=re.compile(r'(?:!this|!!'+re.escape(form.name)+r')\.'+re.escape(name)+r'\s*\(',re.I)
     return [label for label,owner,key in code_slots(form)
-            if pattern.search(mask_non_code(read_slot(owner,key),strings=False))]
+            if any(target.lower()==name.lower() for _,_,target in method_call_sites(read_slot(owner,key),form.name))]
 
 
 def update_helpers(form,entries):
@@ -30,11 +28,14 @@ def update_helpers(form,entries):
         if len(parsed)!=1 or has_code(remaining):raise ValueError('本文に別のメソッド定義を入れないでください。')
     mapping={old:method.name for old,method in entries if old}
     mapping={name.lower():value for name,value in mapping.items()}
-    calls=re.compile(r'(!this|!!'+re.escape(form.name)+r')\.([A-Za-z_][A-Za-z0-9_]*)(?=\s*\()',re.I)
     candidate.extra_methods=methods
     for _,owner,key in code_slots(candidate):
         value=read_slot(owner,key)
-        write_slot(owner,key,calls.sub(lambda match:match.group(1)+'.'+mapping.get(match.group(2).lower(),match.group(2)),value))
+        for start,end,name in reversed(method_call_sites(value,form.name)):
+            if name.lower() in mapping:
+                prefix=value[start:end].rsplit('.',1)[0]
+                value=value[:start]+prefix+'.'+mapping[name.lower()]+value[end:]
+        write_slot(owner,key,value)
     for removed in original-set(old_names):
         locations=callers(candidate,removed)
         if locations:raise ValueError('呼び出しが残るメソッドは削除できません: '+removed+'（'+', '.join(locations)+'）')

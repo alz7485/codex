@@ -2,6 +2,7 @@
 import copy
 import re
 from .model import IDENTIFIER,uses_pairs
+from .pml_syntax import reference_mask
 
 
 def code_slots(form):
@@ -34,19 +35,25 @@ def actual_name(g):
     return '_'+g.name.lstrip('_') if uses_pairs(g) else g.name
 
 
-def rewrite_code(value, source_form, target_form, members, methods=None):
+def rewrite_code(value, source_form, target_form, members, methods=None, *, preserve_literals=False):
     """Replace qualified symbols in one pass, without cascading replacements."""
     members = {key.lower():name for key,name in members.items()}
     methods = {key.lower():name for key,name in (methods or {}).items()}
     pattern = re.compile(r'(!this|!!'+re.escape(source_form)+r')\.([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_])',re.I)
+    masked=reference_mask(value,source_form) if preserve_literals else value
     def replace(match):
         key = match.group(2).lower()
-        method_call = value[match.end():].lstrip().startswith('(')
+        method_call = masked[match.end():].lstrip().startswith('(')
         target = methods.get(key) if method_call else members.get(key,methods.get(key))
         if target is None: return match.group(0)
         prefix = match.group(1) if match.group(1).lower() == '!this' else '!!'+target_form
         return prefix+'.'+target
-    return pattern.sub(replace,value)
+    if not preserve_literals:return pattern.sub(replace,value)
+    result=[];cursor=0
+    for match in pattern.finditer(masked):
+        result.extend((value[cursor:match.start()],replace(match)));cursor=match.end()
+    result.append(value[cursor:])
+    return ''.join(result)
 
 
 def reference_pattern(form, kind, name):
