@@ -83,12 +83,28 @@ class DragStepTests(unittest.TestCase):
         self.assertEqual(self.w.form.dumps(),before);self.assertEqual(self.w.history,[]);self.assertEqual(self.w.future,[redo])
         self.assertFalse(self.w.dirty)
 
-    def test_path_lock_and_keyboard_steps_are_preserved(self):
+    def test_path_lock_and_keyboard_use_selected_movement_step(self):
         self.load(Form(gadgets=[Gadget(name='Base',x=2,y=2,width=8),Gadget(name='Auto',layout_mode='AUTO',width=8)]))
         self.preset(2.);before=self.w.form.dumps();self.drag('Auto',QPoint(20,26))
         self.assertEqual(self.w.form.dumps(),before);self.assertEqual(self.w.history,[])
         self.w.choose_row(0);self.w.view.setFocus()
         QTest.keyClick(self.w.view.viewport(),Qt.Key_Right);self.app.processEvents()
-        self.assertEqual(self.w.form.named('Base').x,2.5)
+        self.assertEqual(self.w.form.named('Base').x,4)
         QTest.keyClick(self.w.view.viewport(),Qt.Key_Right,Qt.AltModifier);self.app.processEvents()
-        self.assertEqual(self.w.form.named('Base').x,2.6)
+        self.assertEqual(self.w.form.named('Base').x,6)
+
+    def test_default_and_custom_keyboard_steps_in_all_directions_at_different_zooms(self):
+        for step,zoom in ((.1,100),(.3,200),(2.,50)):
+            with self.subTest(step=step,zoom=zoom):
+                self.load(Form(gadgets=[Gadget(name='Run',x=10,y=10,width=8)]))
+                self.w.drag_step_spin.setValue(step);self.w.view.set_zoom(zoom)
+                self.w.choose_row(0);self.w.view.setFocus();before=self.w.form.dumps()
+                for key,modifier,dx,dy in ((Qt.Key_Right,Qt.NoModifier,step,0),
+                    (Qt.Key_Down,Qt.AltModifier,step,step),(Qt.Key_Left,Qt.AltModifier,0,step),
+                    (Qt.Key_Up,Qt.NoModifier,0,0)):
+                    QTest.keyClick(self.w.view.viewport(),key,modifier);self.app.processEvents()
+                    gadget=self.w.form.named('Run')
+                    self.assertAlmostEqual(gadget.x,10+dx);self.assertAlmostEqual(gadget.y,10+dy)
+                self.assertEqual(len(self.w.history),4)
+                for _ in range(4):self.w.undo()
+                self.assertEqual(self.w.form.dumps(),before)

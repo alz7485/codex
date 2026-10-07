@@ -668,7 +668,7 @@ class Window(QMainWindow):
         preview_layout.addWidget(self.palette_panel)
         drag_controls=QWidget();drag_row=QHBoxLayout(drag_controls)
         drag_row.setContentsMargins(6,0,6,0);drag_row.setSpacing(6)
-        drag_row.addWidget(QLabel('ドラッグ移動単位 (PML)'))
+        drag_row.addWidget(QLabel('移動量'))
         self.drag_step_combo=QComboBox();self.drag_step_combo.setObjectName('dragStepPresets')
         for value in (.1,.2,.5,1.,2.,5.,10.):self.drag_step_combo.addItem(f'{value:.1f}',value)
         self.drag_step_combo.addItem('任意',None)
@@ -676,7 +676,7 @@ class Window(QMainWindow):
         self.drag_step_spin=self.number(.1,100)
         self.drag_step_spin.setObjectName('dragStepValue');self.drag_step_spin.setValue(.1)
         self.drag_step_spin.setKeyboardTracking(False);self.drag_step_spin.setMaximumWidth(90)
-        hint='ドラッグ開始位置からの移動距離を、この値の倍数に揃えます。'
+        hint='移動量（PML単位）。ドラッグ開始位置からの移動距離をこの値の倍数に揃え、矢印キーは1回でこの値だけ移動します。Alt＋矢印キーも同じ移動量です。'
         self.drag_step_combo.setToolTip(hint);self.drag_step_spin.setToolTip(hint)
         self.drag_step_combo.currentIndexChanged.connect(self.pick_drag_step)
         self.drag_step_spin.valueChanged.connect(self.sync_drag_step)
@@ -2312,7 +2312,7 @@ class Window(QMainWindow):
             directions={Qt.Key_Left:(-1,0),Qt.Key_Right:(1,0),Qt.Key_Up:(0,-1),Qt.Key_Down:(0,1)}
             if event.key() in directions:
                 if not item or not (getattr(item,'_move_start',None) or getattr(item,'_resize',None)):
-                    step=.1 if event.modifiers() & Qt.AltModifier else .5
+                    step=self.drag_step
                     x,y=directions[event.key()];self.move_selection(x*step,y*step)
                 event.accept();return True
         return super().eventFilter(watched,event)

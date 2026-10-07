@@ -223,7 +223,7 @@ class ZeroDimensionsGuiTests(unittest.TestCase):
         self.assertEqual(self.w.selected,0)
         self.assertTrue(self.item('State').isSelected())
         self.w.view.setFocus();QTest.keyClick(self.w.view,Qt.Key_Right)
-        self.assertEqual(self.w.form.named('State').x,2.5);self.assertEqual(self.w.validation_error,'')
+        self.assertEqual(self.w.form.named('State').x,2.1);self.assertEqual(self.w.validation_error,'')
         self.w.undo();self.assertEqual(self.w.form.named('State').x,2)
         self.w.choose_row(0)
         self.w.delete();self.assertIsNone(self.w.form.named('State'))

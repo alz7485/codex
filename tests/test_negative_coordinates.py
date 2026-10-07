@@ -163,7 +163,7 @@ class NegativeCoordinateGuiTests(unittest.TestCase):
         self.assertEqual((self.w.form.named('Child').x,self.w.form.named('Child').y),(-3,-2))
         self.w.view.setFocus();QTest.keyClick(self.w.view,Qt.Key_Left)
         QTest.keyClick(self.w.view,Qt.Key_Up,Qt.AltModifier)
-        g=self.w.form.named('Child');self.assertEqual((g.x,g.y,g.parent),(-3.5,-2.1,'Group'))
+        g=self.w.form.named('Child');self.assertEqual((g.x,g.y,g.parent),(-3.1,-2.1,'Group'))
         for _ in range(4):self.w.undo()
         self.assertEqual(self.w.form.dumps(),before)
 
