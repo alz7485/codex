@@ -66,6 +66,24 @@ class CanvasZoomTests(unittest.TestCase):
         self.w.zoom_reset_button.click()
         self.assertTrue(self.w.zoom_in_button.isEnabled());self.assertTrue(self.w.zoom_out_button.isEnabled())
 
+    def test_high_resolution_wheel_matches_one_notch_and_reverses_without_drift(self):
+        before=self.w.form.dumps()
+        for _ in range(120):self.wheel(1)
+        self.assertEqual(self.w.view.zoom_percent,110)
+        for _ in range(120):self.wheel(-1)
+        self.assertEqual(self.w.view.zoom_percent,100)
+        self.wheel(120);self.assertEqual(self.w.view.zoom_percent,110)
+        self.assertEqual(self.w.form.dumps(),before);self.assertEqual(self.w.history,[])
+
+    def test_manual_zoom_resets_pending_wheel_fraction_even_when_display_is_unchanged(self):
+        self.w.view.set_zoom(100.04)
+        self.assertEqual(self.w.zoom_text.text(),'100%')
+        self.w.zoom_reset_button.click()
+        self.wheel(-1);self.assertEqual(self.w.view.zoom_percent,99.9)
+        self.wheel(1)
+        self.assertEqual(self.w.view.zoom_percent,100)
+        self.wheel(120);self.assertEqual(self.w.view.zoom_percent,110)
+
     def test_plain_wheel_scrolls_without_zoom_and_ctrl_zoom_keeps_cursor_point(self):
         self.w.view.centerOn(700,500);self.app.processEvents()
         before=self.w.view.verticalScrollBar().value();self.wheel(-120,Qt.NoModifier)

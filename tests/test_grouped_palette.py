@@ -1,7 +1,9 @@
 import tempfile
 import unittest
 from pathlib import Path
-from PySide6.QtCore import Qt,QPoint,QTimer
+from unittest.mock import patch
+from PySide6.QtCore import Qt,QPoint,QTimer,QEvent
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from e3d_designer.app import Window
@@ -67,6 +69,49 @@ class GroupedPaletteTests(unittest.TestCase):
             palette.actions[key].trigger();self.assertEqual(received[-1],pair)
         self.assertEqual(len(received),len(expected));palette.actions['menubar'].trigger();self.assertEqual(menus,[True])
         palette.close();palette.deleteLater()
+
+    def test_current_variant_is_checked_named_and_repeat_keeps_it_selected(self):
+        for group,key,label in (('option','combo','コンボ'),('toggle','rtoggle','ラジオ'),('slider','slider_vert','縦スライダー')):
+            with self.subTest(group=group):
+                button=self.w.palette_buttons[group];action=self.w.palette_actions[key]
+                action.trigger()
+                self.assertEqual([a for a in button.menu().actions() if a.isChecked()],[action])
+                self.assertEqual(button.accessibleName(),label)
+                self.assertFalse(button.isCheckable())
+                self.assertTrue(button.toolTip().startswith(label+'：'))
+                count=len(self.w.form.gadgets)
+                QTest.mouseClick(button,Qt.LeftButton,Qt.NoModifier,QPoint(10,button.height()//2));self.app.processEvents()
+                self.assertEqual(len(self.w.form.gadgets),count+1)
+                self.assertTrue(action.isChecked());self.assertIs(button.defaultAction(),action)
+                self.assertFalse(button.isCheckable())
+
+    def test_keyboard_can_open_menu_select_and_repeat_without_extra_activation(self):
+        palette=GadgetPalette();palette.resize(754,palette.height());palette.show();self.app.processEvents()
+        received=[];observations=[];palette.addRequested.connect(lambda kind,direction:received.append((kind,direction)))
+        button=palette.buttons['line'];menu=button.menu();action=palette.actions['line_vert']
+        def choose():
+            observations.append((menu.isVisible(),len(received)))
+            if menu.isVisible():
+                menu.setActiveAction(action);QTest.keyClick(menu,Qt.Key_Return)
+            menu.close()
+        try:
+            for key,modifiers in ((Qt.Key_Down,Qt.NoModifier),(Qt.Key_Down,Qt.AltModifier),(Qt.Key_F4,Qt.NoModifier)):
+                with self.subTest(key=key,modifiers=modifiers):
+                    received.clear();observations.clear()
+                    button.setFocus();QTimer.singleShot(50,choose)
+                    QTest.keyClick(button,key,modifiers);QTest.qWait(80);self.app.processEvents()
+                    self.assertEqual(observations,[(True,0)])
+                    self.assertEqual(received,[('line','VERT')])
+                    button.setFocus();QTest.keyClick(button,Qt.Key_Space);self.app.processEvents()
+                    self.assertEqual(received,[('line','VERT'),('line','VERT')])
+        finally:menu.close();palette.close();palette.deleteLater()
+
+    def test_alt_f4_does_not_open_the_choice_menu(self):
+        button=self.w.palette_buttons['line']
+        event=QKeyEvent(QEvent.KeyPress,Qt.Key_F4,Qt.AltModifier)
+        with patch.object(button,'showMenu') as popup:
+            button.keyPressEvent(event)
+            popup.assert_not_called()
     def test_palette_wraps_without_clipping_in_narrow_canvas(self):
         palette=GadgetPalette();palette.show()
         for width in (724,420,240,120):

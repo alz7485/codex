@@ -1,7 +1,7 @@
 """Compact split buttons: choose a variant once, click again to repeat it."""
 from math import ceil
 from PySide6.QtCore import Qt,QSize,Signal
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction,QActionGroup
 from PySide6.QtWidgets import QWidget,QToolButton,QMenu,QGridLayout,QLayout,QSizePolicy
 from .palette_icons import palette_icon
 
@@ -37,6 +37,14 @@ GROUPS = (
 )
 
 
+class PaletteButton(QToolButton):
+    def keyPressEvent(self,event):
+        menu_key=(event.key()==Qt.Key_Down and event.modifiers() in (Qt.NoModifier,Qt.AltModifier)) or (event.key()==Qt.Key_F4 and event.modifiers()==Qt.NoModifier)
+        if self.menu() and menu_key:
+            self.showMenu();event.accept();return
+        super().keyPressEvent(event)
+
+
 class GadgetPalette(QWidget):
     addRequested=Signal(str,object)
     menuRequested=Signal()
@@ -44,11 +52,11 @@ class GadgetPalette(QWidget):
         super().__init__(parent)
         self.setObjectName('gadgetPalette')
         self.setStyleSheet('QWidget#gadgetPalette { background: #f5f8fc; border: 1px solid #dce4ef; border-radius: 5px; }')
-        self.buttons={};self.actions={};self._columns=0
+        self.buttons={};self.actions={};self._columns=0;self.action_groups=[]
         self.grid=QGridLayout(self);self.grid.setContentsMargins(PADDING,PADDING,PADDING,PADDING);self.grid.setSpacing(SPACING)
         self.grid.setSizeConstraint(QLayout.SetNoConstraint)
         for group,variants in GROUPS:
-            button=QToolButton(self);button.setFixedHeight(BUTTON_HEIGHT)
+            button=PaletteButton(self);button.setFixedHeight(BUTTON_HEIGHT)
             button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon);button.setIconSize(QSize(18,18))
             button.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Fixed)
             button.setMinimumWidth(0)
@@ -59,21 +67,35 @@ class GadgetPalette(QWidget):
             menu=QMenu(button) if len(variants)>1 else None
             if menu:
                 button.setMenu(menu);button.setPopupMode(QToolButton.MenuButtonPopup)
+                choices=QActionGroup(button);choices.setExclusive(True);self.action_groups.append(choices)
             for key,kind,direction,icon,label in variants:
                 action=QAction(palette_icon(key),label,button);action.setData(key)
                 action.setToolTip(title+'：矢印で種類を選択、ボタン本体で同じ種類を追加' if menu else title+'を編集' if group=='menubar' else title+'を追加')
                 action.triggered.connect(lambda checked=False,b=button,a=action,k=kind,d=direction:self.activate(b,a,k,d))
                 self.actions[key]=action
-                if menu:menu.addAction(action)
+                if menu:
+                    action.setCheckable(True);choices.addAction(action);menu.addAction(action)
             button.setDefaultAction(self.actions[variants[0][0]])
+            if menu:self.actions[variants[0][0]].setChecked(True)
             if group=='slider':button.setText('スライダー')
+            self.describe_choice(button,button.defaultAction(),menu is not None)
             self.buttons[group]=button
         self.reflow(7)
     def activate(self,button,action,kind,direction):
         button.setDefaultAction(action)
         if action.data() in ('slider_horiz','slider_vert'):button.setText('スライダー')
+        self.describe_choice(button,action,button.menu() is not None)
         if kind is None:self.menuRequested.emit()
         else:self.addRequested.emit(kind,direction)
+
+    def describe_choice(self,button,action,has_menu):
+        # The menu marks the chosen variant; the main button is an add command,
+        # rather than a toggle, even though its default QAction is checkable.
+        button.setCheckable(False)
+        label=action.text()
+        operation='↓ / Alt＋↓ / F4で種類を選択、ボタン本体で同じ種類を追加' if has_menu else 'メニューバーを編集' if action.data()=='menubar' else 'この部品を追加'
+        hint=label+'：'+operation
+        button.setAccessibleName(label);button.setAccessibleDescription(operation);button.setToolTip(hint)
     def sizeHint(self):return QSize(754,2*BUTTON_HEIGHT+SPACING+2*PADDING)
     def minimumSizeHint(self):return QSize(104+2*PADDING,2*BUTTON_HEIGHT+SPACING+2*PADDING)
     def resizeEvent(self,event):

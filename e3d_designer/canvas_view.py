@@ -12,12 +12,16 @@ class CanvasView(QGraphicsView):
     def __init__(self, scene):
         super().__init__(scene)
         self.zoom_percent = 100.
+        self._exact_zoom = 100.
         self.setRenderHint(QPainter.SmoothPixmapTransform)
         self.setTransformationAnchor(QGraphicsView.NoAnchor)
 
     def set_zoom(self, percent, anchor=None):
         if not math.isfinite(percent):return
-        percent = round(max(self.MIN_ZOOM, min(self.MAX_ZOOM, percent)), 1)
+        # Keep fractional wheel input until display rounding; splitting a notch
+        # into many events must not change its total zoom or introduce drift.
+        self._exact_zoom = max(self.MIN_ZOOM, min(self.MAX_ZOOM, percent))
+        percent = round(self._exact_zoom, 1)
         if percent == self.zoom_percent:return
         anchor = anchor if anchor is not None else self.viewport().rect().center()
         before = self.mapToScene(anchor)
@@ -30,7 +34,7 @@ class CanvasView(QGraphicsView):
     def wheelEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:
             delta = event.angleDelta().y()/120. if event.angleDelta().y() else event.pixelDelta().y()/40.
-            self.set_zoom(self.zoom_percent + delta*10., event.position().toPoint())
+            self.set_zoom(self._exact_zoom + delta*10., event.position().toPoint())
             event.accept()
             return
         super().wheelEvent(event)
