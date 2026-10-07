@@ -1,6 +1,6 @@
 """Native-widget appearance reference. Never executes PML or changes the design."""
 import copy
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt,QPoint,QSize
 from PySide6.QtWidgets import QDialog,QVBoxLayout,QWidget,QLabel,QMenuBar,QMenu,QScrollArea,QFrame
 from .model import CHAR_WIDTH,LINE_HEIGHT,supports_hidden
 from .appearance import NativeControls,FORM_PADDING,FORM_BORDER,FORM_MARGIN
@@ -49,11 +49,15 @@ class RuntimePreview(QDialog,NativeControls):
             for item in menu.items:popup.addAction(item.label)
         self.menu_bar.setVisible(bool(self.menu_bar.actions()));self.layout_root.addWidget(self.menu_bar)
         self.surface=self.style_widget(QWidget(self));self.surface.setAutoFillBackground(True)
-        self.surface.setFixedSize(self.pixels(self.form.width*self.char_width),self.pixels(self.form.height*self.line_height))
+        # Padding is inside the drawable surface so negative AT coordinates can
+        # use it. The source origin stays unchanged, including in child frames.
+        self.layout_origin=QPoint(FORM_PADDING,FORM_PADDING)
+        self.content_size=QSize(self.pixels(self.form.width*self.char_width),self.pixels(self.form.height*self.line_height))
+        self.surface.setFixedSize(self.content_size+QSize(2*FORM_PADDING,2*FORM_PADDING))
         body=self.style_widget(QWidget(self));body_layout=QVBoxLayout(body);body_layout.setContentsMargins(0,0,0,0)
         self.client=self.style_widget(QFrame(body));self.client.setFrameShape(QFrame.WinPanel)
         self.client.setFrameShadow(QFrame.Sunken);self.client.setLineWidth(FORM_BORDER);self.client.setAutoFillBackground(True)
-        client_layout=QVBoxLayout(self.client);client_layout.setContentsMargins(FORM_PADDING,FORM_PADDING,FORM_PADDING,FORM_PADDING)
+        client_layout=QVBoxLayout(self.client);client_layout.setContentsMargins(0,0,0,0)
         client_layout.addWidget(self.surface)
         body_layout.addWidget(self.client,0,Qt.AlignLeft|Qt.AlignTop)
         self.scroll=QScrollArea(self);self.scroll.setFrameShape(QFrame.NoFrame)
@@ -61,9 +65,10 @@ class RuntimePreview(QDialog,NativeControls):
         self.build_children('',self.surface,{})
         if not self.form.size_explicit:
             roots=[w.geometry() for w in self.controls.values() if w.parent() is self.surface]
-            self.surface.setFixedSize(max([round(self.char_width),*[r.x()+r.width() for r in roots]]),
-                max([round(self.line_height),*[r.y()+r.height() for r in roots]]))
-        self.client.setFixedSize(self.surface.width()+2*FORM_MARGIN,self.surface.height()+2*FORM_MARGIN)
+            self.content_size=QSize(max([round(self.char_width),*[r.x()+r.width()-self.layout_origin.x() for r in roots]]),
+                max([round(self.line_height),*[r.y()+r.height()-self.layout_origin.y() for r in roots]]))
+            self.surface.setFixedSize(self.content_size+QSize(2*FORM_PADDING,2*FORM_PADDING))
+        self.client.setFixedSize(self.content_size+QSize(2*FORM_MARGIN,2*FORM_MARGIN))
         self.adjustSize();self.keep_on_screen()
 
     def keep_on_screen(self):
@@ -86,7 +91,8 @@ class RuntimePreview(QDialog,NativeControls):
             width=self.control_width(g,widget,width,height)
             if g.kind=='line':
                 width=2 if g.orientation=='VERT' else width;height=2 if g.orientation=='HORIZ' else height
-            widget.setGeometry(self.pixels(x*self.char_width,True),self.pixels(y*self.line_height,True),
+            origin=self.layout_origin if parent is self.surface else QPoint()
+            widget.setGeometry(self.pixels(x*self.char_width+origin.x(),True),self.pixels(y*self.line_height+origin.y(),True),
                 max(1,self.pixels(width)),max(1,self.pixels(height)))
             if g.kind=='frame':
                 if g.frame_style=='TABSET':

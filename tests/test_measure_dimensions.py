@@ -14,6 +14,7 @@ from e3d_designer.mac_import import import_mac,read_mac
 from e3d_designer.model import Form,Gadget
 from e3d_designer.quick_editor import FormProperties,MiniProperties
 from e3d_designer.runtime_preview import RuntimePreview
+from e3d_designer.appearance import FORM_PADDING
 
 
 def measurement_source():
@@ -142,8 +143,8 @@ class MeasureAppearanceTests(unittest.TestCase):
         for control in controls.values():
             if control.parent() is surface:self.assertTrue(surface.rect().contains(control.geometry()))
         roots=[control.geometry() for control in controls.values() if control.parent() is surface]
-        self.assertLess(surface.height()-max(r.y()+r.height() for r in roots),self.preview.line_height/2)
-        self.assertLess(surface.width()-max(r.x()+r.width() for r in roots),self.preview.char_width/2)
+        self.assertEqual(surface.height()-max(r.y()+r.height() for r in roots),FORM_PADDING)
+        self.assertEqual(surface.width()-max(r.x()+r.width() for r in roots),FORM_PADDING)
         self.assertTrue(controls['Decimals'].isChecked());self.assertEqual(controls['Value7'].entry.text(),'')
 
     def test_editor_size_override_and_undo_preserve_automatic_intent(self):

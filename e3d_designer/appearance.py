@@ -17,6 +17,14 @@ FORM_MARGIN=FORM_PADDING+FORM_BORDER
 FORM_BACKGROUND='#f0f0f0'
 
 
+def slider_fraction(g):
+    if g.slider_max<=g.slider_min:return 0
+    span=g.slider_max-g.slider_min
+    if math.isfinite(span):fraction=(g.slider_value-g.slider_min)/span
+    else:fraction=(g.slider_value/2-g.slider_min/2)/(g.slider_max/2-g.slider_min/2)
+    return max(0,min(1,fraction))
+
+
 class FormControlStyle(QProxyStyle):
     def pixelMetric(self,metric,option=None,widget=None):
         # Compact classic buttons: WIDTH 1.2 fits a 2-unit arrow-button pitch.
@@ -159,12 +167,7 @@ class NativeControls:
         elif g.kind=='slider':
             widget=QSlider(Qt.Vertical if g.slider_orientation=='VERTICAL' else Qt.Horizontal,parent)
             widget.setRange(0,1000)
-            span=g.slider_max-g.slider_min
-            if g.slider_max<=g.slider_min:fraction=0
-            elif math.isfinite(span):fraction=(g.slider_value-g.slider_min)/span
-            # Finite opposite limits may have an infinite difference.
-            else:fraction=(g.slider_value/2-g.slider_min/2)/(g.slider_max/2-g.slider_min/2)
-            widget.setValue(round(max(0,min(1,fraction))*1000))
+            widget.setValue(round(slider_fraction(g)*1000))
         elif g.kind=='line':
             widget=QFrame(parent);widget.setFrameShape(QFrame.VLine if g.orientation=='VERT' else QFrame.HLine);widget.setFrameShadow(QFrame.Sunken)
         elif g.kind=='textpane':

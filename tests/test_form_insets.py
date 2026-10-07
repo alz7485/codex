@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QApplication,QStyle
 from PySide6.QtTest import QTest
 from e3d_designer.app import Window,Item
 from e3d_designer.model import Form,Gadget
-from e3d_designer.appearance import FORM_MARGIN,FORM_BACKGROUND,default_form_font
+from e3d_designer.appearance import FORM_MARGIN,FORM_PADDING,FORM_BORDER,FORM_BACKGROUND,default_form_font
 
 
 class FormInsetTests(unittest.TestCase):
@@ -30,14 +30,14 @@ class FormInsetTests(unittest.TestCase):
         inner=self.w.form_item.body_rect();outer=self.w.form_item.frame_rect()
         self.assertEqual(inner.topLeft().toTuple(),(0,0));self.assertEqual(self.item('Run').pos().toTuple(),(0,0))
         self.assertEqual(outer.topLeft().toTuple(),(-FORM_MARGIN,-FORM_MARGIN))
-        self.assertEqual(outer.size().toSize(),p.client.size());self.assertEqual(p.surface.pos().toTuple(),(FORM_MARGIN,FORM_MARGIN))
-        self.assertEqual(p.surface.size().toTuple(),(300,260));self.assertEqual(p.controls['Run'].pos().toTuple(),(0,0))
+        self.assertEqual(outer.size().toSize(),p.client.size());self.assertEqual(p.surface.pos().toTuple(),(FORM_BORDER,FORM_BORDER))
+        self.assertEqual(p.content_size.toTuple(),(300,260));self.assertEqual(p.surface.size().toTuple(),(316,276));self.assertEqual(p.controls['Run'].pos(),p.layout_origin)
         self.assertEqual(p.surface.palette().window().color().name(),FORM_BACKGROUND)
         self.assertEqual(self.w.form.dumps(),before);self.assertEqual(self.w.form.pml(),code);self.assertEqual(self.w.history,[])
     def test_measure_form_automatic_client_uses_same_extent_and_padding_in_both_views(self):
         form=Form.loads((Path(__file__).parents[1]/'examples/measure-layout.json').read_text())
         self.load(form);before=self.w.form.dumps();p=self.preview();body=self.w.form_item.body_rect();outer=self.w.form_item.frame_rect()
-        self.assertAlmostEqual(body.width(),p.surface.width(),delta=.5);self.assertAlmostEqual(body.height(),p.surface.height(),delta=.5)
+        self.assertAlmostEqual(body.width(),p.content_size.width(),delta=.5);self.assertAlmostEqual(body.height(),p.content_size.height(),delta=.5)
         self.assertAlmostEqual(outer.width(),p.client.width(),delta=.5);self.assertAlmostEqual(outer.height(),p.client.height(),delta=.5)
         for name in ('Button1','Digits','Label1'):
             self.assertEqual(self.item(name).boundingRect().size().toSize(),p.controls[name].size())

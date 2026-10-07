@@ -3,7 +3,7 @@ import copy
 from PySide6.QtCore import Qt,QRectF,Signal
 from PySide6.QtGui import QColor,QPen,QPainterPath
 from PySide6.QtWidgets import QGraphicsObject,QGraphicsItem
-from .appearance import FORM_MARGIN
+from .appearance import FORM_MARGIN,FORM_PADDING
 
 class FormItem(QGraphicsObject):
     resizing=Signal()
@@ -17,6 +17,7 @@ class FormItem(QGraphicsObject):
         self.setAcceptHoverEvents(True);self.setZValue(-100000)
         self.setToolTip('フォーム全体：クリックで設定、ダブルクリックで編集。右・下・右下のハンドルでサイズ変更。')
     def body_rect(self):return QRectF(0,0,self._width*self.sx,self._height*self.sy)
+    def client_rect(self):return self.body_rect().adjusted(-FORM_PADDING,-FORM_PADDING,FORM_PADDING,FORM_PADDING)
     def frame_rect(self):return self.body_rect().adjusted(-FORM_MARGIN,-FORM_MARGIN,FORM_MARGIN,FORM_MARGIN)
     def boundingRect(self):return self.frame_rect().adjusted(-2,-25,2,2)
     def shape(self):
@@ -65,9 +66,10 @@ class FormItem(QGraphicsObject):
     def resize_to(self,width,height):
         width=max(1,min(300,round(width,1)));height=max(1,min(300,round(height,1)))
         try:
+            memo={}
             for g in self.form.gadgets:
                 if g.parent:continue
-                x,y,w,h=self.form.geometry(g)
+                x,y,w,h=self.form.geometry(g,_memo=memo)
                 if x+w>width+.001 or y+h>height+.001:return False
         except ValueError:return False
         if (width,height)==(self.form.width,self.form.height) and (self.form.size_explicit or (width,height)==(self._width,self._height)):return False

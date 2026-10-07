@@ -87,9 +87,9 @@ class NativeAppearanceAuditTests(unittest.TestCase):
         try:
             with patch.object(Form,'geometry',resolve):preview.set_form(form)
             self.assertLessEqual(max(counts.values()),2)
-            self.assertEqual(form.dumps(),before);self.assertEqual(preview.controls['Item34'].x(),20)
+            self.assertEqual(form.dumps(),before);self.assertEqual(preview.controls['Item34'].x(),20+preview.layout_origin.x())
             form.named('Base').x=5;preview.set_form(form)
-            self.assertEqual(preview.controls['Item34'].x(),50)
+            self.assertEqual(preview.controls['Item34'].x(),50+preview.layout_origin.x())
         finally:preview.close();preview.deleteLater()
 
     def test_large_invalid_choice_initial_still_previews_without_integer_overflow(self):

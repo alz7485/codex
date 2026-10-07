@@ -18,7 +18,7 @@ from .explorer import ObjectExplorer
 from .form_item import FormItem
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
-from .appearance import FORM_BACKGROUND
+from .appearance import FORM_BACKGROUND,FORM_PADDING,slider_fraction
 from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size, fixed_dimensions, dimension_editable, normalize_dimensions, uses_pairs, supports_hidden
 from .images import resolve_image_path, sync_image_size
 from .symbols import parse_variables,variable_text
@@ -205,6 +205,11 @@ class Item(QGraphicsObject):
             return QRectF(-4,0,8,self._height*SY)
         return QRectF(0, 0, self._width * SX, self._height * SY)
 
+    def visual_rect(self):
+        if self.gadget.kind=='line':
+            return QRectF(0,0,self._width*SX,2) if self.gadget.orientation=='HORIZ' else QRectF(0,0,2,self._height*SY)
+        return self.boundingRect()
+
     def refresh_appearance(self):
         self._control_pixmap=None
         if self.appearance and self.gadget.kind in ('button','option','combo','text','paragraph','toggle','rtoggle') and self.gadget.display_mode=='TEXT' and not self.hidden_in_preview():
@@ -344,10 +349,11 @@ class Item(QGraphicsObject):
             if handle in ('width','both') and dimension_editable(g,'width'): g.width = max(1,round((width+delta.x()/SX)*2)/2)
             if handle in ('height','both') and dimension_editable(g,'height'): g.height = max(1,round((height+delta.y()/SY)*2)/2)
         try:
+            memo={}
             for candidate in self.form.gadgets:
-                x,y,w,h = self.form.geometry(candidate)
+                x,y,w,h = self.form.geometry(candidate,_memo=memo)
                 parent = self.form.parent_gadget(candidate)
-                pw,ph = self.form.geometry(parent)[2:] if parent else ((self.form.width,self.form.height) if self.form.size_explicit else (299,299))
+                pw,ph = self.form.geometry(parent,_memo=memo)[2:] if parent else ((self.form.width,self.form.height) if self.form.size_explicit else (299,299))
                 if x+w > pw+.001 or y+h > ph+.001:
                     raise ValueError('部品を親の領域内に収めてください。')
         except ValueError:
@@ -366,7 +372,7 @@ class Item(QGraphicsObject):
 
     def content_clip_rect(self):
         owner=self.scene().parent() if self.scene() else None
-        clip=owner.form_item.body_rect() if owner and hasattr(owner,'form_item') else QRectF(0,0,self.form.width*SX,self.form.height*SY)
+        clip=owner.form_item.client_rect() if owner and hasattr(owner,'form_item') else QRectF(0,0,self.form.width*SX,self.form.height*SY).adjusted(-FORM_PADDING,-FORM_PADDING,FORM_PADDING,FORM_PADDING)
         parent=self.form.parent_gadget(self.gadget)
         if parent is None:return self.mapRectFromScene(clip)
         items={item.gadget.name.lower():item for item in self.scene().items() if isinstance(item,Item)} if self.scene() else {}
@@ -416,7 +422,7 @@ class Item(QGraphicsObject):
                     painter.drawText(tab.adjusted(6, 0, -6, 0), Qt.AlignVCenter, page.label)
         elif g.kind == 'slider':
             vertical = g.slider_orientation == 'VERTICAL'
-            fraction = max(0,min(1,(g.slider_value-g.slider_min)/(g.slider_max-g.slider_min))) if g.slider_max > g.slider_min else 0
+            fraction = slider_fraction(g)
             if vertical:
                 painter.drawLine(r.center().x(),r.top()+8,r.center().x(),r.bottom()-8)
                 knob = QRectF(r.center().x()-6,r.bottom()-8-fraction*max(0,r.height()-16)-5,12,10)
@@ -429,10 +435,11 @@ class Item(QGraphicsObject):
         elif g.kind == 'container':
             painter.setPen(QPen(QColor('#7f91a5'),1,Qt.DashLine)); painter.drawRect(r.adjusted(1,1,-1,-1))
         elif g.kind == 'line':
+            line=self.visual_rect()
             if g.orientation == 'HORIZ':
-                painter.drawLine(r.left(), r.center().y(), r.right(), r.center().y())
+                painter.drawLine(line.left(), line.center().y(), line.right(), line.center().y())
             else:
-                painter.drawLine(r.center().x(), r.top(), r.center().x(), r.bottom())
+                painter.drawLine(line.center().x(), line.top(), line.center().x(), line.bottom())
         elif g.kind=='text':
             _,entry=self.text_regions(painter.fontMetrics())
             painter.drawRect(entry)
@@ -2186,7 +2193,7 @@ class Window(QMainWindow):
 
     def sync_visual_form_size(self):
         if self.form.size_explicit:return
-        roots=[item.mapRectToScene(item.boundingRect()) for item in self.scene.items()
+        roots=[item.mapRectToScene(item.visual_rect()) for item in self.scene.items()
                if isinstance(item,Item) and not item.gadget.parent and not item.hidden_in_preview()]
         self.form_item.prepareGeometryChange()
         self.form_item._width=max([1,*[rect.right()/SX for rect in roots]])
