@@ -894,7 +894,7 @@ class Form:
                     line = f'FRAME .{g.name} TABSET {position} {label} {width_clause}'
                 else:
                     line = f'FRAME .{g.name} {label}'
-                    if g.layout_mode != 'ABSOLUTE' or g.frame_at: line += ' '+position
+                    if g.layout_mode != 'ABSOLUTE' or g.frame_at or ((g.x<0 or g.y<0) and not self.is_tab_page(g)): line += ' '+position
                 if g.frame_style != 'TABSET' and (g.width_ref or 'W' in g.frame_size_axes):line += ' '+width_clause
                 if 'H' in g.frame_size_axes:line += f' HEIGHT {n(g.height)}'
             elif g.kind == 'line':

@@ -90,7 +90,8 @@ class NegativeCoordinatePreviewTests(unittest.TestCase):
                 selected=self.draw(item,True)
                 self.assertEqual(selected.pixelColor(30,30).alpha(),0)
                 self.assertEqual(selected.pixelColor(21,21).name(),'#2277cc')
-                self.assertTrue(item.shape().contains(QPointF(5,5)))
+                self.assertFalse(item.shape().contains(QPointF(5,5)))
+                self.assertTrue(item.shape().contains(QPointF(1,5)))
 
     def test_table_inner_clip_does_not_override_parent_clip(self):
         scene,item=self.load(True,True);image=self.draw(item)

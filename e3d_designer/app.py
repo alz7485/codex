@@ -6,7 +6,7 @@ from shiboken6 import isValid
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QRectF, Signal, QMimeData, QTimer, QEvent
-from PySide6.QtGui import QAction, QColor, QPainter, QPen, QKeySequence, QPainterPath, QPixmap, QFont, QIcon
+from PySide6.QtGui import QAction, QColor, QPainter, QPen, QKeySequence, QPainterPath, QPainterPathStroker, QPixmap, QFont, QIcon
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QFormLayout, QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
@@ -207,8 +207,14 @@ class Item(QGraphicsObject):
         parent = self.form.parent_gadget(self.gadget)
         if self.gadget.kind == 'frame' and parent and parent.frame_style == 'TABSET': rect = rect.adjusted(0, 26, 0, 0)
         path.addRect(rect)
-        if not self.isSelected():
-            clip=QPainterPath();clip.addRect(self.content_clip_rect());path=path.intersected(clip)
+        clip=QPainterPath();clip.addRect(self.content_clip_rect())
+        visible=path.intersected(clip)
+        if self.isSelected():
+            stroker=QPainterPathStroker();stroker.setWidth(8)
+            visible=visible.united(stroker.createStroke(path).intersected(path))
+            for handle in self.handles().values():
+                handle_path=QPainterPath();handle_path.addRect(handle);visible=visible.united(handle_path)
+        path=visible
         if self.scene():
             # Overlapping children must leave selected resize handles reachable.
             selected_items=self.scene().selectedItems()
@@ -350,8 +356,10 @@ class Item(QGraphicsObject):
 
     def content_clip_rect(self):
         clip=QRectF(0,0,self.form.width*SX,self.form.height*SY)
+        parent=self.form.parent_gadget(self.gadget)
+        if parent is None:return self.mapRectFromScene(clip)
         items={item.gadget.name.lower():item for item in self.scene().items() if isinstance(item,Item)} if self.scene() else {}
-        parent=self.form.parent_gadget(self.gadget);seen=set()
+        seen=set()
         while parent and parent.name.lower() not in seen:
             seen.add(parent.name.lower());item=items.get(parent.name.lower())
             if item:
@@ -1791,6 +1799,7 @@ class Window(QMainWindow):
         g.comment = self.gadget_comment.toPlainText()
         old_action = g.action_mode
         old_mode = g.list_mode
+        old_position=g.x,g.y,g.parent
         old_vgap=g.vgap
         old_name = g.name
         old_role = g.button_role
@@ -1808,6 +1817,7 @@ class Window(QMainWindow):
             value = w.currentData() if key in ('parent','xref','yref','width_ref','popup_menu','action_mode') else self.edited_number(w,getattr(g,key)) if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
             setattr(g, key, value)
         if g.vgap!=old_vgap:g.path_row_step=False
+        if g.kind=='frame' and g.frame_style=='FRAME' and g.layout_mode=='ABSOLUTE' and (g.x,g.y,g.parent)!=old_position and not self.form.is_tab_page(g):g.frame_at=True
         g.hidden=self.hidden.isChecked() if supports_hidden(g) else False
         if direction_key and getattr(g,direction_key) != old_direction:
             new_direction = getattr(g,direction_key);setattr(g,direction_key,old_direction)
@@ -2008,14 +2018,15 @@ class Window(QMainWindow):
             self.reorder_objects(order,index);return
         draft=copy.deepcopy(self.form);moved=draft.gadgets[index]
         try:
-            x,y,width,height=draft.geometry(moved);ox,oy=draft.offset(moved);x+=ox;y+=oy
+            x,y,width,height=draft.geometry(moved);source_x,source_y=x,y;ox,oy=draft.offset(moved);x+=ox;y+=oy
             saved_size=draft.restored_size(moved);hidden=draft.is_hidden(moved)
             moved.parent=parent_name;moved.layout_mode='ABSOLUTE';moved.xref=moved.yref=moved.width_ref=''
             moved.hidden=hidden;moved.width,moved.height=native_size(moved,*saved_size)
             ox,oy=draft.offset(moved);pw,ph=draft.geometry(draft.parent_gadget(moved))[2:] if parent else (draft.width,draft.height)
-            if width>pw+.001 or height>ph+.001:
+            if (width>pw+.001 and not (source_x<0 and x-ox+width<=pw+.001)) or (height>ph+.001 and not (source_y<0 and y-oy+height<=ph+.001)):
                 self.statusBar().showMessage('移動先のフレームに部品全体が収まりません。');return
             moved.x=round(min(x-ox,pw-width),2);moved.y=round(min(y-oy,ph-height),2)
+            if moved.kind=='frame' and moved.frame_style=='FRAME':moved.frame_at=True
             draft.gadgets=[draft.gadgets[i] for i in order];draft.sync_tabs()
             draft.validate()
         except ValueError as error:self.statusBar().showMessage(str(error));return
@@ -2118,6 +2129,7 @@ class Window(QMainWindow):
                 if g.layout_mode!='ABSOLUTE' or candidate.is_tab_page(g) or (parent and parent.frame_style=='TOOLBAR'):
                     raise ValueError('選択した部品は座標で移動できません。配置方式と所属を確認してください。')
                 g.x=round(g.x+dx,2);g.y=round(g.y+dy,2)
+                if g.kind=='frame' and g.frame_style=='FRAME':g.frame_at=True
             candidate.validate()
         except ValueError as error:
             if old is not None:self.refresh()
@@ -2232,6 +2244,7 @@ class Window(QMainWindow):
                 g.hidden=hidden;g.width,g.height=native_size(g,*saved_size)
                 g.xref=g.yref=g.width_ref=''
             ox,oy=candidate.offset(g);g.x=round(x-ox,2);g.y=round(y-oy,2)
+            if g.kind=='frame' and g.frame_style=='FRAME':g.frame_at=True
             candidate.validate()
         except ValueError as error:
             message=str(error)

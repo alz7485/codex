@@ -116,6 +116,7 @@ def clone_subtree(target,source,index,restore_names=False):
             gadget.hidden=source.is_hidden(original)
             gadget.width,gadget.height = native_size(gadget,*source.restored_size(original))
             if gadget.layout_mode!='AUTO':gadget.layout_mode = 'ABSOLUTE'
+            if gadget.kind=='frame' and gadget.frame_style=='FRAME' and gadget.layout_mode=='ABSOLUTE':gadget.frame_at=True
             gadget.xref = gadget.yref = gadget.width_ref = ''
         if gadget.layout_mode=='AUTO' and not gadget.path_axes:gadget.path_axes='XY'
         if restore_names: draft.gadgets.insert(min(original_index,len(draft.gadgets)),gadget)
