@@ -42,7 +42,9 @@ class ExtraModelTests(unittest.TestCase):
                     g=Gadget(kind=kind,display_mode='PIXMAP',pixmap_path=path if kind=='paragraph' else '',items=[path] if kind=='option' else [])
                     with self.assertRaisesRegex(ValueError,'画像パス'):Form(gadgets=[g]).pml()
         for g in (Gadget(label='Price$'),Gadget(kind='option',items=['Price$']),Gadget(kind='list',items=['Price$']),Gadget(kind='combo',items=['Price$'])):
-            with self.subTest(kind=g.kind),self.assertRaisesRegex(ValueError,'表示文字列'):Form(gadgets=[g]).pml()
+            field='表示名' if g.kind=='button' else '選択肢1の表示名'
+            with self.subTest(kind=g.kind),self.assertRaisesRegex(ValueError,g.name+': '+field) as caught:Form(gadgets=[g]).pml()
+            self.assertIn('$',str(caught.exception));self.assertNotIn('NUL',str(caught.exception))
 
     def test_pixmap_paragraph_button_toggle_and_option(self):
         gadgets=[Gadget(kind=kind,name=kind+'Pic',display_mode='PIXMAP',pixmap_path=r'C:\Images\sample.png') for kind in ('paragraph','button','toggle')]

@@ -62,18 +62,31 @@ def native_size(gadget,width,height):
 
 def literal(value, allow_expansion=False, field='表示文字列'):
     # PML expands $ expressions even inside strings. Do not silently emit them.
-    if any(c in value for c in '\r\n\x00') or ('$' in value and not allow_expansion):
-        forbidden='改行・NUL' if allow_expansion else '改行・NUL・$'
-        raise ValueError(f'{field}には{forbidden} を使用できません。')
+    forbidden=[]
+    if '\r' in value or '\n' in value:forbidden.append('改行')
+    if '\x00' in value:forbidden.append('NUL文字（0x00）')
+    if '$' in value and not allow_expansion:forbidden.append('$（文字列展開）')
+    if forbidden:
+        detail=" 空文字列（''）は使用できます。" if '\x00' in value else ''
+        raise ValueError(f'{field}には'+'・'.join(forbidden)+'を使用できません。'+detail)
     for delimiter in ("'", '|', '"'):
         if delimiter not in value:
             return delimiter + value + delimiter
     raise ValueError(f'{field}に全種類の引用符があります。引用符を減らしてください。')
 
 
-def image_path_literal(value):
+def image_path_literal(value,field='画像パス'):
     # UNC shares such as \\server\images$ are filenames, not display labels.
-    return literal(value,allow_expansion=True,field='画像パス')
+    return literal(value,allow_expansion=True,field=field)
+
+
+def macro_path_supported(value):
+    """Accept static macro filenames, including UNC administrative shares."""
+    if not value.strip() or any(ord(c)<32 or c=='"' for c in value):return False
+    if '$' not in value:return True
+    # The share's trailing $ is part of its name; retain expansion expressions
+    # in hand-written CALL/source instead of converting them to a static path.
+    return bool(re.fullmatch(r'//[^/$]+/[^/$]+\$(?:/[^$]+)+',value.replace('\\','/')))
 
 
 @dataclass
@@ -349,7 +362,7 @@ class Form:
             if menu.label is not None and not isinstance(menu.label,str):raise ValueError('メニューのタイトル表示名は文字列で指定してください。')
             if not isinstance(menu.name,str) or not IDENTIFIER.fullmatch(menu.name):
                 raise ValueError('メニュー名は英字で始まる英数字・_ にしてください。')
-            literal(menu.display_label)
+            literal(menu.display_label,field=f'{menu.name}: メニューのタイトル表示名')
             if menu.name.lower() in names:
                 raise ValueError('メニュー名が重複しています。')
             names.add(menu.name.lower())
@@ -358,8 +371,8 @@ class Form:
             for item in menu.items:
                 if not isinstance(item.label,str) or not isinstance(item.command,str):
                     raise ValueError('メニュー項目の表示名・コマンドは文字列で指定してください。')
-                literal(item.label)
-                literal(item.command,allow_expansion=True)
+                literal(item.label,field=f'{menu.name}: メニュー項目の表示名')
+                literal(item.command,allow_expansion=True,field=f'{menu.name}: メニュー項目のコマンド')
         if any(not menu.popup and menu.on_bar for menu in self.menus):
             if 'bar' in names:raise ValueError('BARはメニューバー用の名前です。メニュー名には別の名前を指定してください。')
             names.add('bar')
@@ -395,9 +408,9 @@ class Form:
                 raise ValueError('LIST の表示方式は SIMPLE / TABLE を指定してください。')
             if g.list_mode == 'TABLE' and g.kind != 'list':
                 raise ValueError('TABLE 表示方式は LIST 用です。')
-            for value in g.headings: literal(value)
-            for row in g.rows:
-                for value in row: literal(value)
+            for column,value in enumerate(g.headings,1):literal(value,field=f'{g.name}: 見出し{column}')
+            for index,row in enumerate(g.rows,1):
+                for column,value in enumerate(row,1):literal(value,field=f'{g.name}: リスト{index}行{column}列')
             if g.kind == 'list' and g.list_mode == 'TABLE':
                 if not g.headings or any(len(row)!=len(g.headings) for row in g.rows):
                     raise ValueError('複数列 LIST は見出しを設定し、各行の列数を見出しと揃えてください。')
@@ -409,7 +422,7 @@ class Form:
             raise ValueError('フォーム名は !!名前 / !名前 / .名前 / _名前 / 名前 で指定してください。')
         if self.form_type not in ('DIALOG','MAIN'): raise ValueError('フォーム形式は DIALOG / MAIN を指定してください。')
         for event in ('initcall','okcall','cancelcall'):
-            literal(getattr(self,event),allow_expansion=True)
+            literal(getattr(self,event),allow_expansion=True,field=f'{self.symbol}: {event}')
         if not isinstance(self.show_form, bool) or not isinstance(self.after_show_code, str):
             raise ValueError('表示後プログラムの形式が不正です。')
         if self.dock_side not in ('','NONE','LEFT','RIGHT','TOP','BOTTOM'):
@@ -417,19 +430,19 @@ class Form:
         if not isinstance(self.dock_right, bool): raise ValueError('ドッキング設定が不正です。')
         if not isinstance(self.default_body,str): raise ValueError('DEFAULT 処理は文字列で指定してください。')
         if self.name.lower() == 'default': raise ValueError('フォーム名 DEFAULT は DEFAULT メソッドと重複します。')
-        literal(self.title)
+        literal(self.title,field=f'{self.symbol}: フォームの表示名')
         variable_names = set()
         for name, value in self.variables.items():
             if not SYMBOL_NAME.fullmatch(name) or name.lower() in variable_names or ('!!'+name).lower() == self.symbol.lower():
                 raise ValueError('変数名が不正、重複、またはフォーム名と同じです。')
             variable_names.add(name.lower())
-            literal(value)
+            literal(value,field=f'!!{name}: 変数の初期値')
         local_names=set()
         for name,value in self.local_variables.items():
             if not SYMBOL_NAME.fullmatch(name) or name.lower()=='this' or name.lower() in local_names or ('!'+name).lower()==self.symbol.lower():
                 raise ValueError('ローカル変数名が不正、重複、またはフォーム名と同じです。')
             local_names.add(name.lower())
-            literal(value)
+            literal(value,field=f'!{name}: 変数の初期値')
         for value in (self.width, self.height):
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 1 <= value <= 300:
                 raise ValueError('フォームサイズは 1〜300 の有限数にしてください。')
@@ -438,7 +451,7 @@ class Form:
         for g in self.gadgets:
             if not isinstance(g.callback_expression,str):
                 raise ValueError('取り込んだCALLの文字列が不正です。')
-            literal(g.callback_expression,allow_expansion=True,field='取り込んだCALL')
+            literal(g.callback_expression,allow_expansion=True,field=f'{g.name}: 取り込んだCALL')
             if g.layout_mode not in ('ABSOLUTE','AUTO','RELATIVE') or g.path not in ('DOWN','UP','LEFT','RIGHT') or g.halign not in ('LEFT','CENTRE','RIGHT') or g.valign not in ('TOP','CENTRE','BOTTOM') or g.xedge not in ('XMIN','XMAX') or g.yedge not in ('YMIN','YMAX') or g.xanchor not in ('LEFT','RIGHT'):
                 raise ValueError('配置方式・整列・参照辺の指定が不正です。')
             if g.hgap < 0 or g.vgap < 0: raise ValueError('配置間隔は0以上で指定してください。')
@@ -491,15 +504,15 @@ class Form:
                 raise ValueError('LINE の向きは HORIZ / VERT を指定してください。')
             if g.kind == 'line' and g.label:
                 raise ValueError('LINE の表示文字は空欄にしてください。')
-            literal(g.label)
+            literal(g.label,field=f'{g.name}: 表示名')
             if not isinstance(g.fixed_font,bool): raise ValueError('等幅フォント設定は真偽値で指定してください。')
             if g.display_mode not in ('TEXT','PIXMAP'): raise ValueError('表示方式は TEXT / PIXMAP を指定してください。')
             if g.option_style not in ('PAIRS','GADGET'):raise ValueError('OPTIONの宣言形式が不正です。')
             if g.display_mode == 'PIXMAP':
                 if g.kind not in ('paragraph','button','toggle','option'): raise ValueError('PIXMAP は PARAGRAPH / BUTTON / TOGGLE / OPTION 用です。')
                 if g.kind == 'option' and not IDENTIFIER.fullmatch(g.name): raise ValueError('画像 OPTION の部品名は英字で始めてください。')
-            image_path_literal(g.pixmap_path)
-            for value in g.pane_lines: literal(value)
+            image_path_literal(g.pixmap_path,field=f'{g.name}: 画像パス')
+            for index,value in enumerate(g.pane_lines,1):literal(value,field=f'{g.name}: 複数行テキスト{index}行')
             if g.database not in ('OWNERS','MEMBERS','AUTO'): raise ValueError('DATABASE は OWNERS / MEMBERS / AUTO を指定してください。')
             if g.button_role not in ('NORMAL','OK','APPLY','CANCEL','RESET','HELP'): raise ValueError('ボタン属性が不正です。')
             if g.button_role != 'NORMAL' and g.kind != 'button': raise ValueError('ボタン属性は BUTTON 用です。')
@@ -516,7 +529,7 @@ class Form:
                     except ValueError:
                         raise ValueError(f'{g.name}: REAL の初期値は有限数にしてください。') from None
                 else:
-                    literal(g.initial)
+                    literal(g.initial,field=f'{g.name}: 初期値')
             if g.kind == 'combo' and g.combo_tagwid and (not re.fullmatch(r'[0-9]+(?:\.[0-9]+)?',g.combo_tagwid) or not math.isfinite(float(g.combo_tagwid))):
                 raise ValueError('COMBO の TAGWID は0以上の数値、または空欄にしてください。')
             if g.kind == 'combo' and g.combo_scroll and (not re.fullmatch(r'[0-9]+',g.combo_scroll) or int(g.combo_scroll)<1):
@@ -530,7 +543,7 @@ class Form:
             if g.kind == 'rtoggle':
                 if not parent or parent.frame_style != 'FRAME':
                     raise ValueError('RTOGGLE は通常 FRAME 内に配置してください。')
-                literal(g.off_value); literal(g.on_value)
+                literal(g.off_value,field=f'{g.name}: OFF値');literal(g.on_value,field=f'{g.name}: ON値')
             if g.view_type not in ('ALPHA','AREA','PLOT','VOLUME') or g.channels not in ('NONE','REQUESTS','COMMANDS','BOTH'):
                 raise ValueError('VIEW の形式・チャンネルが不正です。')
             if not isinstance(g.view_aspect,str):
@@ -548,15 +561,16 @@ class Form:
                 if any(settings) and not all(settings):
                     raise ValueError('CONTAINER のアセンブリ・名前空間・型はすべて指定してください。')
                 if all(settings):
-                    literal(g.assembly)
+                    literal(g.assembly,field=f'{g.name}: アセンブリ')
                     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*',g.namespace) or not IDENTIFIER.fullmatch(g.control_type):
                         raise ValueError('CONTAINER の名前空間・型名が不正です。')
                     member = (g.name+'Control').lower()
                     if member in {other.name.lower() for other in self.gadgets} or member in {other.callback.lower() for other in self.gadgets} or member in {menu.name.lower() for menu in self.menus}:
                         raise ValueError('CONTAINER の生成メンバー名が部品名・メソッド名と重複します。')
-            for item in g.items:
-                (image_path_literal if g.kind=='option' and g.display_mode=='PIXMAP' else literal)(item)
-            for item in g.item_values: literal(item)
+            for index,item in enumerate(g.items,1):
+                image=g.kind=='option' and g.display_mode=='PIXMAP'
+                (image_path_literal if image else literal)(item,field=f'{g.name}: 選択肢{index}'+('の画像パス' if image else 'の表示名'))
+            for index,item in enumerate(g.item_values,1):literal(item,field=f'{g.name}: 選択肢{index}の実値')
             if g.item_values:
                 if g.kind not in ('list','combo','option') or len(g.item_values) != len(g.items):
                     raise ValueError('LIST / COMBO / 画像 OPTION の表示項目と実値の行数を揃えてください。')
@@ -564,10 +578,10 @@ class Form:
                 if g.item_values and g.item_commands:raise ValueError('OPTION の実値とコマンドはどちらか一方を指定してください。')
                 if g.item_commands and len(g.item_commands) != len(g.items):
                     raise ValueError('OPTION の選択肢とコマンドの行数を揃えてください。')
-                for command in g.item_commands: literal(command, allow_expansion=True)
+                for index,command in enumerate(g.item_commands,1):literal(command,allow_expansion=True,field=f'{g.name}: 選択肢{index}のコマンド')
             if g.command:
                 if g.kind not in ('toggle', 'text', 'button') and not (g.kind=='option' and g.display_mode=='TEXT' and not uses_pairs(g)): raise ValueError('この部品にはCALLコマンドを指定できません。')
-                literal(g.command, allow_expansion=True)
+                literal(g.command,allow_expansion=True,field=f'{g.name}: CALLコマンド')
                 if g.callback: raise ValueError('メソッド名と CALL コマンドはどちらか一方だけ指定してください。')
             if g.callback:
                 if g.kind in ('paragraph', 'line', 'frame', 'rtoggle', 'view', 'commandline', 'container','textpane') or uses_pairs(g):
@@ -594,12 +608,14 @@ class Form:
             if g.kind != 'button' or g.button_role not in ('NORMAL','APPLY','RESET'):
                 raise ValueError('外部マクロは通常 / APPLY / RESET ボタンで設定してください。')
             if g.callback or g.command:raise ValueError('外部マクロと手入力の CALL は同時に設定できません。')
-            if not g.macro_path.strip() or any(ord(c)<32 or c in '"$' for c in g.macro_path):
-                raise ValueError(f'{g.name}: マクロファイルのパスを指定してください（制御文字・二重引用符・$ は使用できません）。')
+            if not macro_path_supported(g.macro_path):
+                raise ValueError(f'{g.name}: マクロファイルのパスを指定してください。制御文字・二重引用符は使用できません。'
+                                 '$はUNC共有名の末尾（//server/share$/file.mac）で使用できます。'
+                                 'その他の$を含む呼び出しはCALLコマンドに入力してください。')
             if g.macro_flag:
                 if not IDENTIFIER.fullmatch(g.macro_flag) or g.macro_flag.lower() not in {name.lower() for name in self.variables}:
                     raise ValueError(f'{g.name}: フラグには登録済みのグローバル変数名を指定してください。')
-                literal(g.macro_value)
+                literal(g.macro_value,field=f'{g.name}: マクロのフラグ値')
             method='macro_'+g.name
             if method.lower() in methods:raise ValueError('外部マクロの生成メソッド名が重複しています。')
             methods.add(method.lower())
