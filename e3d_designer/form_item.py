@@ -27,6 +27,7 @@ class FormItem(QGraphicsObject):
                 'both':QRectF(r.right()-size,r.bottom()-size,size,size)}
     def handle_at(self,pos):return next((name for name,r in reversed(list(self.handles().items())) if r.contains(pos)),None)
     def paint(self,painter,option,widget=None):
+        if self.scene() and hasattr(self.scene().parent(),'appearance'):painter.setFont(self.scene().parent().appearance.preview_font)
         r=self.body_rect();painter.setBrush(Qt.NoBrush)
         painter.setPen(QPen(QColor('#2277cc' if self.isSelected() else '#7f91a5'),2,Qt.DashLine if self.isSelected() else Qt.SolidLine))
         painter.drawRect(r.adjusted(1,1,-1,-1))

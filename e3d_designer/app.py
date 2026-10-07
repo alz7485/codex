@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
     QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
-    QGridLayout, QTabBar, QDialog, QFrame, QDialogButtonBox, QTabWidget, QInputDialog, QToolButton, QStackedWidget)
+    QGridLayout, QTabBar, QDialog, QFrame, QDialogButtonBox, QTabWidget, QInputDialog, QToolButton, QStackedWidget,QFontDialog)
 from .palette import GadgetPalette
 from .explorer import ObjectExplorer
 from .form_item import FormItem
@@ -170,9 +170,10 @@ class Item(QGraphicsObject):
     selectionToggled = Signal(str)
     labelEditRequested = Signal(str)
 
-    def __init__(self, gadget, form, image_directories=()):
+    def __init__(self, gadget, form, image_directories=(),appearance=None):
         super().__init__()
         self.gadget, self.form = gadget, form
+        self.appearance=appearance;self.image_directories=image_directories;self._control_pixmap=None
         self._resize = None
         self._move_start = None
         self._move_pos = None
@@ -191,15 +192,23 @@ class Item(QGraphicsObject):
         if gadget.layout_mode == 'ABSOLUTE' and not (parent and parent.frame_style in ('TOOLBAR','TABSET')): self.setFlag(QGraphicsItem.ItemIsMovable)
         ox, oy = preview_offset(form, gadget)
         x, y, self._width, self._height = preview_geometry(form, gadget)
+        self.refresh_appearance()
         self.setPos((x + ox) * SX, (y + oy) * SY)
         self.setZValue(len(form.descendants(gadget.name)) * -1 if gadget.kind == 'frame' else 1)
 
     def boundingRect(self):
         if self.hidden_in_preview():return QRectF(0,0,8,max(8,self._height*SY))
+        if self._control_pixmap is not None:return QRectF(self._control_pixmap.rect())
         if self.gadget.kind=='line':
             if self.gadget.orientation=='HORIZ':return QRectF(0,-4,self._width*SX,8)
             return QRectF(-4,0,8,self._height*SY)
         return QRectF(0, 0, self._width * SX, self._height * SY)
+
+    def refresh_appearance(self):
+        self._control_pixmap=None
+        if self.appearance and self.gadget.kind in ('button','option','combo','text','paragraph','toggle','rtoggle') and self.gadget.display_mode=='TEXT' and not self.hidden_in_preview():
+            try:self._control_pixmap=self.appearance.snapshot(self.gadget,self._width*SX,self._height*SY,self.image_directories)
+            except (ValueError,OverflowError):pass
 
     def shape(self):
         path = QPainterPath(); rect = self.boundingRect()
@@ -355,7 +364,8 @@ class Item(QGraphicsObject):
         return self.gadget.hidden or (self._width==0 and supports_hidden(self.gadget))
 
     def content_clip_rect(self):
-        clip=QRectF(0,0,self.form.width*SX,self.form.height*SY)
+        owner=self.scene().parent() if self.scene() else None
+        clip=owner.form_item.body_rect() if owner and hasattr(owner,'form_item') else QRectF(0,0,self.form.width*SX,self.form.height*SY)
         parent=self.form.parent_gadget(self.gadget)
         if parent is None:return self.mapRectFromScene(clip)
         items={item.gadget.name.lower():item for item in self.scene().items() if isinstance(item,Item)} if self.scene() else {}
@@ -380,6 +390,10 @@ class Item(QGraphicsObject):
             return
         painter.save()
         painter.setClipRect(self.content_clip_rect(),Qt.IntersectClip)
+        if self.appearance:painter.setFont(self.appearance.preview_font)
+        if self._control_pixmap is not None:
+            painter.drawPixmap(0,0,self._control_pixmap)
+            painter.restore();self.paint_selection(painter,r);return
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(QPen(QColor('#7f91a5'), 1))
         background=preview_color(g.background) if g.background and g.kind in ('button','paragraph','list') else None
@@ -468,6 +482,11 @@ class Item(QGraphicsObject):
         alignment = Qt.AlignCenter if g.kind == 'button' else Qt.AlignLeft | (Qt.AlignTop if g.kind in ('frame','textpane','selector') else Qt.AlignVCenter)
         painter.drawText(r.adjusted(7, 2, -7, -2), alignment, text)
         painter.restore()
+
+        self.paint_selection(painter,r)
+
+    def paint_selection(self,painter,r):
+        g=self.gadget
         if self.isSelected():
             painter.setPen(QPen(QColor('#2277cc'), 2, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
@@ -478,10 +497,14 @@ class Item(QGraphicsObject):
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemPositionChange and self.scene() and not self._sync_geometry:
-            g = self.gadget
+            step=getattr(self.scene().parent(),'drag_step',.1)
+            origin=self._move_pos if self._move_start is not None else None
+            origin_x,origin_y=(origin.x(),origin.y()) if origin is not None else (0,0)
             limit_width,limit_height=(self.form.width,self.form.height) if self.form.size_explicit else (299,299)
-            value.setX(min(round(value.x()/SX*2)/2,limit_width-self._width)*SX)
-            value.setY(min(round(value.y()/SY*2)/2,limit_height-self._height)*SY)
+            x=origin_x+round((value.x()-origin_x)/(SX*step))*SX*step
+            y=origin_y+round((value.y()-origin_y)/(SY*step))*SY*step
+            value.setX(min(x,(limit_width-self._width)*SX))
+            value.setY(min(y,(limit_height-self._height)*SY))
         return super().itemChange(change, value)
 
     def mouseReleaseEvent(self, event):
@@ -516,7 +539,8 @@ class Scene(QGraphicsScene):
     def drawBackground(self, painter, rect):
         painter.fillRect(rect,QColor('#e8edf3'))
         form=self.parent().form
-        painter.fillRect(QRectF(0,0,form.width*SX,form.height*SY),QColor('#f8fafc'))
+        body=self.parent().form_item.body_rect() if hasattr(self.parent(),'form_item') else QRectF(0,0,form.width*SX,form.height*SY)
+        painter.fillRect(body,QColor('#f8fafc'))
         painter.setPen(QPen(QColor('#d9e2ec'), 1))
         for x in range(0,int(form.width*SX),SX):
             for y in range(0,int(form.height*SY),SY):painter.drawPoint(x,y)
@@ -533,6 +557,8 @@ class Window(QMainWindow):
         self.backup_timer.timeout.connect(self.backup_work)
         self.setWindowIcon(QIcon(str(Path(__file__).parent/'assets'/'app-icon.ico')))
         self.form, self.path, self.selected = Form(), None, None
+        from .appearance import EditorAppearance
+        self.appearance=EditorAppearance(self)
         self._multi_selection=set()
         self.project_key = uuid.uuid4().hex
         self.selected_menu = None
@@ -548,6 +574,7 @@ class Window(QMainWindow):
         self.setWindowTitle('FormDesigner — E3D 4.0 想定')
         toolbar = self.addToolBar('ファイル')
         self.runtime_dialog=None
+        self._runtime_restore_on_trigger=False
         toolbar.setMovable(False)
         file_menu=self.menuBar().addMenu('ファイル');edit_menu=self.menuBar().addMenu('編集')
         for label, fn, shortcut in [('新規', self.new, 'Ctrl+N'), ('開く', self.open, 'Ctrl+O'),
@@ -567,7 +594,9 @@ class Window(QMainWindow):
         self.runtime_action=QAction('実機表示（参考）',self);self.runtime_action.setCheckable(True)
         self.runtime_action.setShortcut(QKeySequence('F6'));self.runtime_action.setShortcutContext(Qt.ApplicationShortcut)
         self.runtime_action.setToolTip('編集枠・グリッド・名前を隠し、通常のUI部品で表示します。実機の寸法との照合用です。')
-        self.runtime_action.toggled.connect(self.toggle_runtime_preview);toolbar.addAction(self.runtime_action);view_menu.addAction(self.runtime_action)
+        self.runtime_action.toggled.connect(self.toggle_runtime_preview)
+        self.runtime_action.triggered.connect(self.restore_hidden_runtime_preview)
+        toolbar.addAction(self.runtime_action);view_menu.addAction(self.runtime_action)
         names_action = QAction('変数・名前管理',self)
         names_action.setShortcut(QKeySequence('Ctrl+M'));names_action.triggered.connect(self.manage_names)
         edit_menu.addAction(names_action)
@@ -628,6 +657,25 @@ class Window(QMainWindow):
         preview = QWidget();self.canvas_panel=preview
         preview_layout = QVBoxLayout(preview); preview_layout.setContentsMargins(0,0,0,0)
         preview_layout.addWidget(self.palette_panel)
+        drag_controls=QWidget();drag_row=QHBoxLayout(drag_controls)
+        drag_row.setContentsMargins(6,0,6,0);drag_row.setSpacing(6)
+        drag_row.addWidget(QLabel('ドラッグ移動単位 (PML)'))
+        self.drag_step_combo=QComboBox();self.drag_step_combo.setObjectName('dragStepPresets')
+        for value in (.1,.2,.5,1.,2.,5.,10.):self.drag_step_combo.addItem(f'{value:.1f}',value)
+        self.drag_step_combo.addItem('任意',None)
+        self.drag_step_combo.setMaximumWidth(90)
+        self.drag_step_spin=self.number(.1,100)
+        self.drag_step_spin.setObjectName('dragStepValue');self.drag_step_spin.setValue(.1)
+        self.drag_step_spin.setKeyboardTracking(False);self.drag_step_spin.setMaximumWidth(90)
+        hint='ドラッグ開始位置からの移動距離を、この値の倍数に揃えます。'
+        self.drag_step_combo.setToolTip(hint);self.drag_step_spin.setToolTip(hint)
+        self.drag_step_combo.currentIndexChanged.connect(self.pick_drag_step)
+        self.drag_step_spin.valueChanged.connect(self.sync_drag_step)
+        drag_row.addWidget(self.drag_step_combo);drag_row.addWidget(self.drag_step_spin);drag_row.addStretch()
+        self.display_font_button=QPushButton('表示フォント…');self.display_font_button.clicked.connect(self.choose_display_font)
+        self.display_font_button.setToolTip('編集画面と参考表示の表示フォントを設定します。')
+        drag_row.addWidget(self.display_font_button)
+        preview_layout.addWidget(drag_controls)
         self.preview_menu_bar = QMenuBar(); self.preview_menu_bar.setNativeMenuBar(False)
         self.preview_menu_frame=QFrame();self.preview_menu_frame.setObjectName("previewMenuFrame")
         self.preview_menu_frame.setStyleSheet("QFrame#previewMenuFrame { border: 1px solid #7f91a5; border-radius: 3px; background: white; }")
@@ -1031,6 +1079,29 @@ class Window(QMainWindow):
     @staticmethod
     def number(low, high):
         w = QDoubleSpinBox(); w.setRange(low, high); w.setDecimals(1); w.setSingleStep(.1); return w
+
+    @property
+    def drag_step(self):return self.drag_step_spin.value()
+
+    def pick_drag_step(self,index):
+        value=self.drag_step_combo.itemData(index)
+        if value is not None:self.drag_step_spin.setValue(value)
+
+    def sync_drag_step(self,value):
+        index=self.drag_step_combo.findData(value)
+        previous=self.drag_step_combo.blockSignals(True)
+        self.drag_step_combo.setCurrentIndex(index if index>=0 else self.drag_step_combo.count()-1)
+        self.drag_step_combo.blockSignals(previous)
+
+    def choose_display_font(self):
+        font,accepted=QFontDialog.getFont(self.appearance.preview_font,self,'フォームの表示フォント')
+        if accepted:self.set_display_font(font)
+
+    def set_display_font(self,font):
+        self.appearance.preview_font=QFont(font);self.refresh()
+        if self.runtime_dialog and isValid(self.runtime_dialog) and self.runtime_dialog.isVisible():
+            self.runtime_dialog.preview_font=QFont(font)
+            self.toggle_runtime_preview(True)
 
     @staticmethod
     def load_number(widget, value):
@@ -1952,13 +2023,14 @@ class Window(QMainWindow):
         self.form_item.resizing.connect(self.form_resize_preview);self.form_item.resized.connect(self.resize_committed)
         self.form_item.editRequested.connect(lambda:QTimer.singleShot(0,self.edit_form_properties))
         for index, g in enumerate(self.form.gadgets):
-            item = Item(g, self.form, image_directories); item.setData(0, index)
+            item = Item(g, self.form, image_directories,self.appearance); item.setData(0, index)
             item.pageChosen.connect(self.choose_page)
             item.selectionToggled.connect(self.toggle_selection)
             item.labelEditRequested.connect(self.request_object_label)
             item.resizing.connect(self.resize_preview); item.resized.connect(self.resize_committed)
             item.moved.connect(self.move_committed);item.groupMoved.connect(self.move_multiple_committed); self.scene.addItem(item)
             item.setSelected(index == self.selected or g.name in self._multi_selection)
+        self.sync_visual_form_size()
         self.scene.blockSignals(False)
         self.apply_page_visibility()
         self.update_scene_rect()
@@ -2069,6 +2141,7 @@ class Window(QMainWindow):
 
     def update_scene_rect(self):
         rect=QRectF(-12,-30,self.form.width*SX+24,self.form.height*SY+42)
+        if hasattr(self,'form_item'):rect=rect.united(self.form_item.boundingRect().adjusted(-12,-12,12,12))
         for item in self.scene.selectedItems():
             if isinstance(item,Item) and item.isVisible():rect=rect.united(item.sceneBoundingRect().adjusted(-12,-12,12,12))
         self.scene.setSceneRect(rect)
@@ -2099,13 +2172,22 @@ class Window(QMainWindow):
             if not isinstance(item,Item): continue
             x,y,w,h = preview_geometry(self.form,item.gadget); ox,oy = preview_offset(self.form,item.gadget)
             item.prepareGeometryChange(); item._width,item._height = w,h
+            item.refresh_appearance()
             item._sync_geometry = True
             item.setPos((x+ox)*SX,(y+oy)*SY); item._sync_geometry = False; item.update()
         if self.selected is not None:
             g = self.form.gadgets[self.selected]; self.loading = True
             for key in ('x','y'):self.load_number(self.fields[key],self.inspector_value(g,key))
             self.load_number(self.fields['width'],self.form.display_width(g)); self.load_number(self.fields['height'],g.height); self.loading = False
-        self.update_scene_rect()
+        self.sync_visual_form_size();self.update_scene_rect()
+
+    def sync_visual_form_size(self):
+        if self.form.size_explicit:return
+        roots=[item.mapRectToScene(item.boundingRect()) for item in self.scene.items()
+               if isinstance(item,Item) and not item.gadget.parent]
+        self.form_item.prepareGeometryChange()
+        self.form_item._width=max([self.form.width,*[rect.right()/SX for rect in roots]])
+        self.form_item._height=max([self.form.height,*[rect.bottom()/SY for rect in roots]])
 
     def resize_committed(self, old):
         self.history.append(old); self.history = self.history[-100:]; self.future.clear(); self.dirty = True
@@ -2374,17 +2456,28 @@ class Window(QMainWindow):
         self.checkpoint();self.form=draft;self.selected=selected;self.refresh();self.set_workflow('layout')
 
     def toggle_runtime_preview(self,enabled):
+        self._runtime_restore_on_trigger=False
         if not enabled:
-            if self.runtime_dialog:self.runtime_dialog.close()
+            if self.runtime_dialog and isValid(self.runtime_dialog):
+                dialog=self.runtime_dialog
+                self._runtime_restore_on_trigger=not dialog.isVisible() or dialog.isMinimized() or not self.screen().availableGeometry().intersects(dialog.frameGeometry())
+                dialog.close()
             return
         from .runtime_preview import RuntimePreview
-        if self.runtime_dialog is None:
-            self.runtime_dialog=RuntimePreview(self)
+        if self.runtime_dialog is None or not isValid(self.runtime_dialog):
+            self.runtime_dialog=RuntimePreview(self,font=self.appearance.preview_font)
             self.runtime_dialog.finished.connect(lambda result:self.runtime_action.setChecked(False))
+        self.runtime_dialog.preview_font=QFont(self.appearance.preview_font)
         try:self.runtime_dialog.set_form(self.form,self.image_directories(),self.active_pages)
         except ValueError as error:
-            self.runtime_action.setChecked(False);self.statusBar().showMessage(str(error));return
-        self.runtime_dialog.show();self.runtime_dialog.raise_();self.runtime_dialog.activateWindow()
+            self.runtime_action.setChecked(False);self._runtime_restore_on_trigger=False
+            self.statusBar().showMessage('参考表示を開けません: '+str(error));return
+        self.runtime_dialog.showNormal();self.runtime_dialog.keep_on_screen()
+        self.runtime_dialog.raise_();self.runtime_dialog.activateWindow()
+        if self.runtime_dialog.preview_warning:self.statusBar().showMessage('参考表示: MAC出力には修正が必要です: '+self.runtime_dialog.preview_warning)
+
+    def restore_hidden_runtime_preview(self,checked):
+        if not checked and self._runtime_restore_on_trigger:self.runtime_action.setChecked(True)
 
     def unique_name(self, base):
         used = self.reserved_names(self.form);i = 1
@@ -2627,7 +2720,7 @@ class Window(QMainWindow):
             self.clear_backup();self.backup_timer.stop()
             self._closing = True
             self.menu_dialog.close();self.output_dialog.close()
-            if self.runtime_dialog:self.runtime_dialog.close()
+            if self.runtime_dialog and isValid(self.runtime_dialog):self.runtime_dialog.close()
             self.scene.blockSignals(True)
             event.accept()
         else: event.ignore()

@@ -139,7 +139,10 @@ class ZeroDimensionAuditGuiTests(unittest.TestCase):
         self.assertEqual((follow.width,follow.width_ref,follow.initial),(12.5,'Base','Value'))
         self.w.choose_row(0);self.w.hidden.setChecked(False);self.w.choose_row(1)
         self.assertEqual(self.w.fields['width'].value(),20);self.assertFalse(self.w.form.is_hidden(follow))
-        self.assertAlmostEqual(self.item('Follow').boundingRect().width(),200)
+        self.assertAlmostEqual(self.w.form.geometry(follow)[2],20)
+        # The entry keeps WIDTH 20; the visible tag and native frame add pixels.
+        self.w.runtime_action.setChecked(True);self.app.processEvents()
+        self.assertEqual(self.item('Follow').boundingRect().size().toSize(),self.w.runtime_dialog.controls['Follow'].size())
         self.w.undo();self.assertTrue(self.w.form.is_hidden(self.w.form.named('Follow')))
 
     def test_main_and_mini_rotation_keep_hidden_reference_length(self):
