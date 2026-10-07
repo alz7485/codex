@@ -343,7 +343,10 @@ class Item(QGraphicsObject):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(QPen(QColor('#7f91a5'), 1))
         background=preview_color(g.background) if g.background and g.kind in ('button','paragraph','list') else None
-        painter.setBrush(QColor(background or ('#eff3f8' if g.kind == 'button' else '#ffffff')))
+        if g.kind == 'paragraph' and g.display_mode == 'TEXT' and not g.background:
+            painter.setBrush(Qt.NoBrush)
+        else:
+            painter.setBrush(QColor(background or ('#eff3f8' if g.kind == 'button' else '#ffffff')))
         if g.kind == 'frame':
             parent = self.form.parent_gadget(g)
             painter.setBrush(Qt.NoBrush)
