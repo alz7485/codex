@@ -883,10 +883,22 @@ def split_arguments(text):
 def import_mac(text,source_path=None,*,partial=False):
     if len(text)>4*1024*1024 or '\x00' in text:raise ValueError('MACが大きすぎるか、NULを含んでいます。')
     text=text.replace('\r\n','\n').replace('\r','\n').lstrip('\ufeff')
+    original=text;masked=mask_non_code(text);parts=[];cursor=0;removed=0
+    for match in re.finditer(r'(?m)^[^\S\n]*\$\.[^\S\n]*$',masked):
+        line=text[match.start():match.end()];offset=match.group().index('$.')
+        retained=line[:offset]+line[offset+2:]
+        parts.extend((text[cursor:match.start()],retained if retained.strip() else ''))
+        cursor=match.end();removed+=1
+    # Keep newlines for source diagnostics, without a whitespace-only tail that
+    # would be mistaken for retained display-program content after the methods.
+    text=''.join([*parts,text[cursor:]])
     if partial:
         from .partial_import import recover_mac
         result=recover_mac(text)
     else:result=Importer(text).parse()
+    if removed:
+        result.warnings.append(f'単独のマクロ終端記号$.を{removed}個除去しました。文字列とコメント内の$.は保持しています。')
+        if result.form.partial_import_source:result.form.partial_import_source=original
     if source_path is not None:result.form.source_mac_path=str(Path(source_path).resolve())
     return result
 

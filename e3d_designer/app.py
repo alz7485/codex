@@ -546,6 +546,7 @@ class Window(QMainWindow):
         self.resize(1380, 880)
         self.setWindowTitle('FormDesigner — E3D 4.0 想定')
         toolbar = self.addToolBar('ファイル')
+        self.runtime_dialog=None
         toolbar.setMovable(False)
         file_menu=self.menuBar().addMenu('ファイル');edit_menu=self.menuBar().addMenu('編集')
         for label, fn, shortcut in [('新規', self.new, 'Ctrl+N'), ('開く', self.open, 'Ctrl+O'),
@@ -561,6 +562,11 @@ class Window(QMainWindow):
             if label not in ('名前を付けて保存','複製','削除'):toolbar.addAction(a)
         self.code_action=QAction('コードを表示',self);self.code_action.setShortcut(QKeySequence('Ctrl+Shift+C'))
         self.code_action.triggered.connect(self.show_code);toolbar.addAction(self.code_action);file_menu.addAction(self.code_action)
+        view_menu=self.menuBar().addMenu('表示')
+        self.runtime_action=QAction('実機表示（参考）',self);self.runtime_action.setCheckable(True)
+        self.runtime_action.setShortcut(QKeySequence('F6'));self.runtime_action.setShortcutContext(Qt.ApplicationShortcut)
+        self.runtime_action.setToolTip('編集枠・グリッド・名前を隠し、通常のUI部品で表示します。実機の寸法との照合用です。')
+        self.runtime_action.toggled.connect(self.toggle_runtime_preview);toolbar.addAction(self.runtime_action);view_menu.addAction(self.runtime_action)
         names_action = QAction('変数・名前管理',self)
         names_action.setShortcut(QKeySequence('Ctrl+M'));names_action.triggered.connect(self.manage_names)
         edit_menu.addAction(names_action)
@@ -2340,6 +2346,19 @@ class Window(QMainWindow):
                 draft.gadgets.append(Gadget(kind='frame',name=page_name,label=f'Tab {index}',parent=g.name,x=0,y=0,width=g.width,height=g.height))
         self.checkpoint();self.form=draft;self.selected=selected;self.refresh();self.set_workflow('layout')
 
+    def toggle_runtime_preview(self,enabled):
+        if not enabled:
+            if self.runtime_dialog:self.runtime_dialog.close()
+            return
+        from .runtime_preview import RuntimePreview
+        if self.runtime_dialog is None:
+            self.runtime_dialog=RuntimePreview(self)
+            self.runtime_dialog.finished.connect(lambda result:self.runtime_action.setChecked(False))
+        try:self.runtime_dialog.set_form(self.form,self.image_directories(),self.active_pages)
+        except ValueError as error:
+            self.runtime_action.setChecked(False);self.statusBar().showMessage(str(error));return
+        self.runtime_dialog.show();self.runtime_dialog.raise_();self.runtime_dialog.activateWindow()
+
     def unique_name(self, base):
         used = self.reserved_names(self.form);i = 1
         while (base + str(i)).lower() in used: i += 1
@@ -2564,6 +2583,7 @@ class Window(QMainWindow):
             self.clear_backup();self.backup_timer.stop()
             self._closing = True
             self.menu_dialog.close();self.output_dialog.close()
+            if self.runtime_dialog:self.runtime_dialog.close()
             self.scene.blockSignals(True)
             event.accept()
         else: event.ignore()
