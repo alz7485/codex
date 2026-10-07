@@ -17,6 +17,7 @@ TOKEN = re.compile(r"""'[^']*'|"[^"]*"|\|[^|]*\||[^\s]+""")
 HEADER = re.compile(r'^\s*DEFINE\s+METHOD\s+\.('+NAME+r')\s*(\(.*\)(?:\s+IS\s+\S+)?)\s*$',re.I)
 ARRAY_START = re.compile(r'^!('+NAME+r')\s*=\s*(?:OBJECT\s+)?ARRAY\s*\(\s*\)\s*$',re.I)
 CELL = re.compile(r'^!('+NAME+r')\s*((?:\[\d+\])+)\s*=\s*(.*)$',re.I)
+APPEND = re.compile(r'^!('+NAME+r')\.APPEND\s*\(\s*(.*?)\s*\)\s*$',re.I)
 PROPERTY = re.compile(r'^!this\.('+NAME+r')\.(DTEXT|RTEXT|VAL)\s*=\s*(.*)$',re.I)
 CALL = re.compile(r'^!this\.('+NAME+r')\s*\(\s*\)$',re.I)
 ATTRIBUTE_KINDS = {
@@ -274,7 +275,7 @@ class Importer:
             preamble.append(self.raw[index])
         self.form.preamble_code='\n'.join(preamble).strip('\n')
         stack=[];layout={};comments=[];assembly=namespace='';members={};member_rows={};imports=[];index=start+1
-        bar_entries=[];bar_row=None;explicit_exit=False
+        bar_entries=[];bar_row=None;explicit_exit=False;declaration_choices=[]
         kinds={'BUTTON':'button','PARAGRAPH':'paragraph','PARA':'paragraph','TEXT':'text','TOGGLE':'toggle','OPTION':'option',
                'LIST':'list','LINE':'line','FRAME':'frame','SLIDER':'slider','RTOGGLE':'rtoggle','COMBO':'combo','COMBOBOX':'combo',
                'VIEW':'view','CONTAINER':'container','TEXTPANE':'textpane','TEXTPANEL':'textpane','SELECTOR':'selector'}
@@ -287,6 +288,19 @@ class Importer:
                 elif raw:
                     # Preserve complete block-comment fragments as line comments.
                     comments.append(raw)
+                continue
+            if ARRAY_START.fullmatch(line) or CELL.fullmatch(line):
+                statements=[(i,self.code[i].strip()) for i in range(row-1,len(self.code)) if self.code[i].strip()]
+                block=self.choice_arrays(statements,0)
+                if not block:raise MacImportError(row,'選択肢配列は文字列のARRAY・APPEND／添字代入とDTEXT／RTEXTへの代入で指定してください。')
+                end,updates=block;self.apply_choices(updates)
+                index=statements[end-1][0]+1
+                for i in range(row-1,index):
+                    statement=self.code[i].strip()
+                    statement=re.sub(r'^'+re.escape(self.form.symbol)+r'(?=\.'+NAME+r'\.(?:DTEXT|RTEXT)\b)','!this',statement,flags=re.I)
+                    if statement:declaration_choices.append(statement)
+                    if self.comments[i].strip():declaration_choices.append(self.comments[i].rstrip())
+                self.warn('フォーム宣言内の選択肢配列を、部品の初期化設定としてコンストラクタへ復元しました。')
                 continue
             tokens=Tokens(line,row);key=tokens.pop().upper();parent=stack[-1] if stack else ''
             if key=='SHOW':
@@ -477,6 +491,11 @@ class Importer:
                 if default:self.form.default_body=default.body
                 self.form.constructor_body=constructor.body;self.form.constructor_mode='SOURCE'
                 self.warn('複雑なコンストラクタは元の処理として保持しました。選択肢などの初期化は「取り込みコード」で編集してください。')
+        if declaration_choices:
+            retained=declaration_choices if self.form.constructor_mode=='SOURCE' else [
+                line for line in declaration_choices if not has_code(line)]
+            self.form.constructor_body='\n'.join([*retained,self.form.constructor_body]).strip('\n')
+        self.read_program_choices()
         for name,(command,row) in self.callbacks.items():
             gadget=self.form.named(name)
             if uses_pairs(gadget):
@@ -563,6 +582,78 @@ class Importer:
         gadget=self.gadget_named(target.group(1))
         if gadget is None:return None
         return cursor+1,gadget,target.group(2).upper(),[cells[(i,)] for i in range(1,len(cells)+1)]
+
+    def choice_arrays(self,lines,index):
+        """Decode straight-line literal arrays without evaluating PML."""
+        arrays={};used=set();updates={};cursor=index
+        while cursor<len(lines):
+            line=lines[cursor][1]
+            start=ARRAY_START.fullmatch(line)
+            cell=CELL.fullmatch(line);append=APPEND.fullmatch(line)
+            target=re.fullmatch(r'(!this|'+re.escape(self.form.symbol)+r')\.('+NAME+r')\.(DTEXT|RTEXT)\s*=\s*!('+NAME+r')',line,re.I)
+            if start:
+                key=start.group(1).lower()
+                if key=='this' or (key in arrays and key not in used):return None
+                arrays[key]=[];used.discard(key)
+            elif cell or append:
+                match=cell or append;key=match.group(1).lower()
+                if key=='this' or key in used:return None
+                if cell:
+                    indices=tuple(int(n) for n in re.findall(r'\d+',cell.group(2)))
+                    if key not in arrays and indices==(1,):arrays[key]=[]
+                    if key not in arrays or indices!=(len(arrays[key])+1,):return None
+                    value=scalar(cell.group(3))
+                else:
+                    if key not in arrays:return None
+                    value=scalar(append.group(2))
+                if not value or value[1]!='string':return None
+                arrays[key].append(value[0])
+            elif target:
+                gadget=self.gadget_named(target.group(2));key=target.group(4).lower()
+                if gadget is None or gadget.kind not in ('option','list','combo') or key not in arrays:return None
+                field='items' if target.group(3).upper()=='DTEXT' else 'item_values'
+                image=field=='items' and gadget.kind=='option' and gadget.display_mode=='PIXMAP'
+                if not all(editable_string(value,image=image) for value in arrays[key]):return None
+                slot=(gadget.name,field)
+                if slot in updates:return None
+                updates[slot]=list(arrays[key]);used.add(key)
+            else:break
+            cursor+=1
+        if not updates or set(arrays)!=used:return None
+        # Removing local arrays is safe only if later code does not reuse them.
+        for key in arrays:
+            reference=re.compile(r'(?<!!)!'+re.escape(key)+r'(?![A-Za-z0-9_])',re.I)
+            for _,line in lines[cursor:]:
+                if not reference.search(mask_non_code(line)):continue
+                reset=ARRAY_START.fullmatch(line)
+                if not reset or reset.group(1).lower()!=key:return None
+                break
+        for name in {name for name,_ in updates}:
+            gadget=self.form.named(name)
+            values=updates.get((name,'item_values'),gadget.item_values)
+            items=updates.get((name,'items'),gadget.items)
+            if values and len(items)!=len(values):return None
+        return cursor,updates
+
+    def apply_choices(self,updates):
+        for (name,field),values in updates.items():setattr(self.form.named(name),field,values)
+
+    def read_program_choices(self):
+        """Restore a standalone literal initialization, retaining its comments."""
+        if self.form.constructor_mode!='GENERATED':return
+        body=self.form.after_show_code
+        lines=self.significant(body)
+        show=re.compile(r'SHOW\s+'+re.escape(self.form.symbol),re.I)
+        displays=[row for row,line in lines if show.fullmatch(line)]
+        if len(displays)>1:return
+        statements=[(row,line) for row,line in lines if row not in displays]
+        if not statements:return
+        block=self.choice_arrays(statements,0)
+        if not block or block[0]!=len(statements):return
+        self.apply_choices(block[1])
+        self.form.after_show_code='\n'.join(line.rstrip() for line in comment_lines(body)).strip('\n')
+        if displays:self.form.program_mode='GENERATED'
+        self.warn('フォーム定義後の選択肢配列を、部品の初期化設定としてコンストラクタへ復元しました。')
 
     def read_defaults(self,body):
         raw=body.splitlines();lines=self.significant(body);removed=set();seen=set();cursor=0;radio_values={}
@@ -654,13 +745,9 @@ class Importer:
         calls=[i for i,(_,line) in enumerate(lines) if CALL.fullmatch(line) and CALL.fullmatch(line).group(1).lower()=='default']
         if calls and (len(calls)!=1 or calls[0]!=len(lines)-1):return False
         while cursor<len(lines):
-            block=self.array_block(lines,cursor)
+            block=self.choice_arrays(lines,cursor)
             if block:
-                end,gadget,property_name,values=block
-                if property_name not in ('DTEXT','RTEXT') or gadget.kind not in ('list','option','combo') or not all(kind=='string' for _,kind in values):return False
-                image=property_name=='DTEXT' and gadget.kind=='option' and gadget.display_mode=='PIXMAP'
-                if not all(editable_string(value,image=image) for value,_ in values):return False
-                setattr(gadget,'items' if property_name=='DTEXT' else 'item_values',[v for v,_ in values]);cursor=end;continue
+                end,updates=block;self.apply_choices(updates);cursor=end;continue
             row,line=lines[cursor];cursor+=1
             call=CALL.fullmatch(line)
             if call:
