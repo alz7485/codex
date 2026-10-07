@@ -337,7 +337,7 @@ class Item(QGraphicsObject):
             for candidate in self.form.gadgets:
                 x,y,w,h = self.form.geometry(candidate)
                 parent = self.form.parent_gadget(candidate)
-                pw,ph = self.form.geometry(parent)[2:] if parent else (self.form.width,self.form.height)
+                pw,ph = self.form.geometry(parent)[2:] if parent else ((self.form.width,self.form.height) if self.form.size_explicit else (299,299))
                 if x+w > pw+.001 or y+h > ph+.001:
                     raise ValueError('部品を親の領域内に収めてください。')
         except ValueError:
@@ -479,8 +479,9 @@ class Item(QGraphicsObject):
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemPositionChange and self.scene() and not self._sync_geometry:
             g = self.gadget
-            value.setX(min(round(value.x()/SX*2)/2,self.form.width-self._width)*SX)
-            value.setY(min(round(value.y()/SY*2)/2,self.form.height-self._height)*SY)
+            limit_width,limit_height=(self.form.width,self.form.height) if self.form.size_explicit else (299,299)
+            value.setX(min(round(value.x()/SX*2)/2,limit_width-self._width)*SX)
+            value.setY(min(round(value.y()/SY*2)/2,limit_height-self._height)*SY)
         return super().itemChange(change, value)
 
     def mouseReleaseEvent(self, event):
@@ -2085,6 +2086,11 @@ class Window(QMainWindow):
         dialog.deleteLater()
 
     def resize_preview(self):
+        if not self.form.size_explicit:
+            self.form.fit_size()
+            self.form_item.prepareGeometryChange()
+            self.form_item._width,self.form_item._height=self.form.width,self.form.height
+            self.form_item.update();self.form_resize_preview()
         for item in self.scene.items():
             if not isinstance(item,Item): continue
             x,y,w,h = preview_geometry(self.form,item.gadget); ox,oy = preview_offset(self.form,item.gadget)
@@ -2280,6 +2286,7 @@ class Window(QMainWindow):
         return next((page for page in self.form.children(tabset.name) if page.name.lower()==active),None)
 
     def add(self, kind, direction=None):
+        root_width,root_height=(self.form.width,self.form.height) if self.form.size_explicit else (299,299)
         container = self.form.gadgets[self.selected] if self.selected is not None else None
         if container and container.kind != 'frame': container = self.form.parent_gadget(container)
         if direction == 'TOOLBAR':
@@ -2304,16 +2311,16 @@ class Window(QMainWindow):
         if container:container=draft.named(container.name)
         if kind=='rtoggle' and container is None:
             container=Gadget(kind='frame',name=self.unique_name('radioGroup'),label='Radio group',
-                             x=0,y=min(len(self.form.gadgets)*1.5,max(0,self.form.height-6)),
-                             width=min(30,self.form.width),height=min(6,self.form.height))
+                             x=0,y=min(len(self.form.gadgets)*1.5,max(0,root_height-6)),
+                             width=min(30,root_width),height=min(6,root_height))
             position=free_position([preview_geometry(draft,child) for child in draft.children('')],container.width,container.height,
-                                   draft.width,draft.height,preferred=(container.x,container.y))
+                                   root_width,root_height,preferred=(container.x,container.y))
             if position is None:
                 self.statusBar().showMessage('フォームにラジオグループを配置する空きがありません。フォームを広げてください。');return
             container.x,container.y=position
             draft.gadgets.append(container)
         name = self.unique_name(kind)
-        width_limit, height_limit = draft.geometry(container)[2:] if container else (self.form.width, self.form.height)
+        width_limit, height_limit = draft.geometry(container)[2:] if container else (root_width,root_height)
         vertical = (kind == 'line' and direction == 'VERT') or (kind == 'slider' and direction == 'VERTICAL')
         height = min(5 if vertical or direction == 'PIXMAP' or kind in ('list', 'frame', 'view', 'commandline', 'container','textpane','selector') else 1, height_limit)
         if container and container.frame_style=='FRAME':height=min(height,max(1,height_limit-1))

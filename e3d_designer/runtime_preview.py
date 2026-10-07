@@ -1,8 +1,9 @@
 """Native-widget appearance reference. Never executes PML or changes the design."""
 import copy
+import math
 
 from PySide6.QtCore import Qt,QItemSelectionModel,QSize
-from PySide6.QtGui import QColor,QPalette,QPixmap,QIcon,QFont
+from PySide6.QtGui import QColor,QPalette,QPixmap,QIcon,QFont,QImageReader
 from PySide6.QtWidgets import (QApplication,QDialog,QVBoxLayout,QHBoxLayout,QWidget,
     QLabel,QPushButton,QCheckBox,QRadioButton,QComboBox,QLineEdit,QGroupBox,QTabWidget,
     QFrame,QSlider,QListWidget,QTableWidget,QTableWidgetItem,QPlainTextEdit,QMenuBar,QMenu,
@@ -46,7 +47,7 @@ class RuntimePreview(QDialog):
         self.surface=self.style_widget(QWidget(self));self.surface.setAutoFillBackground(True)
         self.surface.setFixedSize(round(self.form.width*self.char_width),round(self.form.height*self.line_height))
         body=self.style_widget(QWidget(self));body_layout=QVBoxLayout(body)
-        body_layout.addWidget(self.surface);self.layout_root.addWidget(body)
+        body_layout.addWidget(self.surface,0,Qt.AlignLeft|Qt.AlignTop);self.layout_root.addWidget(body,1)
         self.build_children('',self.surface)
         if not self.form.size_explicit:
             roots=[w.geometry() for w in self.controls.values() if w.parent() is self.surface]
@@ -58,6 +59,12 @@ class RuntimePreview(QDialog):
         filename=g.items[0] if g.kind=='option' and g.items else g.pixmap_path
         return QPixmap(resolve_image_path(filename,self.directories)) if filename else QPixmap()
 
+    def pixels(self,value,position=False):
+        low,high=(-2147483648,2147483647) if position else (0,16777215)
+        if not math.isfinite(value) or not low<=round(value)<=high:
+            raise ValueError('参考表示で扱える座標・寸法の範囲を超えています。MACの値は変更していません。')
+        return round(value)
+
     def choice_index(self,g):
         try:return int(g.initial)-1 if g.initial else -1
         except ValueError:return -1
@@ -65,7 +72,7 @@ class RuntimePreview(QDialog):
     def control_width(self,g,widget,width,height):
         """Reference padding uses Qt metrics; the original PML WIDTH is intact."""
         if g.display_mode=='PIXMAP':return width
-        size=QSize(round(width),round(height))
+        size=QSize(self.pixels(width),self.pixels(height))
         if g.kind=='button':
             option=QStyleOptionButton();option.initFrom(widget)
             return widget.style().sizeFromContents(QStyle.CT_PushButton,option,size,widget).width()
@@ -81,7 +88,8 @@ class RuntimePreview(QDialog):
             width=entry.style().sizeFromContents(kind,option,size,entry).width()
             if g.label:
                 tag=widget.layout().itemAt(0).widget()
-                width+=max(tag.minimumWidth(),tag.sizeHint().width())+widget.layout().spacing()
+                tag_width=tag.minimumWidth() if g.kind=='combo' and g.combo_tagwid else tag.sizeHint().width()
+                width+=tag_width+widget.layout().spacing()
         return width
 
     def select_rows(self,widget,g):
@@ -104,7 +112,8 @@ class RuntimePreview(QDialog):
             width=self.control_width(g,widget,width,height)
             if g.kind=='line':
                 width=2 if g.orientation=='VERT' else width;height=2 if g.orientation=='HORIZ' else height
-            widget.setGeometry(round(x*self.char_width),round(y*self.line_height),max(1,round(width)),max(1,round(height)))
+            widget.setGeometry(self.pixels(x*self.char_width,True),self.pixels(y*self.line_height,True),
+                max(1,self.pixels(width)),max(1,self.pixels(height)))
             if g.kind=='frame':
                 if g.frame_style=='TABSET':
                     pages=self.form.children(g.name)
@@ -120,16 +129,22 @@ class RuntimePreview(QDialog):
         box=self.style_widget(QWidget(parent));layout=QHBoxLayout(box);layout.setContentsMargins(0,0,0,0);layout.setSpacing(6)
         if g.label:
             tag=self.style_widget(QLabel(g.label,box));tag.setTextFormat(Qt.PlainText);layout.addWidget(tag)
-            if g.kind=='combo' and g.combo_tagwid:tag.setFixedWidth(round(float(g.combo_tagwid)*self.char_width))
+            if g.kind=='combo' and g.combo_tagwid:tag.setFixedWidth(self.pixels(float(g.combo_tagwid)*self.char_width))
         if choice:
             entry=self.style_widget(QComboBox(box))
             if g.display_mode=='PIXMAP':
-                for filename in g.items:entry.addItem(QIcon(resolve_image_path(filename,self.directories)),'')
-                pixmap=self.image(g)
-                if not pixmap.isNull():entry.setIconSize(pixmap.size())
+                sizes=[]
+                for filename in g.items:
+                    path=resolve_image_path(filename,self.directories);entry.addItem(QIcon(path),'')
+                    size=QImageReader(path).size()
+                    if size.isValid() and not size.isEmpty():sizes.append(size)
+                if sizes:entry.setIconSize(QSize(max(size.width() for size in sizes),max(size.height() for size in sizes)))
             else:entry.addItems(g.items)
             entry.setCurrentIndex(max(0,self.choice_index(g)) if g.items else -1)
-            if g.kind=='combo' and g.combo_scroll:entry.setMaxVisibleItems(int(g.combo_scroll))
+            if g.kind=='combo' and g.combo_scroll:
+                scroll=int(g.combo_scroll)
+                if scroll>2147483647:raise ValueError('SCROLLが参考表示で扱える範囲を超えています。MACの値は変更していません。')
+                entry.setMaxVisibleItems(scroll)
         else:
             entry=self.style_widget(QLineEdit(g.initial,box));entry.setReadOnly(True)
         layout.addWidget(entry,1);box.entry=entry
