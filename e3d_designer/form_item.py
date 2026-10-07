@@ -44,12 +44,15 @@ class FormItem(QGraphicsObject):
             self.setSelected(True)
             handle=self.handle_at(event.pos())
             if handle:
-                self._resize=(handle,event.scenePos(),self.form.width,self.form.height,copy.deepcopy(self.form))
+                # Native padding can make an automatic form wider on screen.
+                # Move from that visible edge; restore source dimensions from old.
+                self._resize=(handle,event.scenePos(),self._width,self._height,copy.deepcopy(self.form))
                 event.accept();return
         super().mousePressEvent(event)
     def cancel_interaction(self):
         if self._resize is None:return False
-        _,_,width,height,old=self._resize;self._resize=None;self._cancelled=True
+        _,_,_,_,old=self._resize;self._resize=None;self._cancelled=True
+        width,height=old.width,old.height
         self.form.width,self.form.height=width,height
         self.form.size_explicit=old.size_explicit
         self.prepareGeometryChange();self._width,self._height=width,height;self.update()
@@ -71,7 +74,11 @@ class FormItem(QGraphicsObject):
     def mouseMoveEvent(self,event):
         if self._cancelled:event.accept();return
         if self._resize:
-            handle,origin,width,height,_=self._resize;delta=event.scenePos()-origin
+            handle,origin,width,height,old=self._resize;delta=event.scenePos()-origin
+            if (handle not in ('width','both') or round(delta.x()/self.sx,1)==0) and (handle not in ('height','both') or round(delta.y()/self.sy,1)==0):
+                self.form.width,self.form.height=old.width,old.height;self.form.size_explicit=old.size_explicit
+                self.prepareGeometryChange();self._width,self._height=width,height;self.update();self.resizing.emit()
+                event.accept();return
             self.resize_to(width+delta.x()/self.sx if handle in ('width','both') else width,
                            height+delta.y()/self.sy if handle in ('height','both') else height)
             event.accept();return
@@ -81,8 +88,8 @@ class FormItem(QGraphicsObject):
         if self._cancelled:
             self._cancelled=False;event.accept();return
         if self._resize:
-            _,_,width,height,old=self._resize;self._resize=None
-            if (self.form.width,self.form.height)!=(width,height):self.resized.emit(old)
+            _,_,_,_,old=self._resize;self._resize=None
+            if (self.form.width,self.form.height)!=(old.width,old.height):self.resized.emit(old)
             else:
                 self.form.size_explicit=old.size_explicit;self.resizing.emit()
             event.accept();return

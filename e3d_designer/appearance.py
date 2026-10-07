@@ -100,7 +100,8 @@ class NativeControls:
                     if size.isValid() and not size.isEmpty():sizes.append(size)
                 if sizes:entry.setIconSize(QSize(max(size.width() for size in sizes),max(size.height() for size in sizes)))
             else:entry.addItems(g.items)
-            entry.setCurrentIndex(max(0,self.choice_index(g)) if g.items else -1)
+            index=self.choice_index(g)
+            entry.setCurrentIndex(0 if not g.initial and g.items else index if 0<=index<len(g.items) else -1)
             if scroll is not None:entry.setMaxVisibleItems(scroll)
         else:
             entry=self.style_widget(QLineEdit(g.initial,box));entry.setReadOnly(True)
@@ -140,7 +141,11 @@ class NativeControls:
         elif g.kind=='slider':
             widget=QSlider(Qt.Vertical if g.slider_orientation=='VERTICAL' else Qt.Horizontal,parent)
             widget.setRange(0,1000)
-            fraction=(g.slider_value-g.slider_min)/(g.slider_max-g.slider_min) if g.slider_max>g.slider_min else 0
+            span=g.slider_max-g.slider_min
+            if g.slider_max<=g.slider_min:fraction=0
+            elif math.isfinite(span):fraction=(g.slider_value-g.slider_min)/span
+            # Finite opposite limits may have an infinite difference.
+            else:fraction=(g.slider_value/2-g.slider_min/2)/(g.slider_max/2-g.slider_min/2)
             widget.setValue(round(max(0,min(1,fraction))*1000))
         elif g.kind=='line':
             widget=QFrame(parent);widget.setFrameShape(QFrame.VLine if g.orientation=='VERT' else QFrame.HLine);widget.setFrameShadow(QFrame.Sunken)

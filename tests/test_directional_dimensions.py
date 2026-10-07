@@ -52,7 +52,7 @@ class DirectionalDimensionsTests(unittest.TestCase):
     def test_single_line_gadgets_have_only_width_control(self):
         for kind in ('text','paragraph','toggle','option','combo'):
             with self.subTest(kind=kind):
-                self.load([Gadget(kind=kind,height=5)])
+                self.load([Gadget(kind=kind,height=5,option_width_explicit=kind=='option')])
                 self.assertEqual(self.w.form.gadgets[0].height,1)
                 self.assertEqual(self.item().boundingRect().height(),26)
                 self.assertEqual(set(self.item().handles()),{'width'})
@@ -73,17 +73,22 @@ class DirectionalDimensionsTests(unittest.TestCase):
                 restored=Form.loads(loaded.dumps())
                 self.assertEqual(restored.geometry(restored.gadgets[1])[1],2.5)
 
-    def test_preview_only_width_is_identified_in_inspector_and_handle_hint(self):
+    def test_preview_and_automatic_width_are_identified_in_inspector_and_handle_hint(self):
         for kind in ('toggle','option','combo'):
             with self.subTest(kind=kind):
                 self.load([Gadget(kind=kind)])
                 editor=self.w.fields['width'];grid=self.w.prop_layout.owners[editor]
                 entry=next(entry for entry in grid.entries if entry[0] is editor)
                 caption=entry[1].findChild(QLabel).text()
+                if kind=='option':
+                    self.assertIn('自動',caption);self.assertFalse(editor.isEnabled())
+                    self.assertIn('OPTIONの幅をコードへ出力',editor.toolTip())
+                    self.assertNotIn('width',self.item().handles())
+                    continue
                 point=self.w.view.mapFromScene(self.item().mapToScene(self.item().handles()['width'].center()))
                 QTest.mouseMove(self.w.view.viewport(),point+QPoint(-20,20),10)
                 QTest.mouseMove(self.w.view.viewport(),point,10);self.app.processEvents()
-                if kind in ('toggle','option'):
+                if kind=='toggle':
                     self.assertIn('プレビューのみ',caption)
                     self.assertIn('E3Dの幅には反映されません',editor.toolTip())
                     self.assertEqual(self.item().toolTip(),editor.toolTip())

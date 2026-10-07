@@ -36,7 +36,7 @@ def fixed_dimensions(gadget):
 
 
 def dimension_editable(gadget, dimension):
-    return gadget.display_mode != 'PIXMAP' and dimension not in fixed_dimensions(gadget) and not (dimension == 'width' and (gadget.width_ref or gadget.hidden))
+    return gadget.display_mode != 'PIXMAP' and dimension not in fixed_dimensions(gadget) and not (dimension == 'width' and (gadget.width_ref or gadget.hidden or (uses_pairs(gadget) and not gadget.option_width_explicit)))
 
 
 def normalize_dimensions(gadget):

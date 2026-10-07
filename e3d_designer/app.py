@@ -37,7 +37,7 @@ PALETTE = {
 # Independent character-width and line-height scales; approximate preview only.
 SX, SY = CHAR_WIDTH, LINE_HEIGHT
 GADGET_MIME = 'application/x-e3d-designer-gadgets'
-PREVIEW_WIDTH_HINT = 'プレビュー用の幅です。現在のTOGGLE／OPTION出力にはWIDTHを指定せず、E3Dの幅には反映されません。'
+PREVIEW_WIDTH_HINT = 'プレビュー用の幅です。通常TOGGLEの出力にはWIDTHを指定せず、E3Dの幅には反映されません。'
 INSPECTOR_STYLE = '''QTabWidget::pane { border: 1px solid #d6dfeb; background: #ffffff; }
 QTabBar::tab { padding: 6px 9px; background: #f2f5f9; color: #46566b; }
 QTabBar::tab:selected { background: #eaf3ff; color: #185fa8; border-bottom: 2px solid #2277cc; }
@@ -1561,7 +1561,8 @@ class Window(QMainWindow):
         self.fields['height'].setToolTip(hint)
         if self.form.is_hidden(gadget) and not gadget.hidden:
             self.fields['width'].setToolTip('幅参照元が非表示のため、幅0で表示・出力されます。参照元を表示すると元の幅に戻ります。')
-        if ((gadget.kind=='toggle' and gadget.display_mode=='TEXT') or (uses_pairs(gadget) and not gadget.option_width_explicit)):self.fields['width'].setToolTip(PREVIEW_WIDTH_HINT)
+        if gadget.kind=='toggle' and gadget.display_mode=='TEXT':self.fields['width'].setToolTip(PREVIEW_WIDTH_HINT)
+        if uses_pairs(gadget) and not gadget.option_width_explicit:self.fields['width'].setToolTip('自動幅です。「OPTIONの幅をコードへ出力」をオンにすると幅を指定できます。')
         for key,value in fixed_dimensions(gadget).items():
             self.fields[key].setToolTip('高さは1行固定です。' if gadget.kind not in ('line','slider') else f'太さは{value:.1f}固定です。長さだけ変更できます。')
         parent = self.form.parent_gadget(gadget)
@@ -1647,7 +1648,7 @@ class Window(QMainWindow):
         self.choices.setPlaceholderText('画像のファイルパスを1行1件で指定' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢の表示文字を1行1件で指定')
         self.prop_layout.setCaption(self.choices,'画像ファイル (1行1画像)' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢 (1行1項目)')
         self.prop_layout.setCaption(self.item_values,'RTEXT 実値 (1行1項目)')
-        width_caption = '幅 (px)' if gadget.display_mode == 'PIXMAP' else '幅（プレビューのみ）' if (gadget.kind=='toggle' or (uses_pairs(gadget) and not gadget.option_width_explicit)) else '幅'
+        width_caption = '幅 (px)' if gadget.display_mode == 'PIXMAP' else '幅（自動）' if uses_pairs(gadget) and not gadget.option_width_explicit else '幅（プレビューのみ）' if gadget.kind=='toggle' else '幅'
         self.prop_layout.setCaption(self.fields['width'],width_caption)
         self.prop_layout.setCaption(self.fields['height'],'高さ (px)' if gadget.display_mode == 'PIXMAP' else '高さ / 行数')
         basis='フレーム基準' if gadget.parent else 'フォーム基準'
@@ -2147,6 +2148,7 @@ class Window(QMainWindow):
         self.scene.setSceneRect(rect)
 
     def form_resize_preview(self):
+        self.sync_visual_form_size()
         self.update_scene_rect()
         self.loading=True
         self.load_number(self.fw,self.form.width);self.load_number(self.fh,self.form.height)

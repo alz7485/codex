@@ -2,7 +2,7 @@
 import copy
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog,QVBoxLayout,QWidget,QLabel,QMenuBar,QMenu,QScrollArea,QFrame
-from .model import CHAR_WIDTH,LINE_HEIGHT
+from .model import CHAR_WIDTH,LINE_HEIGHT,supports_hidden
 from .appearance import NativeControls
 from .draft_validation import validate_draft
 
@@ -54,7 +54,7 @@ class RuntimePreview(QDialog,NativeControls):
         body_layout.addWidget(self.surface,0,Qt.AlignLeft|Qt.AlignTop)
         self.scroll=QScrollArea(self);self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setWidgetResizable(True);self.scroll.setWidget(body);self.layout_root.addWidget(self.scroll,1)
-        self.build_children('',self.surface)
+        self.build_children('',self.surface,{})
         if not self.form.size_explicit:
             roots=[w.geometry() for w in self.controls.values() if w.parent() is self.surface]
             self.surface.setFixedSize(max([round(self.char_width),*[r.x()+r.width() for r in roots]]),
@@ -71,11 +71,12 @@ class RuntimePreview(QDialog,NativeControls):
         self.move(max(available.left(),min(rect.left(),available.right()-rect.width()+1)),
                   max(available.top(),min(rect.top(),available.bottom()-rect.height()+1)))
 
-    def build_children(self,name,parent):
+    def build_children(self,name,parent,geometry_memo):
         for g in self.form.children(name):
-            if self.form.is_hidden(g):continue
+            if g.hidden:continue
+            x,y,width,height=self.form.geometry(g,_memo=geometry_memo)
+            if width==0 and supports_hidden(g):continue
             widget=self.build_gadget(g,parent);self.controls[g.name]=widget
-            x,y,width,height=self.form.geometry(g)
             width,height=(g.width,g.height) if g.display_mode=='PIXMAP' else (width*self.char_width,height*self.line_height)
             width=self.control_width(g,widget,width,height)
             if g.kind=='line':
@@ -87,8 +88,8 @@ class RuntimePreview(QDialog,NativeControls):
                     pages=self.form.children(g.name)
                     for page in pages:
                         content=self.style_widget(QWidget(widget));widget.addTab(content,page.label)
-                        self.controls[page.name]=content;self.build_children(page.name,content)
+                        self.controls[page.name]=content;self.build_children(page.name,content,geometry_memo)
                     active=self.active_pages.get(g.name.lower())
                     index=next((i for i,page in enumerate(pages) if page.name.lower()==active),0)
                     widget.setCurrentIndex(index)
-                else:self.build_children(g.name,widget)
+                else:self.build_children(g.name,widget,geometry_memo)

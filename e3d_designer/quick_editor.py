@@ -155,6 +155,7 @@ class MiniProperties(QDialog):
         if sized:number('width','WIDTH')
         if self.option_width is not None:
             self.fields['width'].setEnabled(g.option_width_explicit)
+            self.fields['width'].setToolTip('「OPTIONの幅をコードへ出力」がオフなら自動幅、オンなら幅を指定できます。')
             self.option_width.toggled.connect(self.fields['width'].setEnabled)
         if g.kind in ('line','slider','list','view','alpha','container','textpane','selector') or g.display_mode=='PIXMAP' or (g.kind=='frame' and g.frame_style=='TOOLBAR'):number('height','HEIGHT')
         self.hidden=QCheckBox('非表示（WIDTH 0）',self);self.hidden.setChecked(g.hidden)
