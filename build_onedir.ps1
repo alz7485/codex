@@ -9,9 +9,9 @@ try {
     }
     & $buildPython -m pip install -r requirements.txt 'pyinstaller>=6.16,<7'
     if ($LASTEXITCODE -ne 0) { throw 'Failed to install build dependencies.' }
-    & $buildPython -m PyInstaller --onedir --windowed --clean --noconfirm --name E3DFormDesigner --icon app-icon.ico --add-data 'e3d_designer\assets;e3d_designer\assets' run_designer.py
+    & $buildPython -m PyInstaller --onedir --windowed --clean --noconfirm --name FormDesigner --icon app-icon.ico --add-data 'e3d_designer\assets;e3d_designer\assets' run_designer.py
     if ($LASTEXITCODE -ne 0) { throw 'Failed to build application.' }
-    $destination = Join-Path $PSScriptRoot 'dist\E3DFormDesigner'
+    $destination = Join-Path $PSScriptRoot 'dist\FormDesigner'
     foreach ($folder in @('examples', 'docs')) {
         Copy-Item $folder -Destination $destination -Recurse -Force
     }

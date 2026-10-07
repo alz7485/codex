@@ -1,7 +1,7 @@
-E3D PML Form Designer — はじめに
+FormDesigner — はじめに
 
 1. 起動・サンプル
-   EXE版は E3DFormDesigner.exe を開きます。
+   EXE版は FormDesigner.exe を開きます。
    「開く」で examples/equipmenttool.json を選ぶと基本的なフォーム、
    examples/tabdemo.json でタブ、examples/extra-features.json で画像等を試せます。
    Python版の起動・EXE化は EXE_BUILD_ONEDIR.txt を参照してください。
@@ -60,6 +60,10 @@ E3D PML Form Designer — はじめに
    WIDTH 0のFRAMEは自動幅として補います。タブページFRAMEは親TABSETの幅を使用します。
    WIDTH 0／0.0のTEXTなどは非表示として読み込み、初期値や処理を保持します。
    MENUのADDは次行から読み込みます。MENUのEXITがなくても次のMENU・FRAMEなどで区切ります。
+   ATのX／Yに負の値を指定できます。フォーム直下とFRAME内の両方で保持します。
+   左・上へはみ出した内容は親の境界で切り取り、選択時の枠だけを外側にも表示します。
+   全部が見えない部品はツリーから選択します。負の位置への移動でも親を維持します。
+   親を変える場合はツリーまたは親の指定欄を使います。右・下へのはみ出しは検証します。
    ATは全部・Xだけ・Yだけを省略できます。各コンテナの最初はX0・Y0です。
    PATH DOWN／UPは通常1行ずつ、RIGHT／LEFTは直前の部品の端から1離して配置します。
    省略した軸は現在地の値を使います。明示したATで現在地を更新します。
@@ -256,7 +260,7 @@ MACを部分的に読み込む
    外部マクロやコピー範囲外の部品は自動で取り込みません。
 
 配布
-   EXE版は_internalやexamplesを含むE3DFormDesignerフォルダ全体を配布します。
+   EXE版は_internalやexamplesを含むFormDesignerフォルダ全体を配布します。
    app-icon.icoとapp-icon.pngを同梱し、ウィンドウとEXEにアイコンを設定しています。
    E3D本体・外部DLLは同梱しません。
 

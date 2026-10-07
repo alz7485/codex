@@ -83,8 +83,8 @@ class MultiSelectionTests(unittest.TestCase):
         self.assertEqual(self.item('Child').pos().x()-origin.x(),.5*SX)
         self.assertEqual(w.selection_names(),{'Group','Child'})
     def test_group_boundary_rejection_is_atomic_and_does_not_create_history(self):
-        w=self.w;w.form.named('A').x=0;w.refresh();self.click('A');self.click('B',Qt.ControlModifier)
-        original=w.form.dumps();self.key(Qt.Key_Left)
+        w=self.w;w.form.named('A').x=w.form.width-w.form.named('A').width;w.refresh();w.choose_rows([0,1])
+        original=w.form.dumps();self.key(Qt.Key_Right)
         self.assertEqual(w.form.dumps(),original);self.assertEqual(w.history,[]);self.assertFalse(w.dirty)
         self.assertEqual(w.selection_names(),{'A','B'})
     def test_group_drag_and_escape_restore_all_members(self):

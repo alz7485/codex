@@ -207,6 +207,8 @@ class Item(QGraphicsObject):
         parent = self.form.parent_gadget(self.gadget)
         if self.gadget.kind == 'frame' and parent and parent.frame_style == 'TABSET': rect = rect.adjusted(0, 26, 0, 0)
         path.addRect(rect)
+        if not self.isSelected():
+            clip=QPainterPath();clip.addRect(self.content_clip_rect());path=path.intersected(clip)
         if self.scene():
             # Overlapping children must leave selected resize handles reachable.
             selected_items=self.scene().selectedItems()
@@ -330,7 +332,7 @@ class Item(QGraphicsObject):
                 x,y,w,h = self.form.geometry(candidate)
                 parent = self.form.parent_gadget(candidate)
                 pw,ph = self.form.geometry(parent)[2:] if parent else (self.form.width,self.form.height)
-                if x < -.001 or y < -.001 or x+w > pw+.001 or y+h > ph+.001:
+                if x+w > pw+.001 or y+h > ph+.001:
                     raise ValueError('部品を親の領域内に収めてください。')
         except ValueError:
             g.width,g.height = old_width,old_height
@@ -346,6 +348,21 @@ class Item(QGraphicsObject):
     def hidden_in_preview(self):
         return self.gadget.hidden or (self._width==0 and supports_hidden(self.gadget))
 
+    def content_clip_rect(self):
+        clip=QRectF(0,0,self.form.width*SX,self.form.height*SY)
+        items={item.gadget.name.lower():item for item in self.scene().items() if isinstance(item,Item)} if self.scene() else {}
+        parent=self.form.parent_gadget(self.gadget);seen=set()
+        while parent and parent.name.lower() not in seen:
+            seen.add(parent.name.lower());item=items.get(parent.name.lower())
+            if item:
+                rect=item.mapRectToScene(QRectF(0,0,item._width*SX,item._height*SY))
+            else:
+                x,y,w,h=preview_geometry(self.form,parent);ox,oy=preview_offset(self.form,parent)
+                rect=QRectF((x+ox)*SX,(y+oy)*SY,w*SX,h*SY)
+            if self.form.is_tab_page(parent):rect=rect.adjusted(0,26,0,0)
+            clip=clip.intersected(rect);parent=self.form.parent_gadget(parent)
+        return self.mapRectFromScene(clip)
+
     def paint(self, painter, option, widget=None):
         r, g = self.boundingRect(), self.gadget
         if self.hidden_in_preview():
@@ -353,6 +370,8 @@ class Item(QGraphicsObject):
                 painter.setPen(QPen(QColor('#2277cc'),1,Qt.DashLine));painter.setBrush(Qt.NoBrush)
                 painter.drawRect(r.adjusted(1,1,-1,-1))
             return
+        painter.save()
+        painter.setClipRect(self.content_clip_rect(),Qt.IntersectClip)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(QPen(QColor('#7f91a5'), 1))
         background=preview_color(g.background) if g.background and g.kind in ('button','paragraph','list') else None
@@ -427,7 +446,7 @@ class Item(QGraphicsObject):
         if g.kind == 'container': text = 'PML.NET\n'+(g.control_type or g.label)
         if g.kind == 'list':
             if g.list_mode == 'TABLE' and g.headings:
-                painter.save(); painter.setClipRect(r.adjusted(1,1,-1,-1))
+                painter.save(); painter.setClipRect(r.adjusted(1,1,-1,-1),Qt.IntersectClip)
                 column_width = r.width()/len(g.headings)
                 for row,values in enumerate([g.headings,*g.rows]):
                     if row*SY >= r.height(): break
@@ -440,6 +459,7 @@ class Item(QGraphicsObject):
             else: text = '\n'.join(g.items) or g.label
         alignment = Qt.AlignCenter if g.kind == 'button' else Qt.AlignLeft | (Qt.AlignTop if g.kind in ('frame','textpane','selector') else Qt.AlignVCenter)
         painter.drawText(r.adjusted(7, 2, -7, -2), alignment, text)
+        painter.restore()
         if self.isSelected():
             painter.setPen(QPen(QColor('#2277cc'), 2, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
@@ -451,8 +471,8 @@ class Item(QGraphicsObject):
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemPositionChange and self.scene() and not self._sync_geometry:
             g = self.gadget
-            value.setX(max(0,min(round(value.x()/SX*2)/2,self.form.width-self._width))*SX)
-            value.setY(max(0,min(round(value.y()/SY*2)/2,self.form.height-self._height))*SY)
+            value.setX(min(round(value.x()/SX*2)/2,self.form.width-self._width)*SX)
+            value.setY(min(round(value.y()/SY*2)/2,self.form.height-self._height)*SY)
         return super().itemChange(change, value)
 
     def mouseReleaseEvent(self, event):
@@ -516,7 +536,7 @@ class Window(QMainWindow):
         self.current_workflow='form'
         self.validation_error=''
         self.resize(1380, 880)
-        self.setWindowTitle('E3D PML Form Designer — E3D 4.0 想定')
+        self.setWindowTitle('FormDesigner — E3D 4.0 想定')
         toolbar = self.addToolBar('ファイル')
         toolbar.setMovable(False)
         file_menu=self.menuBar().addMenu('ファイル');edit_menu=self.menuBar().addMenu('編集')
@@ -711,7 +731,7 @@ class Window(QMainWindow):
             if key in ('slider_min','slider_max','slider_step','slider_value'):
                 w = self.number(-1e9, 1e9)
             elif key in ('x','y','width','height','hgap','vgap','xoffset','yoffset'):
-                w = self.number(-300 if key in ('xoffset','yoffset') else 0 if key in ('x','y','width','height','hgap','vgap') else 1, 300)
+                w = self.number(-300 if key in ('x','y','xoffset','yoffset') else 0 if key in ('width','height','hgap','vgap') else 1, 300)
             elif key in ('parent','xref','yref','width_ref','popup_menu'):
                 w = QComboBox(); w.addItem('(フォーム直下)', '')
             elif key in ('value_type','orientation','frame_style','layout_mode','path','halign','valign','xedge','yedge','xanchor','selection_mode','combo_keyword','slider_orientation','view_type','channels','list_mode','display_mode','database','button_role','action_mode'):
@@ -1430,7 +1450,9 @@ class Window(QMainWindow):
             self.fields[key].setMinimum(0 if fixed_dimensions(gadget).get(key)==0 or (key=='width' and self.form.is_hidden(gadget)) else 1)
             self.fields[key].setDecimals(1)
             self.fields[key].setSingleStep(.1)
-        for key in ('x','y'): self.fields[key].setEnabled(mode == 'ABSOLUTE')
+        for key in ('x','y'):
+            self.fields[key].setMinimum(min(-300,self.inspector_value(gadget,key)))
+            self.fields[key].setEnabled(mode == 'ABSOLUTE')
         for key in ('path','halign','valign','hgap','vgap'): self.fields[key].setEnabled(mode == 'AUTO')
         self.fields['vgap'].setToolTip('通常は1行ずつ移動し、FRAME後は下端の1行下です。この値を変更するとVDISTを出力し、部品端からの間隔になります。' if gadget.path_row_step else '')
         self.quick_layout.setToolTip('PATH・相対配置ではドラッグと矢印キーによる移動を固定します。座標指定への変更時は現在の位置を保持します。')
@@ -1903,6 +1925,7 @@ class Window(QMainWindow):
             item.setSelected(index == self.selected or g.name in self._multi_selection)
         self.scene.blockSignals(False)
         self.apply_page_visibility()
+        self.update_scene_rect()
         if self.selected is not None and self.selected < len(self.form.gadgets):
             self.objects.setCurrentRow(self.selected,reveal=False); g = self.form.gadgets[self.selected]
             self.populate_parents(g)
@@ -1937,7 +1960,7 @@ class Window(QMainWindow):
             self.validation_error=str(e);self.code.setPlainText('-- 出力できません: ' + str(e)); self.statusBar().showMessage(str(e))
         self.sync_output_summary()
         self.edit_method_button.setEnabled(self.selected is not None and self.fields['callback'].isEnabled() and not self.form.gadgets[self.selected].command)
-        self.setWindowTitle(('● ' if self.dirty else '') + 'E3D PML Form Designer — ' + (self.path.name if self.path else '新規設計'))
+        self.setWindowTitle(('● ' if self.dirty else '') + 'FormDesigner — ' + (self.path.name if self.path else '新規設計'))
         if self._multi_selection:self.show_multiple_selection(reveal=False)
 
     def choose_row(self, index):
@@ -1992,7 +2015,7 @@ class Window(QMainWindow):
             ox,oy=draft.offset(moved);pw,ph=draft.geometry(draft.parent_gadget(moved))[2:] if parent else (draft.width,draft.height)
             if width>pw+.001 or height>ph+.001:
                 self.statusBar().showMessage('移動先のフレームに部品全体が収まりません。');return
-            moved.x=round(max(0,min(x-ox,pw-width)),2);moved.y=round(max(0,min(y-oy,ph-height)),2)
+            moved.x=round(min(x-ox,pw-width),2);moved.y=round(min(y-oy,ph-height),2)
             draft.gadgets=[draft.gadgets[i] for i in order];draft.sync_tabs()
             draft.validate()
         except ValueError as error:self.statusBar().showMessage(str(error));return
@@ -2007,8 +2030,14 @@ class Window(QMainWindow):
         from PySide6.QtCore import QTimer
         QTimer.singleShot(0,self.refresh)
 
+    def update_scene_rect(self):
+        rect=QRectF(-12,-30,self.form.width*SX+24,self.form.height*SY+42)
+        for item in self.scene.selectedItems():
+            if isinstance(item,Item) and item.isVisible():rect=rect.united(item.sceneBoundingRect().adjusted(-12,-12,12,12))
+        self.scene.setSceneRect(rect)
+
     def form_resize_preview(self):
-        self.scene.setSceneRect(-12,-30,self.form.width*SX+24,self.form.height*SY+42)
+        self.update_scene_rect()
         self.loading=True
         self.load_number(self.fw,self.form.width);self.load_number(self.fh,self.form.height)
         self.loading=False
@@ -2033,6 +2062,7 @@ class Window(QMainWindow):
             g = self.form.gadgets[self.selected]; self.loading = True
             for key in ('x','y'):self.load_number(self.fields[key],self.inspector_value(g,key))
             self.load_number(self.fields['width'],self.form.display_width(g)); self.load_number(self.fields['height'],g.height); self.loading = False
+        self.update_scene_rect()
 
     def resize_committed(self, old):
         self.history.append(old); self.history = self.history[-100:]; self.future.clear(); self.dirty = True
@@ -2061,6 +2091,7 @@ class Window(QMainWindow):
         self.scene.blockSignals(previous);self.show_multiple_selection()
 
     def show_multiple_selection(self,reveal=True):
+        self.update_scene_rect()
         self.loading=True
         self.form_item.setSelected(False)
         self.objects.setRows([i for i,g in enumerate(self.form.gadgets) if g.name in self._multi_selection],reveal)
@@ -2126,6 +2157,7 @@ class Window(QMainWindow):
 
     def sync_selection(self):
         if self._closing or not isValid(self) or not isValid(self.scene): return
+        self.update_scene_rect()
         # Property loading only: keep the grabbed graphics item alive while dragging.
         if self._multi_selection:
             self.show_multiple_selection();return
@@ -2185,8 +2217,14 @@ class Window(QMainWindow):
                         seen.add(parent.name.lower());depth+=1;parent=candidate.parent_gadget(parent)
                     targets.append((depth,-fw*fh,frame.name))
             parent=candidate.named(max(targets)[2]) if targets else None
+            current_parent=candidate.parent_gadget(g)
+            if current_parent:
+                ox,oy=candidate.offset(g);px,py=x-ox,y-oy
+                pw,ph=candidate.geometry(current_parent)[2:]
+                if (px<0 or py<0) and px+width<=pw+.001 and py+height<=ph+.001:
+                    parent=current_parent
             if g.kind=='rtoggle' and parent is None:
-                message='ラジオボタン全体がFRAME内に収まる位置へ配置してください。'
+                message='ラジオボタンはFRAMEに所属する位置へ配置してください。'
                 QTimer.singleShot(0,lambda:(self.refresh(),self.statusBar().showMessage(message)));return
             changed_parent=g.parent.lower()!=(parent.name.lower() if parent else '')
             g.parent=parent.name if parent else ''
@@ -2533,8 +2571,9 @@ def atomic_write(path, data):
 def main():
     if sys.platform == 'win32':
         import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('E3DFormDesigner.Desktop')
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('FormDesigner.Desktop')
     app = QApplication(sys.argv)
+    app.setApplicationName('FormDesigner')
     app.setStyle('Fusion')
     window = Window(); window.show()
     QTimer.singleShot(0,window.offer_recovery)

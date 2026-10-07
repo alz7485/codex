@@ -578,7 +578,7 @@ class Form:
             if 'width' in fixed and fixed['width']==0:min_width=0
             if 'height' in fixed and fixed['height']==0:min_height=0
             if self.is_hidden(g):min_width=0
-            if g.width < (0 if fixed.get('width')==0 else 1) or g.height < (0 if fixed.get('height')==0 else 1) or x < -.001 or y < -.001 or width < min_width or height < min_height or x + width > parent_width + .001 or y + height > parent_height + .001:
+            if g.width < (0 if fixed.get('width')==0 else 1) or g.height < (0 if fixed.get('height')==0 else 1) or width < min_width or height < min_height or x + width > parent_width + .001 or y + height > parent_height + .001:
                 raise ValueError(f'{g.name}: 部品を親コンテナ内に収めてください。')
             if g.background:
                 if g.kind not in ('paragraph', 'button', 'list') or not re.fullmatch(r'[0-9]+', g.background):

@@ -1,4 +1,4 @@
-# E3D PML Form Designer
+# FormDesigner
 
 AVEVA E3D の PML ユーザーフォームを視覚的に設計する、日本語 UI の PySide6 デスクトップアプリです。E3D 4.0 を想定していますが、E3D 実機での構文・表示・文字コードの互換性は未検証です。E3D 本体やライセンスは含みません。
 
@@ -21,7 +21,7 @@ py -3.12 -m venv .venv
 
 Linux では `python3 -m venv .venv`、`.venv/bin/python -m pip install -r requirements.txt`、`.venv/bin/python -m e3d_designer` を使用します。画面操作にはデスクトップ環境が必要です。
 
-Windowsで `onedir` 形式のEXEを作成するコマンドは、同梱の [EXE_BUILD_ONEDIR.txt](EXE_BUILD_ONEDIR.txt) に記載しています。PyInstallerの起動ファイルには `run_designer.py` を使います。配布時は `dist/E3DFormDesigner` フォルダー全体を含めてください。
+Windowsで `onedir` 形式のEXEを作成するコマンドは、同梱の [EXE_BUILD_ONEDIR.txt](EXE_BUILD_ONEDIR.txt) に記載しています。PyInstallerの起動ファイルには `run_designer.py` を使います。配布時は `dist/FormDesigner` フォルダー全体を含めてください。
 
 ## 作業の流れ
 
@@ -262,6 +262,12 @@ DEFAULTは、代入の対象・順番を維持できる場合だけ初期値欄�
 - 終了後の Scene 参照や遅延更新を抑止します。
 
 追加調査: [PML の具体例・公開コードとの照合](docs/pml-examples-research.md)。ライフサイクル、イベント、OPTION、TABSET、型、ロード方式を整理しています。
+
+### 負のAT座標と表示範囲
+
+フォーム直下・FRAME内で負のX／Y座標を指定できます。読み込み、JSON保存、MAC再出力、コピーでも符号を保持します。親の左・上へはみ出した文字・画像・表などは、フォームとすべての親FRAMEの境界で切り取ります。TABSET内ではタブの見出しにも重なりません。選択すると、はみ出した部分も含む選択枠と操作ハンドルを表示します。全部が枠外にある部品はツリーから選択して編集できます。
+
+X／Y欄、ドラッグ、矢印キーで負の位置を編集できます。FRAME内の部品を負の位置へドラッグしても所属を保持し、FRAME内の座標で保存します。所属を変更する場合はツリーで移動するか、親の指定を変更してください。サイズは正の値とし、右・下へのはみ出しは従来どおり検証します（線の太さ0、非表示部品のWIDTH0は既存の規則どおりです）。
 
 ### 相対配置・自動配置
 
