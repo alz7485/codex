@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 from PySide6.QtWidgets import QApplication
 from e3d_designer.app import Window
-from e3d_designer.model import Form,Gadget
+from e3d_designer.model import Form,Gadget,Method
 
 
 class OutputEncodingTests(unittest.TestCase):
@@ -39,3 +39,20 @@ class OutputEncodingTests(unittest.TestCase):
             self.window.form.gadgets[0].label='😀'
             with patch('e3d_designer.app.QFileDialog.getSaveFileName',return_value=(str(path),'')):self.window.save_macro_template()
             self.assertEqual(path.read_bytes(),data)
+
+    def test_dangling_empty_method_reference_prevents_overwriting_existing_mac(self):
+        self.window.form=Form(extra_methods=[Method('Empty','(!value Is Real)')],
+                              after_show_code='!this.Empty(1)')
+        self.window.refresh()
+        self.assertIn('.Empty',self.window.validation_error)
+        self.assertIn('出力できません',self.window.code.toPlainText())
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'form.mac'
+            path.write_bytes(b'previous file\r\n')
+            with patch('e3d_designer.app.QMessageBox.warning') as warning,patch(
+                    'e3d_designer.app.QFileDialog.getSaveFileName',
+                    return_value=(str(path),'')) as picker:
+                self.window.export()
+            warning.assert_called_once()
+            picker.assert_not_called()
+            self.assertEqual(path.read_bytes(),b'previous file\r\n')

@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QTabWidget, QPlainTextEdit, QComboBox, QCheckBox, QDialogButtonBox)
 from .mac_import import split_methods
 from .pml_syntax import has_code
+from .method_output import check_editable_code
 from .highlighting import PmlHighlighter
 
 
@@ -75,7 +76,7 @@ class ImportCodeDialog(QDialog):
             candidate.default_mode=self.default_mode.currentData()
             candidate.auto_default=self.auto_default.isChecked()
             candidate.extra_methods=methods
-            candidate.validate();candidate.pml()
+            candidate.validate();check_editable_code(candidate)
         except ValueError as error:
             self.error.setText(str(error));return
         self.result_form=candidate;super().accept()

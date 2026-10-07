@@ -702,13 +702,15 @@ class Form:
 
     def pml(self, normalize=True):
         self.validate()
-        from .method_output import empty_method_names,prune_empty_calls
+        from .method_output import empty_method_names,prune_empty_calls,validate_omitted_references
         initial_lines = self.initial_lines()
         default_code = self.default_body or next((g.body for g in self.gadgets if g.callback.lower() == 'default' and g.body), '')
         empty_methods=empty_method_names(self,initial_lines,default_code)
         protected = {}
+        code_fragments = []
         def user_code(value):
             value=prune_empty_calls(value,self,empty_methods)
+            code_fragments.append(value)
             if not normalize:return value
             import uuid
             marker = '__user_code_'+uuid.uuid4().hex+'__'
@@ -716,6 +718,7 @@ class Form:
             return marker
         def command_code(value):
             value=prune_empty_calls(value,self,empty_methods)
+            code_fragments.append(value)
             return value if has_code(value) else ''
         active_methods = {g.callback.lower() for g in self.gadgets if g.callback and g.callback.lower() not in empty_methods}
         if 'default' not in empty_methods:active_methods.add('default')
@@ -872,6 +875,7 @@ class Form:
         method_offsets = [method_start]
         lines.append(f'define method .{self.name}()')
         constructor_start = len(lines)
+        constructor_fragments_start = len(code_fragments)
         for menu in self.menus:
             if menu.popup:
                 for item in menu.items:
@@ -901,7 +905,9 @@ class Form:
                     lines.append('  !values = object ARRAY()')
                     for i, value in enumerate(g.item_values,1): lines.append(f'  !values[{i}] = {literal(value)}')
                     lines.append(f'  !this.{target}.rtext = !values')
-        if self.constructor_mode == 'SOURCE':del lines[constructor_start:]
+        if self.constructor_mode == 'SOURCE':
+            del lines[constructor_start:]
+            del code_fragments[constructor_fragments_start:]
         if self.constructor_body:lines.append(user_code(self.constructor_body))
         if initial_lines and self.auto_default and self.constructor_mode == 'GENERATED': lines.append('  !this.DEFAULT()')
         lines.extend(['endmethod', ''])
@@ -944,6 +950,9 @@ class Form:
             return has_code(body)
         blocks=[block for block in blocks[1:]+blocks[:1] if nonempty(block)]
         blocks = order_methods(blocks,self,protected)
+        emitted={re.match(r'define\s+method\s+\.([A-Za-z_][A-Za-z0-9_]*)',block[0],re.I).group(1).lower()
+                 for block in blocks}
+        validate_omitted_references(self,(empty_methods|{self.name.lower()})-emitted,code_fragments)
         lines = lines[:method_start] + [line for block in blocks for line in block]
         from .formatting import canonical_pml
         text='\n'.join(lines)

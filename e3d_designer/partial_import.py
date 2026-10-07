@@ -2,6 +2,7 @@
 import re
 from .mac_import import Importer, MacImportError, comment_lines
 from .pml_syntax import mask_non_code
+from .method_output import check_editable_code
 
 
 GADGETS=set('BUTTON PARAGRAPH PARA TEXT TOGGLE RTOGGLE OPTION COMBO COMBOBOX LIST LINE FRAME SLIDER SELECTOR CONTAINER TEXTPANE TEXTPANEL VIEW'.split())
@@ -103,7 +104,7 @@ def recover_mac(text):
         importer=Importer(current)
         try:
             result=importer.parse()
-            result.form.pml()
+            check_editable_code(result.form)
         except MacImportError as error:
             row=error.line-1
             if row==starts[0] or not 0<=row<len(working) or '500個' in str(error):

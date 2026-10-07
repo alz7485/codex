@@ -6,6 +6,7 @@ from .model import Method,IDENTIFIER
 from .mac_import import split_methods
 from .names import code_slots,read_slot,write_slot
 from .pml_syntax import has_code,method_call_sites
+from .method_output import check_editable_code
 from .highlighting import PmlHighlighter
 
 
@@ -39,7 +40,7 @@ def update_helpers(form,entries):
     for removed in original-set(old_names):
         locations=callers(candidate,removed)
         if locations:raise ValueError('呼び出しが残るメソッドは削除できません: '+removed+'（'+', '.join(locations)+'）')
-    candidate.validate();candidate.pml()
+    candidate.validate();check_editable_code(candidate)
     return candidate
 
 

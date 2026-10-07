@@ -1,6 +1,16 @@
 """Omit empty method definitions and standalone calls to known empty methods."""
 import re
-from .pml_syntax import has_code,mask_non_code,own_reference_pattern
+from .pml_syntax import has_code,mask_non_code,own_reference_pattern,method_call_sites
+
+
+class OmittedMethodReferenceError(ValueError):
+    """The design is editable, but omitting empty methods prevents MAC export."""
+
+
+def check_editable_code(form):
+    """Check output structure, allowing retained calls to be repaired in the editor."""
+    try:form.pml()
+    except OmittedMethodReferenceError:pass
 
 
 def prune_empty_calls(text,form,names):
@@ -27,3 +37,15 @@ def empty_method_names(form,initial_lines,default_code):
                  if not has_code(prune_empty_calls(body,form,empty))}
         if updated==empty:return empty
         empty=updated
+
+
+def validate_omitted_references(form,omitted,fragments):
+    """Reject dangling calls without deleting argument evaluation or expressions."""
+    referenced={}
+    for text in fragments:
+        for _,_,name in method_call_sites(text,form):
+            if name.lower() in omitted:referenced.setdefault(name.lower(),name)
+    if referenced:
+        names='、'.join('.'+name for name in referenced.values())
+        raise OmittedMethodReferenceError('空メソッド '+names+' を省略すると参照が残ります。'
+                                          '呼び出しを編集するか、メソッドに処理を入力してください。')

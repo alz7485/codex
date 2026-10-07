@@ -2313,8 +2313,9 @@ class Window(QMainWindow):
         try:
             if imported:
                 from .mac_import import read_mac
+                from .method_output import check_editable_code
                 result=read_mac(path,partial=partial);form=result.form
-                form.pml()
+                check_editable_code(form)
             else:
                 text = Path(path).read_text(encoding='utf-8')
                 form = Form.loads(text)
@@ -2326,7 +2327,9 @@ class Window(QMainWindow):
         self.set_workflow('layout')
         if imported:
             mode='部分取り込み' if form.partial_import_source else '読み込み'
-            self.statusBar().showMessage(f'MACを{mode}しました: {len(form.gadgets)}部品 / {result.encoding}。設計JSONとして保存してください。')
+            message=f'MACを{mode}しました: {len(form.gadgets)}部品 / {result.encoding}。設計JSONとして保存してください。'
+            if self.validation_error:message+=' MAC出力には修正が必要です: '+self.validation_error
+            self.statusBar().showMessage(message)
             if result.warnings:
                 QMessageBox.information(self,'MAC取り込み結果','\n'.join(result.warnings))
         else:
