@@ -37,7 +37,7 @@ def default_form_font():
     families=QFontDatabase.families()
     for family in ('MS UI Gothic','MS Gothic','Noto Sans CJK JP'):
         if family in families:font.setFamily(family);break
-    font.setPointSizeF(9);font.setWeight(QFont.Medium)
+    font.setPointSizeF(10);font.setWeight(QFont.Medium)
     return font
 
 

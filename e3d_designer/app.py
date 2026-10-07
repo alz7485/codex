@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from .palette import GadgetPalette
 from .explorer import ObjectExplorer
 from .form_item import FormItem
+from .canvas_view import CanvasView
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
 from .appearance import FORM_BACKGROUND,FORM_PADDING,slider_fraction
@@ -649,7 +650,7 @@ class Window(QMainWindow):
         self.objects.setToolTip('フレームをフォルダとして表示。ドラッグで順序や所属フレームを変更できます。')
         left.setMinimumWidth(220); columns.addWidget(left)
         self.scene = Scene(self); self.scene.selectionChanged.connect(self.selection_changed)
-        self.view = QGraphicsView(self.scene)
+        self.view = CanvasView(self.scene)
         self.view.installEventFilter(self);self.view.viewport().installEventFilter(self)
         self.view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.view.customContextMenuRequested.connect(self.preview_popup)
@@ -679,7 +680,22 @@ class Window(QMainWindow):
         self.drag_step_combo.setToolTip(hint);self.drag_step_spin.setToolTip(hint)
         self.drag_step_combo.currentIndexChanged.connect(self.pick_drag_step)
         self.drag_step_spin.valueChanged.connect(self.sync_drag_step)
-        drag_row.addWidget(self.drag_step_combo);drag_row.addWidget(self.drag_step_spin);drag_row.addStretch()
+        drag_row.addWidget(self.drag_step_combo);drag_row.addWidget(self.drag_step_spin)
+        self.zoom_out_button=QPushButton('−');self.zoom_in_button=QPushButton('+')
+        self.zoom_out_button.setToolTip('表示を縮小（Ctrl＋ホイールでも操作できます）')
+        self.zoom_in_button.setToolTip('表示を拡大（Ctrl＋ホイールでも操作できます）')
+        self.zoom_out_button.clicked.connect(lambda:self.view.set_zoom(self.view.zoom_percent-10))
+        self.zoom_in_button.clicked.connect(lambda:self.view.set_zoom(self.view.zoom_percent+10))
+        self.zoom_text=QLineEdit('100%');self.zoom_text.setObjectName('canvasZoomPercent');self.zoom_text.setMaximumWidth(65)
+        self.zoom_text.setAlignment(Qt.AlignRight);self.zoom_text.setToolTip('表示倍率（10〜800%）。数値を入力してEnterで確定できます。')
+        self.zoom_text.editingFinished.connect(self.apply_zoom_text)
+        self.zoom_reset_button=QPushButton('100%');self.zoom_reset_button.setToolTip('表示倍率を100%に戻します')
+        self.zoom_reset_button.clicked.connect(lambda:self.view.set_zoom(100))
+        for button in (self.zoom_out_button,self.zoom_in_button):button.setFixedWidth(28)
+        self.zoom_reset_button.setFixedWidth(50)
+        self.view.zoomChanged.connect(self.sync_zoom_text)
+        for widget in (self.zoom_out_button,self.zoom_in_button,self.zoom_text,self.zoom_reset_button):drag_row.addWidget(widget)
+        drag_row.addStretch()
         self.display_font_button=QPushButton('表示フォント…');self.display_font_button.clicked.connect(self.choose_display_font)
         self.display_font_button.setToolTip('編集画面と参考表示の表示フォントを設定します。')
         drag_row.addWidget(self.display_font_button)
@@ -757,10 +773,10 @@ class Window(QMainWindow):
         self.variables.setToolTip('名前=値 / !!名前=値 はグローバル、!名前=値 はローカルです。\nローカルはフォーム定義前にVAR !名前を出力します。メソッド内では別のスコープになるため、そのメソッドで宣言してください。')
         self.variables.textChanged.connect(self.update_variables)
         rl.addWidget(self.variables)
-        self.after_show = QPlainTextEdit(); self.after_show.setFixedHeight(64)
+        self.after_show = QPlainTextEdit(); self.after_show.setMinimumHeight(96)
         self.after_show.setPlaceholderText('SHOW の後に出力する任意の PML プログラム')
         self.after_show.textChanged.connect(self.update_after_show)
-        self.default_body = QPlainTextEdit(); self.default_body.setFixedHeight(64)
+        self.default_body = QPlainTextEdit(); self.default_body.setMinimumHeight(96)
         self.default_body.setPlaceholderText('DEFINE METHOD .DEFAULT() の中に出力する PML')
         self.default_body.textChanged.connect(self.update_default_body)
         lifecycle = QGroupBox('フォームのコールバック');lifecycle_layout = QFormLayout(lifecycle)
@@ -900,7 +916,7 @@ class Window(QMainWindow):
         self.container_hint = QLabel('外部 DLL が必要です。未設定時は DEFAULT で Control を接続してください。')
         self.container_hint.setWordWrap(True); self.prop_layout.addRow(self.container_hint)
         self.body = QPlainTextEdit(); self.body.setPlaceholderText('メソッド内の PML コード。自動実行はしません。')
-        self.body.setFixedHeight(64)
+        self.body.setMinimumHeight(96)
         self.body.textChanged.connect(self.update_gadget)
         self.edit_method_button=QPushButton('処理コードを編集 →')
         self.edit_method_button.clicked.connect(self.show_method_editor)
@@ -945,13 +961,16 @@ class Window(QMainWindow):
         close_menu=QPushButton('閉じる');close_menu.clicked.connect(self.menu_dialog.close);menu_dialog_layout.addWidget(close_menu)
         rl.addStretch()
         method_page=QWidget();rl=QVBoxLayout(method_page);right.addTab(method_page,'処理')
+        self.method_splitter=QSplitter(Qt.Vertical);self.method_splitter.setChildrenCollapsible(False)
         self.program_label=QLabel('表示後のプログラム')
-        rl.addWidget(self.program_label); rl.addWidget(self.after_show)
-        rl.addWidget(QLabel('DEFAULT メソッドの追加処理（初期値は自動出力）')); rl.addWidget(self.default_body)
-        rl.addWidget(QLabel('選択部品のメソッド処理'))
         self.method_target=QLabel();self.method_target.setWordWrap(True);self.method_target.setTextFormat(Qt.PlainText)
-        rl.addWidget(self.method_target);rl.addWidget(self.body)
-        rl.addStretch()
+        for labels,editor in (([self.program_label],self.after_show),
+                ([QLabel('DEFAULT メソッドの追加処理（初期値は自動出力）')],self.default_body),
+                ([QLabel('選択部品のメソッド処理'),self.method_target],self.body)):
+            panel=QWidget();layout=QVBoxLayout(panel);layout.setContentsMargins(0,0,0,0)
+            for label in labels:label.setWordWrap(True);layout.addWidget(label)
+            layout.addWidget(editor,1);self.method_splitter.addWidget(panel)
+        self.method_splitter.setSizes([200,200,260]);rl.addWidget(self.method_splitter,1)
         right.setMinimumWidth(360)
         columns.addWidget(right); columns.setSizes([220, 780, 380])
         outer.addWidget(columns, 1); self.setCentralWidget(root)
@@ -1090,6 +1109,20 @@ class Window(QMainWindow):
 
     @property
     def drag_step(self):return self.drag_step_spin.value()
+
+    def sync_zoom_text(self,percent):
+        self.zoom_text.setText(f'{percent:g}%')
+        self.zoom_out_button.setEnabled(percent>self.view.MIN_ZOOM)
+        self.zoom_in_button.setEnabled(percent<self.view.MAX_ZOOM)
+
+    def apply_zoom_text(self):
+        try:
+            text=self.zoom_text.text().strip().removesuffix('%').strip()
+            percent=float(text)
+            if not self.view.MIN_ZOOM<=percent<=self.view.MAX_ZOOM:raise ValueError()
+            self.view.set_zoom(percent)
+        except ValueError:self.statusBar().showMessage('表示倍率は10〜800%で入力してください。')
+        self.sync_zoom_text(self.view.zoom_percent)
 
     def pick_drag_step(self,index):
         value=self.drag_step_combo.itemData(index)

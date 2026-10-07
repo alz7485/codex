@@ -47,7 +47,7 @@ class InitialTests(unittest.TestCase):
         self.assertLess(one.index('SHOW !!'),one.index('define method'))
         self.assertEqual(form.default_body,'')
 
-    def test_gui_initial_fields_and_compact_bottom_editors(self):
+    def test_gui_initial_fields_and_resizable_processing_editors(self):
         app=QApplication.instance() or QApplication([]);window=Window()
         try:
             self.assertFalse(hasattr(window,'show_form'))
@@ -59,9 +59,10 @@ class InitialTests(unittest.TestCase):
                 self.assertIn(canonical_pml('DEFINE METHOD .DEFAULT()'),window.code.toPlainText())
                 self.assertEqual(window.form.gadgets[-1].initial,value)
                 window.undo();self.assertEqual(window.form.gadgets[-1].initial,'')
-            self.assertLessEqual(window.default_body.maximumHeight(),64)
-            self.assertLessEqual(window.body.maximumHeight(),64)
+            self.assertGreaterEqual(window.default_body.minimumHeight(),96)
+            self.assertGreaterEqual(window.body.minimumHeight(),96)
             self.assertEqual(window.inspector_tabs.tabText(1),'処理')
-            self.assertIs(window.default_body.parentWidget(),window.inspector_tabs.widget(1))
+            self.assertTrue(window.inspector_tabs.widget(1).isAncestorOf(window.default_body))
+            self.assertEqual(window.method_splitter.count(),3)
         finally:
             app.clipboard().clear();window.dirty=False;window.close();app.processEvents()

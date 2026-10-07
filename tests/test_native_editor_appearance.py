@@ -57,7 +57,7 @@ class NativeEditorAppearanceTests(unittest.TestCase):
 
     def test_font_dialog_cancel_and_apply_keep_model_and_update_open_reference(self):
         self.load(Form(gadgets=[Gadget(name='Run',label='Label',width=4)]))
-        before=self.w.form.dumps();self.preview();font=QFont(self.w.appearance.preview_font);font.setPointSizeF(10)
+        before=self.w.form.dumps();self.preview();font=QFont(self.w.appearance.preview_font);font.setPointSizeF(11)
         with patch('e3d_designer.app.QFontDialog.getFont',return_value=(font,False)):
             self.w.display_font_button.click()
         self.assertNotEqual(self.w.appearance.preview_font,font)

@@ -74,7 +74,7 @@ class FormInsetTests(unittest.TestCase):
     def test_default_japanese_font_has_medium_weight_and_user_font_remains_authoritative(self):
         font=default_form_font();available=QFontDatabase.families()
         family=next((f for f in ('MS UI Gothic','MS Gothic','Noto Sans CJK JP') if f in available),QApplication.font().family())
-        self.assertEqual(font.family(),family);self.assertEqual(font.pointSizeF(),9);self.assertEqual(font.weight(),QFont.Medium)
+        self.assertEqual(font.family(),family);self.assertEqual(font.pointSizeF(),10);self.assertEqual(font.weight(),QFont.Medium)
         self.load(Form(gadgets=[Gadget(kind='paragraph',name='Label',label='距離',x=0,y=0)]));before=self.w.form.dumps()
         custom=QFont(font);custom.setPointSizeF(10);custom.setWeight(QFont.Normal);self.w.set_display_font(custom);p=self.preview()
         self.assertEqual(p.controls['Label'].font(),custom);self.assertEqual(self.w.appearance.preview_font,custom)
