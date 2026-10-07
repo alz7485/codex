@@ -116,14 +116,14 @@ Exit"""
         self.assertEqual(f.gadgets[0].initial,'1')
         self.assertIn('!initialSelection[1] = 1',f.pml())
 
-    def test_empty_referenced_default_definition_is_retained(self):
+    def test_empty_referenced_default_definition_and_call_are_omitted(self):
         for body in ('','-- retained comment'):
             f=import_mac(source(LIST,CHOICES+'\n!this.DEFAULT()',f'Define Method .DEFAULT()\n{body}\nEndmethod')).form
             p=f.pml()
-            self.assertEqual(p.count('Define Method .DEFAULT()'),1)
-            self.assertIn('!this.DEFAULT()',p)
-            self.assertLess(p.index('Define Method .DEFAULT()'),p.index('Define Method .Imported()'))
-            if body:self.assertIn(body,p)
+            self.assertNotIn('Define Method .DEFAULT()',p)
+            self.assertNotIn('!this.DEFAULT()',p)
+            self.assertIn('Define Method .Imported()',p)
+            if body:self.assertIn(body,f.default_body)
             self.assertTrue(Form.loads(f.dumps()).keep_default)
 
     def test_default_can_be_a_list_callback(self):

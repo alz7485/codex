@@ -305,7 +305,7 @@ class ModelTests(unittest.TestCase):
     def test_variables_before_kill_and_form_definition(self):
         f = Form(variables={'projectName':'Project A', 'mode':'Default'})
         pml = Form.loads(f.dumps()).pml(normalize=False)
-        self.assertTrue(pml.startswith("VAR !!projectName 'Project A'\nVAR !!mode 'Default'\nkill !!userform\n"))
+        self.assertTrue(pml.startswith("VAR !!projectName 'Project A'\nVAR !!mode 'Default'\n\nkill !!userform\n\n"))
         self.assertLess(pml.index('kill !!userform'), pml.index('setup form'))
         self.assertIn('setup form !!userform size 70 22 DIALOG',pml)
         self.assertNotIn('DIALOG DOCK',pml)
@@ -368,7 +368,7 @@ class ModelTests(unittest.TestCase):
         pml=Form.loads(f.dumps()).pml(normalize=False)
         self.assertIn("DEFINE METHOD .DEFAULT()\n$p 'Default'\nENDMETHOD",pml)
         self.assertEqual(pml.lower().count('define method .default()'),1)
-        self.assertLess(pml.index('SHOW !!'),pml.index('define method .userform()'))
+        self.assertNotIn('define method .userform()',pml)
         self.assertLess(pml.index('SHOW !!'),pml.index('DEFINE METHOD .DEFAULT()'))
         f.gadgets[0].body='different'
         with self.assertRaises(ValueError): f.pml(normalize=False)
@@ -377,7 +377,8 @@ class ModelTests(unittest.TestCase):
         f=Form(after_show_code="$p 'Ready'",gadgets=[Gadget(callback='onRun',body="$p 'Run'")])
         pml=Form.loads(f.dumps()).pml(normalize=False)
         self.assertIn("exit\n\nSHOW !!userform\n\n$p 'Ready'\n\ndefine method .onRun()",pml)
-        self.assertLess(pml.index("$p 'Ready'"),pml.index('define method .userform()'))
+        self.assertLess(pml.index("$p 'Ready'"),pml.index('define method .onRun()'))
+        self.assertNotIn('define method .userform()',pml)
         self.assertLess(pml.index('SHOW !!userform'),pml.index('define method .onRun()'))
         self.assertEqual(pml.count('SHOW !!userform'),1)
         f.show_form=False
@@ -765,7 +766,8 @@ class GuiTests(unittest.TestCase):
 
     def test_after_show_program_editor(self):
         self.w.after_show.setPlainText("$p 'Ready'")
-        self.assertIn(canonical_pml("SHOW !!userform\n\n$p 'Ready'\n\ndefine method .userform()"),self.w.code.toPlainText())
+        self.assertIn(canonical_pml("SHOW !!userform\n\n$p 'Ready'"),self.w.code.toPlainText())
+        self.assertNotIn('Define Method .userform()',self.w.code.toPlainText())
         self.assertFalse(hasattr(self.w,'show_form'))
         self.assertIn(canonical_pml('SHOW !!userform'), self.w.code.toPlainText())
         loaded=Form.loads(self.w.form.dumps())

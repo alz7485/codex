@@ -23,8 +23,9 @@ class MethodOrderTests(unittest.TestCase):
         for normalize in (False,True):
             with self.subTest(normalize=normalize):
                 code=form.pml(normalize=normalize);lower=code.lower()
-                order=[lower.index('define method .'+name+'(') for name in ('middle','finish','start','default','myform')]
+                order=[lower.index('define method .'+name+'(') for name in ('middle','finish','start','default')]
                 self.assertEqual(order,sorted(order))
+                self.assertNotIn('define method .myform()',lower)
                 self.assertIn('!THIS.Start()\n$p |Keep Case|',code)
                 self.assertIn("!!MyForm.Finish()",code)
                 self.assertEqual(Form.loads(form.dumps()).pml(normalize=normalize),code)
@@ -41,7 +42,8 @@ class MethodOrderTests(unittest.TestCase):
     def test_recursive_method_can_reference_itself(self):
         code=Form(gadgets=[Gadget(callback='Recursive',body='!this.Recursive()')]).pml(normalize=False)
         self.assertEqual(code.count('define method .Recursive()'),1)
-        self.assertLess(code.index('define method .Recursive()'),code.index('define method .userform()'))
+        self.assertNotIn('define method .userform()',code)
+        self.assertLess(code.index('SHOW !!userform'),code.index('define method .Recursive()'))
 
     def test_block_comment_calls_do_not_create_false_cycles(self):
         body="$(\n!this.Run()\n!!userform.Run()\n'-- Quoted comment text'\n$)\n$p 'Ready'"
@@ -60,8 +62,9 @@ class MethodOrderTests(unittest.TestCase):
         for normalized in (False,True):
             with self.subTest(normalized=normalized):
                 code=form.pml(normalize=normalized);lower=code.lower()
-                order=[lower.index('define method .'+name+'(') for name in ('run','finish','default','userform')]
+                order=[lower.index('define method .'+name+'(') for name in ('run','finish','default')]
                 self.assertEqual(order,sorted(order));self.assertIn(body,code)
+                self.assertNotIn('define method .userform()',lower)
 
     def test_comment_delimiters_inside_strings_do_not_hide_real_calls(self):
         for quote in ("'",'"','|'):

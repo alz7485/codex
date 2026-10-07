@@ -30,9 +30,6 @@ class ImportCodeDialog(QDialog):
         self.default_mode.addItem('DEFAULT：元コードのみ（初期値はDEFAULT欄で編集）','SOURCE')
         self.default_mode.setCurrentIndex(self.default_mode.findData(form.default_mode))
         layout.insertWidget(2,self.default_mode)
-        self.keep_default=QCheckBox('取り込んだDEFAULTの定義を空でも保持')
-        self.keep_default.setChecked(form.keep_default)
-        layout.insertWidget(2,self.keep_default)
         self.mode.currentIndexChanged.connect(self.update_mode)
         self.default_mode.currentIndexChanged.connect(self.update_mode)
         self.update_mode()
@@ -77,7 +74,6 @@ class ImportCodeDialog(QDialog):
             candidate.constructor_mode=self.mode.currentData()
             candidate.default_mode=self.default_mode.currentData()
             candidate.auto_default=self.auto_default.isChecked()
-            candidate.keep_default=self.keep_default.isChecked()
             candidate.extra_methods=methods
             candidate.validate();candidate.pml()
         except ValueError as error:

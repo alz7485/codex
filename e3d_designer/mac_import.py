@@ -460,11 +460,11 @@ class Importer:
                 gadget.body=''
                 continue
             if gadget.kind in ('button','text','toggle') or (gadget.kind=='option' and gadget.display_mode=='TEXT'):
-                if method and empty_signature(method.signature) and has_code(method.body):
+                if method and empty_signature(method.signature):
                     gadget.callback=method.name;gadget.body=method.body
                     gadget.callback_expression=command if command!=f'!this.{method.name}()' else ''
                 else:gadget.command=command
-            elif method and empty_signature(method.signature) and has_code(method.body):
+            elif method and empty_signature(method.signature):
                 gadget.callback=method.name;gadget.body=method.body
                 gadget.callback_expression=command if command!=f'!this.{method.name}()' else ''
             else:raise MacImportError(row,'この部品のCALLを復元できません。引数なしの!this.メソッド()にしてください。')

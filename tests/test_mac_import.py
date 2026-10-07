@@ -354,7 +354,7 @@ Endmethod""")).form
         f=Form(constructor_mode='SOURCE',constructor_body='!this.DEFAULT()',keep_default=True)
         d=ImportCodeDialog(self.w,f)
         self.assertFalse(d.auto_default.isEnabled())
-        self.assertTrue(d.keep_default.isChecked())
+        self.assertFalse(hasattr(d,'keep_default'))
         self.assertIn('default_body',d.editors)
         d.editors['default_body'].setPlainText("$P 'edited DEFAULT'")
         d.accept();self.assertIsNotNone(d.result_form)
