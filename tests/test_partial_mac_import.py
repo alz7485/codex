@@ -85,9 +85,9 @@ Exit
         self.assertEqual(form.menus,[])
         self.assertEqual([g.name for g in form.gadgets],['Good'])
 
-    def test_missing_menu_exit_resynchronizes_at_next_gadget(self):
+    def test_optional_menu_exit_preserves_menu_and_following_gadget(self):
         form=import_mac(source("Menu .Broken\nAdd 'Item' 'Q CE'\n"+GOOD),partial=True).form
-        self.assertEqual(form.menus,[])
+        self.assertEqual(form.menus[0].items[0].command,'Q CE')
         self.assertEqual([g.name for g in form.gadgets],['Good'])
 
     def test_invalid_view_block_and_missing_exit_do_not_swallow_sibling(self):

@@ -138,6 +138,7 @@ class Importer:
         self.comments=comment_lines(text)
         self.warnings=[];self.form=Form(auto_default=False)
         self.explicit={};self.callbacks={};self.setup_size=False
+        self.placements={}
 
     def warn(self,message):
         if message not in self.warnings:self.warnings.append(message)
@@ -160,7 +161,12 @@ class Importer:
         return program,start
 
     def position(self,tokens,gadget):
-        for axis in ('X','Y'):
+        axes=set()
+        while tokens.more():
+            axis=tokens.peek()[:1].upper()
+            if axis not in ('X','Y') or not re.match(r'^[XY](?:$|[+\-\d.]|MIN\.|MAX\.)',tokens.peek(),re.I):break
+            if axis in axes:raise MacImportError(tokens.line,'ATで同じ軸を複数回指定できません。')
+            axes.add(axis)
             value=tokens.pop();upper=value.upper()
             if upper==axis:setattr(gadget,axis.lower(),tokens.number());continue
             compact=re.fullmatch(axis+'('+NUMBER+')',value,re.I)
@@ -174,6 +180,8 @@ class Importer:
             if axis=='X':gadget.xanchor='RIGHT' if anchor else 'LEFT'
         if gadget.layout_mode=='RELATIVE' and (not gadget.xref or not gadget.yref):
             raise MacImportError(tokens.line,'絶対座標と相対座標の混在は未対応です。')
+        if not axes:raise MacImportError(tokens.line,'ATにはXまたはYを指定してください。')
+        return {axis.lower() for axis in axes}
 
     def attributes(self,tokens,gadget,present):
         while tokens.more():
@@ -186,7 +194,8 @@ class Importer:
                 if 'label' in present:raise MacImportError(tokens.line,'表示名が複数あります。')
                 gadget.label=value[0];present.add('label')
             elif key=='AT':
-                self.position(tokens,gadget);present.add('position')
+                if 'position' in present:raise MacImportError(tokens.line,'ATを複数回指定できません。')
+                present.update(self.position(tokens,gadget));present.add('position')
             elif key=='WIDTH':
                 gadget.width=tokens.number();present.add('width')
             elif key.startswith('WIDTH.'):
@@ -292,7 +301,11 @@ class Importer:
                 continue
             if key in ('PATH','HDIST','HDISTANCE','VDIST','VDISTANCE','HALIGN','VALIGN'):
                 field={'PATH':'path','HDIST':'hgap','HDISTANCE':'hgap','VDIST':'vgap','VDISTANCE':'vgap','HALIGN':'halign','VALIGN':'valign'}[key]
-                layout.setdefault(parent,{})[field]=tokens.number() if field in ('hgap','vgap') else tokens.pop().upper()
+                value=tokens.number() if field in ('hgap','vgap') else tokens.pop().upper()
+                choices={'path':('DOWN','UP','LEFT','RIGHT'),'halign':('LEFT','CENTRE','RIGHT'),'valign':('TOP','CENTRE','BOTTOM')}
+                if field in choices and value not in choices[field]:raise MacImportError(row,'配置方向・整列の指定が不正です: '+str(value))
+                if field in ('hgap','vgap') and value<0:raise MacImportError(row,'配置間隔は0以上で指定してください。')
+                layout.setdefault(parent,{})[field]=value
                 if tokens.more():raise MacImportError(row,'配置指定の後に未対応の指定があります。')
                 continue
             if key=='IMPORT':
@@ -331,12 +344,20 @@ class Importer:
                 if tokens.more():raise MacImportError(row,'MENUに未対応の指定があります。')
                 self.form.menus.append(menu)
                 while index<len(self.raw) and self.code[index].strip().upper()!='EXIT':
-                    value=self.code[index].strip();menu_row=index+1;index+=1
+                    value=self.code[index].strip();menu_row=index+1
+                    # MENU items may end at the next independent declaration.
+                    # Its EXIT belongs to that declaration, not to this menu.
+                    next_key=value.split(maxsplit=1)[0].upper() if value else ''
+                    if next_key in set(kinds)|{'MENU','BAR','TITLE','PATH','HDIST','HDISTANCE',
+                            'VDIST','VDISTANCE','HALIGN','VALIGN','IMPORT','USING','MEMBER','SHOW','DEFINE'}:break
+                    index+=1
                     if not value:continue
                     item=Tokens(value,menu_row);item.word('ADD');menu.items.append(MenuItem(item.quoted(),item.quoted()))
                     if item.more():raise MacImportError(menu_row,'メニュー項目に未対応の指定があります。')
                 if index==len(self.raw):raise MacImportError(row,'MENUにEXITがありません。')
-                index+=1;continue
+                if self.code[index].strip().upper()=='EXIT':index+=1
+                else:self.warn('MENUの省略されたEXITを、次の宣言の前で補いました。')
+                continue
             if key=='VAR':
                 tokens.word('LIST');target=tokens.pop().lstrip('.');tokens.word('PAIRS')
                 gadget=self.gadget_named(target)
@@ -352,19 +373,17 @@ class Importer:
             object_name=tokens.pop()
             if not object_name.startswith(('.','_')):raise MacImportError(row,'部品名を.名前または_名前で指定してください。')
             gadget=Gadget(kind=kinds[key],name=object_name.lstrip('.') if not object_name.startswith('_') else object_name[1:],
-                          label='',parent=parent,x=0 if key=='FRAME' else 2,y=0 if key=='FRAME' else 1)
+                          label='',parent=parent,x=0,y=0)
             if gadget.kind in ('frame','list','view','container','textpane','selector'):gadget.height=5
             if gadget.kind=='option' and object_name.startswith('.'):gadget.option_style='GADGET'
             if gadget.kind=='combo':gadget.combo_keyword=key;gadget.combo_scroll=''
             if gadget.kind=='view':gadget.channels='NONE'
             if gadget.kind=='textpane':gadget.fixed_font=False
             present=set();self.attributes(tokens,gadget,present)
-            if 'position' not in present and gadget.kind!='frame' and not (parent and self.form.named(parent).frame_style=='TOOLBAR'):
-                if self.form.children(parent):
-                    gadget.layout_mode='AUTO'
-                    for field,value in layout.get(parent,{}).items():setattr(gadget,field,value)
-                else:self.warn('MACにない座標は推定しました。キャンバスで配置を確認してください。')
-            if gadget.kind=='frame' and 'position' not in present:self.warn('MACにないフレーム座標・寸法は推定しました。キャンバスで配置を確認してください。')
+            self.placements[gadget.name]=layout.get(parent,{}).copy()
+            for field,value in self.placements[gadget.name].items():setattr(gadget,field,value)
+            if not {'x','y'}<=present and gadget.layout_mode!='RELATIVE':
+                self.warn('省略されたATの座標は、コンテナごとの現在地とPATHから補いました。キャンバスで配置を確認してください。')
             if gadget.kind=='container' and (gadget.name+'Control').lower() in members:
                 gadget.assembly,gadget.namespace,gadget.control_type=members[(gadget.name+'Control').lower()]
             if gadget.kind=='view':
@@ -685,8 +704,7 @@ class Importer:
         return True
 
     def fit_dimensions(self):
-        for gadget in reversed(self.form.gadgets):
-            if gadget.kind!='frame':continue
+        def fit_frame(gadget):
             children=self.form.children(gadget.name);present=self.explicit[gadget.name]
             if 'width' not in present or 'height' not in present:
                 self.warn('MACにないフレーム寸法は、部品が収まる大きさに推定しました。キャンバスで確認してください。')
@@ -700,6 +718,36 @@ class Importer:
                 width=max([14,*[w for w,_ in extents]]);height=max([5,*[h for _,h in extents]])
             if 'width' not in present:gadget.width=width
             if 'height' not in present:gadget.height=height
+
+        def place_children(parent,trail=()):
+            if parent.lower() in trail:raise ValueError('親コンテナの循環を解消してください。')
+            children=self.form.children(parent)
+            # Fit inner frames first so a following RIGHT/LEFT uses their real edge.
+            for child in children:
+                if child.kind=='frame':
+                    place_children(child.name,(*trail,parent.lower()))
+                    fit_frame(child)
+            previous=None
+            container=self.form.named(parent)
+            for child in children:
+                settings=self.placements[child.name];present=self.explicit[child.name]
+                if child.layout_mode!='RELATIVE' and not (container and container.frame_style in ('TABSET','TOOLBAR')):
+                    x=y=0
+                    if previous is not None:
+                        px,py,pw,ph=self.form.geometry(previous);cw,ch=self.form.geometry(child)[2:]
+                        path=settings.get('path','DOWN')
+                        x,y=px,py
+                        if path in ('DOWN','UP'):
+                            x+= {'LEFT':0,'CENTRE':(pw-cw)/2,'RIGHT':pw-cw}[settings.get('halign','LEFT')]
+                            step=(ph if path=='DOWN' else ch)+settings['vgap'] if 'vgap' in settings else 1
+                            y+=step if path=='DOWN' else -step
+                        else:
+                            x+=pw+settings.get('hgap',1) if path=='RIGHT' else -cw-settings.get('hgap',1)
+                            y+= {'TOP':0,'CENTRE':(ph-ch)/2,'BOTTOM':ph-ch}[settings.get('valign','TOP')]
+                    if 'x' not in present:child.x=x
+                    if 'y' not in present:child.y=y
+                previous=child
+        place_children('')
         if not self.setup_size:
             extents=[self.form.geometry(g) for g in self.form.children('')]
             self.form.width=max([70,*[x+w+1 for x,y,w,h in extents]])

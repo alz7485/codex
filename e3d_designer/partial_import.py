@@ -62,7 +62,7 @@ def declaration_spans(text):
             j=i+1
             while j<boundary and keys[j]!='EXIT':
                 # Missing leaf EXIT: do not swallow the next independent gadget.
-                if keys[j] in GADGETS|{'MENU','BAR'}:break
+                if keys[j] in GADGETS|{'MENU','BAR'} or (key=='MENU' and keys[j] in FORM_DIRECTIVES):break
                 j+=1
             end=j+1 if j<boundary and keys[j]=='EXIT' else j
             kind=key if j<boundary and keys[j]=='EXIT' else key+'（EXITなし）'
