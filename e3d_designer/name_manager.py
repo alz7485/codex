@@ -23,15 +23,17 @@ class NameManager(QDialog):
         self.search.textChanged.connect(self.filter_rows);layout.addWidget(self.search)
         self.tabs = QTabWidget();layout.addWidget(self.tabs)
         self.variables = self.make_table(['変数名','初期値','参照箇所'])
+        self.local_variables = self.make_table(['ローカル変数名（!）','初期値','参照箇所'])
         self.objects = self.make_table(['種類','オブジェクト名','PML名','親','参照箇所'])
         self.tabs.addTab(self.variables,'グローバル変数');self.tabs.addTab(self.objects,'オブジェクト')
+        self.tabs.addTab(self.local_variables,'ローカル変数')
         buttons = QHBoxLayout()
-        for text,handler in (('+ 変数',self.add_variable),('変数削除',self.delete_variable),('名前変更',self.rename_selected),('一括リネーム',self.bulk_rename),('表示行を全選択',self.select_visible)):
+        for text,handler in (('+ グローバル',self.add_variable),('+ ローカル',self.add_local_variable),('変数削除',self.delete_variable),('名前変更',self.rename_selected),('一括リネーム',self.bulk_rename),('表示行を全選択',self.select_visible)):
             button=QPushButton(text);button.clicked.connect(handler);buttons.addWidget(button)
         layout.addLayout(buttons)
-        self.update_code=QCheckBox('コード内の !!変数 / !!フォーム / !THIS.部品 の参照も更新')
+        self.update_code=QCheckBox('コード内の変数・フォーム・!THIS.部品の参照も更新')
         self.update_code.setChecked(True);layout.addWidget(self.update_code)
-        note=QLabel('親・相対配置・幅参照は常に更新します。コード内の置換は既知の参照表記に限定します。\n入力した変更は「適用」で反映します。適用後はメイン画面でUndoできます。')
+        note=QLabel('親・相対配置・幅参照は常に更新します。ローカル宣言はフォーム定義前に出力します。\nローカル名の参照更新はフォーム定義前・表示プログラム内が対象です。メソッド内は別スコープです。\n入力した変更は「適用」で反映します。適用後はメイン画面でUndoできます。')
         note.setWordWrap(True);layout.addWidget(note)
         self.status=QLabel();self.status.setWordWrap(True);layout.addWidget(self.status)
         footer=QHBoxLayout();footer.addStretch()
@@ -55,17 +57,18 @@ class NameManager(QDialog):
         item.setFlags(item.flags() & ~Qt.ItemIsEditable);return item
 
     def rebuild(self):
-        self.variables.setRowCount(0)
-        for row,(name,value) in enumerate(self.draft.variables.items()):
-            self.variables.insertRow(row);self.variables.setItem(row,0,self.item(name))
-            editor=ValueEditor(value);editor.textEdited.connect(lambda text,n=name:self.set_value(n,text))
-            editor.focused.connect(lambda r=row:self.variables.setCurrentCell(r,1))
-            self.variables.setCellWidget(row,1,editor)
-            self.variables.setItem(row,2,self.item(self.locations('variable',name)))
+        for table,values,kind in ((self.variables,self.draft.variables,'variable'),(self.local_variables,self.draft.local_variables,'local_variable')):
+            table.setRowCount(0)
+            for row,(name,value) in enumerate(values.items()):
+                table.insertRow(row);table.setItem(row,0,self.item(name))
+                editor=ValueEditor(value);editor.textEdited.connect(lambda text,n=name,k=kind:self.set_value(n,text,k))
+                editor.focused.connect(lambda r=row,t=table:t.setCurrentCell(r,1))
+                table.setCellWidget(row,1,editor)
+                table.setItem(row,2,self.item(self.locations(kind,name)))
         self.object_keys=[('form',None),*[('gadget',i) for i in range(len(self.draft.gadgets))],*[('menu',i) for i in range(len(self.draft.menus))]]
         self.objects.setRowCount(len(self.object_keys))
         for row,(kind,key) in enumerate(self.object_keys):
-            if kind=='form': name=self.draft.name;token='!!'+name;parent='';label='FORM'
+            if kind=='form': name=self.draft.name;token=self.draft.symbol;parent='';label='FORM'
             elif kind=='menu': name=self.draft.menus[key].name;token='.'+name;parent=self.draft.name;label='MENU'
             else:
                 g=self.draft.gadgets[key];name=g.name;token=('' if g.kind=='option' and g.display_mode=='TEXT' else '.')+actual_name(g)
@@ -76,14 +79,15 @@ class NameManager(QDialog):
 
     def filter_rows(self, *args):
         query=self.search.text().lower()
-        for table in (self.variables,self.objects):
+        for table in (self.variables,self.local_variables,self.objects):
             for row in range(table.rowCount()):
                 values=[table.item(row,col).text() for col in range(table.columnCount()) if table.item(row,col)]
-                if table is self.variables: values.append(table.cellWidget(row,1).text())
+                if table in (self.variables,self.local_variables): values.append(table.cellWidget(row,1).text())
                 table.setRowHidden(row,bool(query) and query not in ' '.join(values).lower())
 
-    def set_value(self, name, text):
-        self.draft.variables[name]=text
+    def set_value(self, name, text,kind='variable'):
+        values=self.draft.local_variables if kind=='local_variable' else self.draft.variables
+        values[name]=text
 
     def add_variable(self):
         used={name.lower() for name in self.draft.variables}|{self.draft.name.lower()};index=1
@@ -91,19 +95,29 @@ class NameManager(QDialog):
         self.draft.variables[f'var{index}']='';self.tabs.setCurrentIndex(0);self.search.clear();self.rebuild()
         self.variables.setCurrentCell(self.variables.rowCount()-1,0)
 
+    def add_local_variable(self):
+        used={name.lower() for name in self.draft.local_variables}|{'this',self.draft.name.lower()};index=1
+        while f'local{index}' in used:index+=1
+        self.draft.local_variables[f'local{index}']='';self.tabs.setCurrentWidget(self.local_variables);self.search.clear();self.rebuild()
+        self.local_variables.setCurrentCell(self.local_variables.rowCount()-1,0)
+
     def delete_variable(self):
-        row=self.variables.currentRow()
-        if self.tabs.currentIndex()!=0 or row<0 or self.variables.isRowHidden(row):return
-        name=self.variables.item(row,0).text()
-        if reference_locations(self.draft,'variable',name):
+        table=self.tabs.currentWidget()
+        if table not in (self.variables,self.local_variables):return
+        row=table.currentRow()
+        if row<0 or table.isRowHidden(row):return
+        local=table is self.local_variables;name=table.item(row,0).text()
+        if reference_locations(self.draft,'local_variable' if local else 'variable',name):
             self.status.setText('使用中の変数です。コードの参照を削除してから変数を削除してください。');return
-        del self.draft.variables[name];self.rebuild();self.status.clear()
+        values=self.draft.local_variables if local else self.draft.variables
+        del values[name];self.rebuild();self.status.clear()
 
     def rename_selected(self):
-        if self.tabs.currentIndex()==0:
-            row=self.variables.currentRow()
-            if row<0 or self.variables.isRowHidden(row):return
-            kind='variable';key=self.variables.item(row,0).text();old=key
+        table=self.tabs.currentWidget()
+        if table in (self.variables,self.local_variables):
+            row=table.currentRow()
+            if row<0 or table.isRowHidden(row):return
+            kind='local_variable' if table is self.local_variables else 'variable';key=table.item(row,0).text();old=key
         else:
             row=self.objects.currentRow()
             if row<0 or self.objects.isRowHidden(row):return
@@ -123,8 +137,9 @@ class NameManager(QDialog):
     def selected_entries(self):
         table=self.tabs.currentWidget()
         rows=sorted({item.row() for item in table.selectedItems() if not table.isRowHidden(item.row())})
-        if table is self.variables:
-            return [('variable',table.item(row,0).text(),table.item(row,0).text()) for row in rows]
+        if table in (self.variables,self.local_variables):
+            kind='local_variable' if table is self.local_variables else 'variable'
+            return [(kind,table.item(row,0).text(),table.item(row,0).text()) for row in rows]
         return [(*self.object_keys[row],table.item(row,1).text()) for row in rows]
 
     def bulk_rename(self):

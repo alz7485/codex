@@ -20,6 +20,7 @@ from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
 from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size, fixed_dimensions, dimension_editable, normalize_dimensions, change_orientation, uses_pairs
 from .images import resolve_image_path, sync_image_size
+from .symbols import parse_variables,variable_text
 
 LABELS = {'textpane':'複数行テキスト (TEXTPANE)','selector':'DB セレクタ (SELECTOR)','button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
           'toggle': 'チェックボックス', 'option': 'ドロップダウン', 'list': 'リスト', 'line': '線 (LINE)', 'frame': '枠 (FRAME)', 'slider':'スライダー', 'rtoggle':'ラジオボタン', 'combo':'コンボボックス', 'view':'ビュー', 'commandline':'コマンド欄 (ALPHA)', 'container':'外部部品 (CONTAINER)'}
@@ -640,10 +641,10 @@ class Window(QMainWindow):
         self.docking.currentIndexChanged.connect(self.update_form)
         self.form_fields.addRow('表示形式', self.docking)
         rl.addLayout(self.form_fields)
-        rl.addWidget(QLabel('追加のグローバル変数（任意）'))
+        rl.addWidget(QLabel('追加の変数（グローバル／ローカル・任意）'))
         self.variables = QPlainTextEdit(); self.variables.setMaximumHeight(90)
-        self.variables.setPlaceholderText('必要な変数は自動作成します。追加する場合:\nprojectName=Project A')
-        self.variables.setToolTip('外部マクロの分岐変数などは自動作成します。追加・管理したい変数がある場合だけ編集してください。')
+        self.variables.setPlaceholderText('projectName=Project A  ← グローバル\n!localName=初期値  ← ローカル')
+        self.variables.setToolTip('名前=値 / !!名前=値 はグローバル、!名前=値 はローカルです。\nローカルはフォーム定義前にVAR !名前を出力します。メソッド内では別のスコープになるため、そのメソッドで宣言してください。')
         self.variables.textChanged.connect(self.update_variables)
         rl.addWidget(self.variables)
         self.after_show = QPlainTextEdit(); self.after_show.setFixedHeight(64)
@@ -870,7 +871,7 @@ class Window(QMainWindow):
         count=sum(not self.form.is_tab_page(g) for g in self.form.gadgets)
         state='未保存の変更あり' if self.dirty else '保存済み' if self.path else '新規設計'
         self.output_summary.setTextFormat(Qt.PlainText);self.output_validation.setTextFormat(Qt.PlainText)
-        self.output_summary.setText(f'{self.form.title} / !!{self.form.name}\n部品 {count}個  •  {state}\n設計JSON: {self.path or "保存先は未指定"}')
+        self.output_summary.setText(f'{self.form.title} / {self.form.symbol}\n部品 {count}個  •  {state}\n設計JSON: {self.path or "保存先は未指定"}')
         error=self.validation_error
         if not error:
             try:self.code.toPlainText().encode('cp932')
@@ -1269,18 +1270,15 @@ class Window(QMainWindow):
     def update_variables(self):
         if self.loading: return
         self.dirty = True
-        values = {}
-        for line in self.variables.toPlainText().splitlines():
-            if not line.strip(): continue
-            name, sep, value = line.partition('=')
-            if not sep or not name.strip() or name.strip().lower() in {n.lower() for n in values}:
-                self.code.setPlainText('-- 変数は重複のない 名前=初期値 の形式で指定してください。')
-                self.variable_error = True
-                self.validation_error='変数は重複のない 名前=初期値 の形式で指定してください。';self.sync_output_summary()
-                return
-            values[name.strip()] = value
+        try:values,locals_=parse_variables(self.variables.toPlainText())
+        except ValueError as error:
+            self.code.setPlainText('-- '+str(error));self.variable_error=True
+            self.validation_error=str(error);self.sync_output_summary()
+            return
         self.variable_error = False
-        self.checkpoint(); self.form.variables = values; self.refresh()
+        if (values,locals_)!=(self.form.variables,self.form.local_variables):
+            self.checkpoint();self.form.variables=values;self.form.local_variables=locals_
+        self.refresh()
 
     def update_initial_choice(self):
         if self.loading or self.selected is None:return
@@ -1311,7 +1309,7 @@ class Window(QMainWindow):
         candidate.title=self.ftitle.text()
         candidate.width=self.edited_number(self.fw,candidate.width)
         candidate.height=self.edited_number(self.fh,candidate.height)
-        if candidate.name!=self.fname.text():
+        if candidate.symbol!=self.fname.text():
             try:candidate=rename(candidate,'form',None,self.fname.text())
             except ValueError as error:self.statusBar().showMessage(str(error));return
         self.checkpoint();self.form=candidate;self.refresh()
@@ -1743,7 +1741,7 @@ class Window(QMainWindow):
         if g.kind=='option' and not uses_pairs(g):g.item_commands=[]
         if g.kind == 'option' and old_display != g.display_mode:
             for _,owner,key in code_slots(self.form):
-                write_slot(owner,key,rewrite_code(read_slot(owner,key),self.form.name,self.form.name,{old_actual:actual_name(g)}))
+                write_slot(owner,key,rewrite_code(read_slot(owner,key),self.form,self.form,{old_actual:actual_name(g)}))
         name_changed=requested_name!=g.name
         if name_changed:
             from .names import rename
@@ -1775,13 +1773,15 @@ class Window(QMainWindow):
             self._multi_selection.clear()
         for highlighter in self.pml_highlighters:highlighter.set_symbols(self.form)
         self.refresh_menus(rebuild)
-        variable_text = '\n'.join(f'{k}={v}' for k,v in self.form.variables.items())
-        if not self.variable_error and self.variables.toPlainText() != variable_text:
-            self.variables.setPlainText(variable_text)
+        if not self.variable_error:
+            try:current_variables=parse_variables(self.variables.toPlainText())
+            except ValueError:current_variables=None
+            if current_variables!=(self.form.variables,self.form.local_variables):
+                self.variables.setPlainText(variable_text(self.form))
         if self.default_body.toPlainText() != self.form.default_body: self.default_body.setPlainText(self.form.default_body)
         if self.after_show.toPlainText() != self.form.after_show_code: self.after_show.setPlainText(self.form.after_show_code)
         self.program_label.setText('取り込んだ表示プログラム（SHOWを含む）' if self.form.program_mode=='SOURCE' else '表示後のプログラム')
-        self.fname.setText(self.form.name); self.ftitle.setText(self.form.title)
+        self.fname.setText(self.form.symbol); self.ftitle.setText(self.form.title)
         self.docking.setCurrentIndex(self.docking.findData('MAIN' if self.form.form_type=='MAIN' else self.form.docking_side()))
         for event,editor in self.form_callbacks.items():
             if editor.text() != getattr(self.form,event): editor.setText(getattr(self.form,event))

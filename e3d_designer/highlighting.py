@@ -8,7 +8,7 @@ COLORS={'command':'#1755ad','object':'#007b83','variable':'#7c3eaa',
 from .pml_syntax import KEYWORDS
 
 PROPERTIES=set('VAL DTEXT RTEXT VISIBLE ACTIVE WIDTH HEIGHT CALLBACK INITCALL OKCALL CANCELCALL CONTROL'.split())
-TOKEN=re.compile(r"--.*|\$\*.*|\$\(|['\"|]|!![A-Za-z][A-Za-z0-9_]*|![A-Za-z_][A-Za-z0-9_]*|\.[A-Za-z_][A-Za-z0-9_]*|(?<![\w.])[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?(?!\w)|\$[A-Za-z][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*")
+TOKEN=re.compile(r"--.*|\$\*.*|\$\(|['\"|]|!![A-Za-z_][A-Za-z0-9_]*|![A-Za-z_][A-Za-z0-9_]*|\.[A-Za-z_][A-Za-z0-9_]*|(?<![\w.])[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?(?!\w)|\$[A-Za-z][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*")
 QUOTES={"'":1,'"':2,'|':3}
 BLOCK_COMMENT=4
 
@@ -16,7 +16,7 @@ BLOCK_COMMENT=4
 class PmlHighlighter(QSyntaxHighlighter):
     def __init__(self,document):
         super().__init__(document)
-        self.form_name='';self.objects=set()
+        self.form_name='';self.form_symbol='';self.objects=set()
         self.formats={}
         for kind,color in COLORS.items():
             fmt=QTextCharFormat();fmt.setForeground(QColor(color))
@@ -27,8 +27,8 @@ class PmlHighlighter(QSyntaxHighlighter):
     def set_symbols(self,form):
         from .names import actual_name
         objects={actual_name(g).lower() for g in form.gadgets}|{g.name.lower() for g in form.gadgets}|{m.name.lower() for m in form.menus}
-        if self.form_name==form.name.lower() and self.objects==objects:return
-        self.form_name=form.name.lower();self.objects=objects;self.rehighlight()
+        if self.form_symbol==form.symbol.lower() and self.objects==objects:return
+        self.form_name=form.name.lower();self.form_symbol=form.symbol.lower();self.objects=objects;self.rehighlight()
 
     def highlightBlock(self,text):
         # QTextDocument uses UTF-16 offsets; Python indexes Unicode code points.
@@ -65,7 +65,8 @@ class PmlHighlighter(QSyntaxHighlighter):
                 paint(match.start(),end,'string')
                 if close<0:self.setCurrentBlockState(QUOTES[token])
             else:
-                if token.startswith('!!'):kind='object' if token[2:].lower()==self.form_name else 'variable'
+                if token.lower()==self.form_symbol:kind='object'
+                elif token.startswith('!!'):kind='variable'
                 elif token.startswith('!'):kind='variable'
                 elif token.startswith('.') and (token[1].isalpha() or token[1]=='_'):
                     kind='method' if text[end:].lstrip().startswith('(') else 'property' if token[1:].upper() in PROPERTIES else 'object'

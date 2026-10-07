@@ -218,7 +218,7 @@ class FormProperties(QDialog):
         super().__init__(parent);self.draft=copy.deepcopy(form);self.result_form=None
         self.setWindowTitle('フォームの設定');self.setMinimumWidth(350)
         layout=QVBoxLayout(self);fields=QFormLayout();layout.addLayout(fields)
-        self.name=QLineEdit(form.name);self.title=QLineEdit(form.title)
+        self.name=QLineEdit(form.symbol);self.title=QLineEdit(form.title)
         fields.addRow('フォーム名',self.name);fields.addRow('表示名',self.title)
         self.width=QDoubleSpinBox();self.height=QDoubleSpinBox()
         for widget,value,label in ((self.width,form.width,'WIDTH'),(self.height,form.height,'HEIGHT')):

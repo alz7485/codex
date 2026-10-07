@@ -21,7 +21,7 @@ class ObjectExplorer(QTreeWidget):
         expanded={item.data(0,Qt.UserRole+1):item.isExpanded() for item in self.nodes.values() if item.childCount()}
         root_expanded=self.root.isExpanded() if self.root else True
         self.clear();self.nodes={}
-        self.root=QTreeWidgetItem([f'▣ {form.title}  !!{form.name}']);self.root.setData(0,Qt.UserRole,-1)
+        self.root=QTreeWidgetItem([f'▣ {form.title}  {form.symbol}']);self.root.setData(0,Qt.UserRole,-1)
         self.root.setFlags(self.root.flags() & ~Qt.ItemIsDragEnabled);self.addTopLevelItem(self.root)
         for index,g in enumerate(form.gadgets):
             icon='🗂️' if g.kind=='frame' and g.frame_style=='TABSET' else '📁' if g.kind=='frame' else icon_for(g) if icon_for else '•'

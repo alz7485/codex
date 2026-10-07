@@ -62,7 +62,7 @@ def clone_subtree(target,source,index,restore_names=False):
     helpers={method.name.lower():method for method in source.extra_methods}
     existing_helpers={method.name.lower():method for method in draft.extra_methods}
     def can_reuse(key):
-        if not restore_names or source.name.lower()!=draft.name.lower():return False
+        if not restore_names or source.symbol.lower()!=draft.symbol.lower():return False
         pending=[key];checked=set()
         while pending:
             dependency=pending.pop()
@@ -70,13 +70,13 @@ def clone_subtree(target,source,index,restore_names=False):
             checked.add(dependency)
             original=helpers[dependency]
             if existing_helpers.get(dependency)!=original:return False
-            pending.extend(name.lower() for _,_,name in method_call_sites(original.body,source.name)
+            pending.extend(name.lower() for _,_,name in method_call_sites(original.body,source)
                            if name.lower() in helpers)
         return True
     queue=list(snippets);seen=set();helper_copies=[];helper_snippets=[]
     while queue:
         value=queue.pop()
-        for _,_,name in method_call_sites(value,source.name):
+        for _,_,name in method_call_sites(value,source):
             key=name.lower()
             if key not in helpers or key in seen:continue
             seen.add(key);original=helpers[key]
@@ -95,7 +95,7 @@ def clone_subtree(target,source,index,restore_names=False):
     globals_by_name={name.lower():(name,value) for name,value in source.variables.items()}
     occupied_globals={name.lower() for name in draft.variables}
     for value in snippets+helper_snippets:
-        for match in re.finditer(r'!!([A-Za-z_][A-Za-z0-9_]*)',reference_mask(value,source.name)):
+        for match in re.finditer(r'!!([A-Za-z_][A-Za-z0-9_]*)',reference_mask(value,source)):
             key=match.group(1).lower()
             if key in globals_by_name and key not in occupied_globals:
                 name,initial=globals_by_name[key];draft.variables[name]=initial;occupied_globals.add(key)
@@ -119,7 +119,7 @@ def clone_subtree(target,source,index,restore_names=False):
         else: draft.gadgets.append(gadget)
     for _,owner,key in code_slots(draft):
         if id(owner) in owners:
-            write_slot(owner,key,rewrite_code(read_slot(owner,key),source.name,draft.name,members,methods,preserve_literals=True))
+            write_slot(owner,key,rewrite_code(read_slot(owner,key),source,draft,members,methods,preserve_literals=True))
     draft.validate()
     selected = next(i for i,g in enumerate(draft.gadgets) if g.name == mapping[root.name.lower()])
     return draft,selected

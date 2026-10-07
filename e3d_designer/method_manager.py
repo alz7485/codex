@@ -11,7 +11,7 @@ from .highlighting import PmlHighlighter
 
 def callers(form,name):
     return [label for label,owner,key in code_slots(form)
-            if any(target.lower()==name.lower() for _,_,target in method_call_sites(read_slot(owner,key),form.name))]
+            if any(target.lower()==name.lower() for _,_,target in method_call_sites(read_slot(owner,key),form))]
 
 
 def update_helpers(form,entries):
@@ -31,7 +31,7 @@ def update_helpers(form,entries):
     candidate.extra_methods=methods
     for _,owner,key in code_slots(candidate):
         value=read_slot(owner,key)
-        for start,end,name in reversed(method_call_sites(value,form.name)):
+        for start,end,name in reversed(method_call_sites(value,form)):
             if name.lower() in mapping:
                 prefix=value[start:end].rsplit('.',1)[0]
                 value=value[:start]+prefix+'.'+mapping[name.lower()]+value[end:]

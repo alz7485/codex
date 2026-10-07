@@ -2,7 +2,8 @@
 import copy
 import re
 from .model import IDENTIFIER,uses_pairs
-from .pml_syntax import reference_mask
+from .pml_syntax import reference_mask,own_reference_pattern
+from .symbols import form_reference,SYMBOL_NAME,split_form_reference
 
 
 def code_slots(form):
@@ -39,14 +40,14 @@ def rewrite_code(value, source_form, target_form, members, methods=None, *, pres
     """Replace qualified symbols in one pass, without cascading replacements."""
     members = {key.lower():name for key,name in members.items()}
     methods = {key.lower():name for key,name in (methods or {}).items()}
-    pattern = re.compile(r'(!this|!!'+re.escape(source_form)+r')\.([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_])',re.I)
+    pattern = re.compile(own_reference_pattern(source_form)+r'\.([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_])',re.I)
     masked=reference_mask(value,source_form) if preserve_literals else value
     def replace(match):
         key = match.group(2).lower()
         method_call = masked[match.end():].lstrip().startswith('(')
         target = methods.get(key) if method_call else members.get(key,methods.get(key))
         if target is None: return match.group(0)
-        prefix = match.group(1) if match.group(1).lower() == '!this' else '!!'+target_form
+        prefix = match.group(1) if match.group(1).lower() == '!this' else form_reference(target_form)
         return prefix+'.'+target
     if not preserve_literals:return pattern.sub(replace,value)
     result=[];cursor=0
@@ -57,15 +58,17 @@ def rewrite_code(value, source_form, target_form, members, methods=None, *, pres
 
 
 def reference_pattern(form, kind, name):
-    if kind in ('variable','form'):
-        return re.compile(r'!!'+re.escape(name)+r'(?![A-Za-z0-9_])',re.I)
-    return re.compile(r'(?:!this|!!'+re.escape(form.name)+r')\.'+re.escape(name)+r'(?![A-Za-z0-9_]|\s*\()',re.I)
+    if kind in ('variable','local_variable','form'):
+        token=form.symbol if kind=='form' else ('!' if kind=='local_variable' else '!!')+name
+        return re.compile(r'(?<![A-Za-z0-9_!.])'+re.escape(token)+r'(?![A-Za-z0-9_])',re.I)
+    return re.compile(own_reference_pattern(form)+r'\.'+re.escape(name)+r'(?![A-Za-z0-9_]|\s*\()',re.I)
 
 
 def reference_locations(form, kind, name):
     pattern = reference_pattern(form,kind,name)
     locations = []
     for label,owner,key in code_slots(form):
+        if kind=='local_variable' and not (owner is form and key in ('preamble_code','after_show_code')):continue
         count = len(pattern.findall(read_slot(owner,key)))
         if count: locations.append((label,count))
     if kind == 'gadget':
@@ -85,13 +88,14 @@ def reference_locations(form, kind, name):
 def rename_many(form, changes, update_code=True):
     """Rename symbols simultaneously, including swaps; validate before returning."""
     result = copy.deepcopy(form)
-    globals_map, gadgets_map, menus_map, members, methods = {}, {}, {}, {}, {}
+    globals_map, locals_map, gadgets_map, menus_map, members, methods = {}, {}, {}, {}, {}, {}
     selected = set()
     for kind, key, new_name in changes:
         if (kind,key) in selected: raise ValueError('同じ名前が複数回指定されています。')
         selected.add((kind,key))
-        if kind == 'variable':
-            if key not in form.variables: raise ValueError('変数が見つかりません。')
+        if kind in ('variable','local_variable'):
+            variables=form.local_variables if kind=='local_variable' else form.variables
+            if key not in variables: raise ValueError('変数が見つかりません。')
             old = key
         elif kind == 'form': old = form.name
         elif kind in ('gadget','menu'):
@@ -100,11 +104,16 @@ def rename_many(form, changes, update_code=True):
                 raise ValueError('オブジェクトが見つかりません。')
             old = collection[key].name
         else: raise ValueError('名前の種類が不正です。')
-        valid = re.fullmatch(r'_?[A-Za-z][A-Za-z0-9_]*',new_name) if kind == 'gadget' and form.gadgets[key].kind == 'option' else IDENTIFIER.fullmatch(new_name)
+        if kind=='form':
+            prefix,new_name=split_form_reference(new_name,form.form_prefix)
+            result.form_prefix=prefix
+        elif kind=='local_variable' and new_name.startswith('!') and not new_name.startswith('!!'):new_name=new_name[1:]
+        elif kind=='variable' and new_name.startswith('!!'):new_name=new_name[2:]
+        valid = SYMBOL_NAME.fullmatch(new_name) if kind in ('form','variable','local_variable') else re.fullmatch(r'_?[A-Za-z][A-Za-z0-9_]*',new_name) if kind == 'gadget' and form.gadgets[key].kind == 'option' else IDENTIFIER.fullmatch(new_name)
         if not valid: raise ValueError('名前は英字で始まる英数字・_ にしてください。')
         if kind == 'variable': globals_map[old.lower()] = new_name
+        elif kind=='local_variable':locals_map[old.lower()]=new_name
         elif kind == 'form':
-            globals_map[old.lower()] = new_name
             result.name = new_name
         elif kind == 'menu':
             result.menus[key].name = new_name
@@ -123,6 +132,9 @@ def rename_many(form, changes, update_code=True):
     if len({name.lower() for name in variable_names}) != len(variable_names):
         raise ValueError('変数名が重複しています。')
     result.variables = dict(zip(variable_names,form.variables.values()))
+    local_names=[locals_map.get(name.lower(),name) for name in form.local_variables]
+    if len({name.lower() for name in local_names})!=len(local_names):raise ValueError('ローカル変数名が重複しています。')
+    result.local_variables=dict(zip(local_names,form.local_variables.values()))
     for g in result.gadgets:
         for attribute in ('parent','xref','yref','width_ref'):
             old = getattr(g,attribute)
@@ -131,13 +143,17 @@ def rename_many(form, changes, update_code=True):
         g.macro_flag = globals_map.get(g.macro_flag.lower(),g.macro_flag)
     if update_code:
         # Consume qualified references and globals together so swaps cannot cascade.
-        pattern = re.compile(r'(!this|!![A-Za-z][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?',re.I)
+        pattern = re.compile(r'(?<![A-Za-z0-9_!.])(!this|'+re.escape(form.symbol)+r'(?![A-Za-z0-9_])|!![A-Za-z_][A-Za-z0-9_]*|![A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?',re.I)
         for _,owner,attribute in code_slots(result):
             value = read_slot(owner,attribute)
             def replace(match):
                 prefix,member = match.groups()
-                own = prefix.lower() in ('!this','!!'+form.name.lower())
-                target_prefix = prefix if prefix.lower() == '!this' else '!!'+globals_map.get(prefix[2:].lower(),prefix[2:])
+                own = prefix.lower() in ('!this',form.symbol.lower())
+                if prefix.lower()==form.symbol.lower():target_prefix=result.symbol
+                elif prefix.startswith('!!'):target_prefix='!!'+globals_map.get(prefix[2:].lower(),prefix[2:])
+                elif prefix.startswith('!') and prefix.lower()!='!this' and owner is result and attribute in ('preamble_code','after_show_code'):
+                    target_prefix='!'+locals_map.get(prefix[1:].lower(),prefix[1:])
+                else:target_prefix=prefix
                 if member is None: return target_prefix
                 target_member = member
                 if own:

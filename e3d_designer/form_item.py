@@ -31,7 +31,7 @@ class FormItem(QGraphicsObject):
         painter.setPen(QPen(QColor('#2277cc' if self.isSelected() else '#7f91a5'),2,Qt.DashLine if self.isSelected() else Qt.SolidLine))
         painter.drawRect(r.adjusted(1,1,-1,-1))
         painter.setPen(QColor('#314d6b'))
-        painter.drawText(QRectF(3,-24,r.width()-6,22),Qt.AlignLeft|Qt.AlignVCenter,f'▣ {self.form.title}  !!{self.form.name}  {self.form.width:.1f} × {self.form.height:.1f}')
+        painter.drawText(QRectF(3,-24,r.width()-6,22),Qt.AlignLeft|Qt.AlignVCenter,f'▣ {self.form.title}  {self.form.symbol}  {self.form.width:.1f} × {self.form.height:.1f}')
         painter.setPen(QPen(QColor('#2277cc'),1));painter.setBrush(QColor('#ffffff'))
         for handle in self.handles().values():painter.drawRect(handle)
     def mousePressEvent(self,event):

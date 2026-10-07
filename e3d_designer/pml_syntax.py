@@ -1,5 +1,6 @@
 """Shared PML vocabulary and comment/string recognition, independent of Qt."""
 import re
+from .symbols import form_reference
 
 
 NON_CODE_PATTERN = (
@@ -26,7 +27,7 @@ def has_code(text):
 def reference_mask(text,form_name):
     """Expose code and known callback assignments, keeping data literals masked."""
     masked=mask_non_code(text)
-    callback=re.compile(r'(?:!this|!!'+re.escape(form_name)+r')\.(?:[A-Za-z_][A-Za-z0-9_]*\.)?'
+    callback=re.compile(own_reference_pattern(form_name)+r'\.(?:[A-Za-z_][A-Za-z0-9_]*\.)?'
                         r'(?:CALL|CALLBACK|INITCALL|AUTOCALL|OKCALL|CANCELCALL)\s*=\s*$',re.I)
     result=list(masked)
     for token in NON_CODE.finditer(text):
@@ -38,9 +39,13 @@ def reference_mask(text,form_name):
 
 
 def method_call_sites(text,form_name):
-    pattern=re.compile(r'(!this|!!'+re.escape(form_name)+r')\.([A-Za-z_][A-Za-z0-9_]*)(?=\s*\()',re.I)
+    pattern=re.compile(own_reference_pattern(form_name)+r'\.([A-Za-z_][A-Za-z0-9_]*)(?=\s*\()',re.I)
     return [(match.start(),match.end(),match.group(2))
             for match in pattern.finditer(reference_mask(text,form_name))]
+
+
+def own_reference_pattern(form):
+    return r'(?<![A-Za-z0-9_!.])(!this|'+re.escape(form_reference(form))+r')(?![A-Za-z0-9_])'
 
 
 KEYWORDS=set('''VAR LIST PAIRS EXIT KILL SETUP FORM LAYOUT DIALOG MAIN DOCUMENT BLOCKING
