@@ -6,17 +6,30 @@ from PySide6.QtGui import QColor,QPalette,QPixmap,QIcon,QFont,QImageReader,QFont
 from PySide6.QtWidgets import (QApplication,QHBoxLayout,QWidget,
     QLabel,QPushButton,QCheckBox,QRadioButton,QComboBox,QLineEdit,QGroupBox,QTabWidget,
     QFrame,QSlider,QListWidget,QTableWidget,QTableWidgetItem,QPlainTextEdit,
-    QAbstractItemView,QStyleFactory,QStyle,QStyleOptionButton,QStyleOptionComboBox,QStyleOptionFrame)
+    QAbstractItemView,QStyleFactory,QStyle,QStyleOptionButton,QStyleOptionComboBox,QStyleOptionFrame,QProxyStyle)
 
 from .model import CHAR_WIDTH,LINE_HEIGHT,uses_pairs
 from .images import resolve_image_path
 from .colors import preview_color,foreground_color
 
+FORM_PADDING,FORM_BORDER=8,2
+FORM_MARGIN=FORM_PADDING+FORM_BORDER
+FORM_BACKGROUND='#f0f0f0'
+
+
+class FormControlStyle(QProxyStyle):
+    def pixelMetric(self,metric,option=None,widget=None):
+        # Compact classic buttons: WIDTH 1.2 fits a 2-unit arrow-button pitch.
+        if metric==QStyle.PM_ButtonMargin:return 4
+        return super().pixelMetric(metric,option,widget)
+
 
 def default_form_font():
     font=QFont(QApplication.font())
-    if 'MS UI Gothic' in QFontDatabase.families():font.setFamily('MS UI Gothic')
-    font.setPointSizeF(9)
+    families=QFontDatabase.families()
+    for family in ('MS UI Gothic','MS Gothic','Noto Sans CJK JP'):
+        if family in families:font.setFamily(family);break
+    font.setPointSizeF(9);font.setWeight(QFont.Medium)
     return font
 
 
@@ -28,10 +41,15 @@ class NativeControls:
     def style_widget(self,widget):
         # Stylesheet wrappers and deferred deletion must not destroy a style
         # which is still used by another control or the next snapshot.
-        style=QStyleFactory.create('Windows')
-        if style:
+        base=QStyleFactory.create('Windows')
+        if base:
+            style=FormControlStyle(base)
             style.setParent(widget);widget._preview_style=style;widget.setStyle(style)
         widget.setFont(self.preview_font);widget.setFocusPolicy(Qt.NoFocus)
+        palette=widget.palette()
+        palette.setColor(QPalette.Window,QColor(FORM_BACKGROUND));palette.setColor(QPalette.Button,QColor(FORM_BACKGROUND))
+        palette.setColor(QPalette.WindowText,QColor('#101010'));palette.setColor(QPalette.ButtonText,QColor('#101010'))
+        widget.setPalette(palette)
         return widget
 
     def image(self,g):

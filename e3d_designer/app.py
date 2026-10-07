@@ -18,6 +18,7 @@ from .explorer import ObjectExplorer
 from .form_item import FormItem
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
+from .appearance import FORM_BACKGROUND
 from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size, fixed_dimensions, dimension_editable, normalize_dimensions, uses_pairs, supports_hidden
 from .images import resolve_image_path, sync_image_size
 from .symbols import parse_variables,variable_text
@@ -539,8 +540,8 @@ class Scene(QGraphicsScene):
     def drawBackground(self, painter, rect):
         painter.fillRect(rect,QColor('#e8edf3'))
         form=self.parent().form
-        body=self.parent().form_item.body_rect() if hasattr(self.parent(),'form_item') else QRectF(0,0,form.width*SX,form.height*SY)
-        painter.fillRect(body,QColor('#f8fafc'))
+        body=self.parent().form_item.frame_rect() if hasattr(self.parent(),'form_item') else QRectF(0,0,form.width*SX,form.height*SY)
+        painter.fillRect(body,QColor(FORM_BACKGROUND))
         painter.setPen(QPen(QColor('#d9e2ec'), 1))
         for x in range(0,int(form.width*SX),SX):
             for y in range(0,int(form.height*SY),SY):painter.drawPoint(x,y)
@@ -2186,10 +2187,10 @@ class Window(QMainWindow):
     def sync_visual_form_size(self):
         if self.form.size_explicit:return
         roots=[item.mapRectToScene(item.boundingRect()) for item in self.scene.items()
-               if isinstance(item,Item) and not item.gadget.parent]
+               if isinstance(item,Item) and not item.gadget.parent and not item.hidden_in_preview()]
         self.form_item.prepareGeometryChange()
-        self.form_item._width=max([self.form.width,*[rect.right()/SX for rect in roots]])
-        self.form_item._height=max([self.form.height,*[rect.bottom()/SY for rect in roots]])
+        self.form_item._width=max([1,*[rect.right()/SX for rect in roots]])
+        self.form_item._height=max([1,*[rect.bottom()/SY for rect in roots]])
 
     def resize_committed(self, old):
         self.history.append(old); self.history = self.history[-100:]; self.future.clear(); self.dirty = True

@@ -3,7 +3,7 @@ import copy
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog,QVBoxLayout,QWidget,QLabel,QMenuBar,QMenu,QScrollArea,QFrame
 from .model import CHAR_WIDTH,LINE_HEIGHT,supports_hidden
-from .appearance import NativeControls
+from .appearance import NativeControls,FORM_PADDING,FORM_BORDER,FORM_MARGIN
 from .draft_validation import validate_draft
 
 
@@ -50,8 +50,12 @@ class RuntimePreview(QDialog,NativeControls):
         self.menu_bar.setVisible(bool(self.menu_bar.actions()));self.layout_root.addWidget(self.menu_bar)
         self.surface=self.style_widget(QWidget(self));self.surface.setAutoFillBackground(True)
         self.surface.setFixedSize(self.pixels(self.form.width*self.char_width),self.pixels(self.form.height*self.line_height))
-        body=self.style_widget(QWidget(self));body_layout=QVBoxLayout(body)
-        body_layout.addWidget(self.surface,0,Qt.AlignLeft|Qt.AlignTop)
+        body=self.style_widget(QWidget(self));body_layout=QVBoxLayout(body);body_layout.setContentsMargins(0,0,0,0)
+        self.client=self.style_widget(QFrame(body));self.client.setFrameShape(QFrame.WinPanel)
+        self.client.setFrameShadow(QFrame.Sunken);self.client.setLineWidth(FORM_BORDER);self.client.setAutoFillBackground(True)
+        client_layout=QVBoxLayout(self.client);client_layout.setContentsMargins(FORM_PADDING,FORM_PADDING,FORM_PADDING,FORM_PADDING)
+        client_layout.addWidget(self.surface)
+        body_layout.addWidget(self.client,0,Qt.AlignLeft|Qt.AlignTop)
         self.scroll=QScrollArea(self);self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setWidgetResizable(True);self.scroll.setWidget(body);self.layout_root.addWidget(self.scroll,1)
         self.build_children('',self.surface,{})
@@ -59,6 +63,7 @@ class RuntimePreview(QDialog,NativeControls):
             roots=[w.geometry() for w in self.controls.values() if w.parent() is self.surface]
             self.surface.setFixedSize(max([round(self.char_width),*[r.x()+r.width() for r in roots]]),
                 max([round(self.line_height),*[r.y()+r.height() for r in roots]]))
+        self.client.setFixedSize(self.surface.width()+2*FORM_MARGIN,self.surface.height()+2*FORM_MARGIN)
         self.adjustSize();self.keep_on_screen()
 
     def keep_on_screen(self):

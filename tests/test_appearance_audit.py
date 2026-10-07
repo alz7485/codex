@@ -109,7 +109,9 @@ class AutomaticFormEditingAuditTests(unittest.TestCase):
         self.drag(start,QPoint(4*SX,2*SY))
         self.assertEqual((self.w.form.named('Part').width,self.w.form.named('Part').height),(10,5))
         self.assertEqual((self.w.form.width,self.w.form.height),(11,6));self.assertFalse(self.w.form.size_explicit)
-        self.assertEqual(self.w.form_item.body_rect().width(),11*SX)
+        # The inferred source size retains its safety allowance; the visible
+        # client uses the control extent and adds its border padding separately.
+        self.assertEqual(self.w.form_item.body_rect().width(),10*SX)
         self.w.undo();self.assertEqual(self.w.form.dumps(),before)
 
     def test_empty_auto_form_can_add_standard_size_parts_and_radio_group(self):

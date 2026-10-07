@@ -3,6 +3,7 @@ import copy
 from PySide6.QtCore import Qt,QRectF,Signal
 from PySide6.QtGui import QColor,QPen,QPainterPath
 from PySide6.QtWidgets import QGraphicsObject,QGraphicsItem
+from .appearance import FORM_MARGIN
 
 class FormItem(QGraphicsObject):
     resizing=Signal()
@@ -16,23 +17,26 @@ class FormItem(QGraphicsObject):
         self.setAcceptHoverEvents(True);self.setZValue(-100000)
         self.setToolTip('フォーム全体：クリックで設定、ダブルクリックで編集。右・下・右下のハンドルでサイズ変更。')
     def body_rect(self):return QRectF(0,0,self._width*self.sx,self._height*self.sy)
-    def boundingRect(self):return self.body_rect().adjusted(-2,-25,2,2)
+    def frame_rect(self):return self.body_rect().adjusted(-FORM_MARGIN,-FORM_MARGIN,FORM_MARGIN,FORM_MARGIN)
+    def boundingRect(self):return self.frame_rect().adjusted(-2,-25,2,2)
     def shape(self):
         path=QPainterPath();path.addRect(self.boundingRect());return path
     def handles(self):
         if not self.isSelected():return {}
-        r=self.body_rect();size=9
+        r=self.frame_rect();size=9
         return {'width':QRectF(r.right()-size,r.center().y()-size/2,size,size),
                 'height':QRectF(r.center().x()-size/2,r.bottom()-size,size,size),
                 'both':QRectF(r.right()-size,r.bottom()-size,size,size)}
     def handle_at(self,pos):return next((name for name,r in reversed(list(self.handles().items())) if r.contains(pos)),None)
     def paint(self,painter,option,widget=None):
         if self.scene() and hasattr(self.scene().parent(),'appearance'):painter.setFont(self.scene().parent().appearance.preview_font)
-        r=self.body_rect();painter.setBrush(Qt.NoBrush)
+        r=self.frame_rect();painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(QColor('#808080'),1));painter.drawRect(r.adjusted(.5,.5,-.5,-.5))
+        painter.setPen(QPen(QColor('#ffffff'),1));painter.drawLine(r.bottomLeft(),r.bottomRight());painter.drawLine(r.topRight(),r.bottomRight())
         painter.setPen(QPen(QColor('#2277cc' if self.isSelected() else '#7f91a5'),2,Qt.DashLine if self.isSelected() else Qt.SolidLine))
         painter.drawRect(r.adjusted(1,1,-1,-1))
         painter.setPen(QColor('#314d6b'))
-        painter.drawText(QRectF(3,-24,r.width()-6,22),Qt.AlignLeft|Qt.AlignVCenter,f'▣ {self.form.title}  {self.form.symbol}  {self.form.width:.1f} × {self.form.height:.1f}')
+        painter.drawText(QRectF(r.left()+3,r.top()-24,r.width()-6,22),Qt.AlignLeft|Qt.AlignVCenter,f'▣ {self.form.title}  {self.form.symbol}  {self.form.width:.1f} × {self.form.height:.1f}')
         painter.setPen(QPen(QColor('#2277cc'),1));painter.setBrush(QColor('#ffffff'))
         for handle in self.handles().values():painter.drawRect(handle)
     def mousePressEvent(self,event):
@@ -66,7 +70,7 @@ class FormItem(QGraphicsObject):
                 x,y,w,h=self.form.geometry(g)
                 if x+w>width+.001 or y+h>height+.001:return False
         except ValueError:return False
-        if (width,height)==(self.form.width,self.form.height):return False
+        if (width,height)==(self.form.width,self.form.height) and (self.form.size_explicit or (width,height)==(self._width,self._height)):return False
         self.form.width,self.form.height=width,height
         self.form.size_explicit=True
         self.prepareGeometryChange();self._width,self._height=width,height;self.update()
@@ -89,7 +93,7 @@ class FormItem(QGraphicsObject):
             self._cancelled=False;event.accept();return
         if self._resize:
             _,_,_,_,old=self._resize;self._resize=None
-            if (self.form.width,self.form.height)!=(old.width,old.height):self.resized.emit(old)
+            if (self.form.width,self.form.height,self.form.size_explicit)!=(old.width,old.height,old.size_explicit):self.resized.emit(old)
             else:
                 self.form.size_explicit=old.size_explicit;self.resizing.emit()
             event.accept();return
