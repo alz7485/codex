@@ -135,7 +135,7 @@ class MacCursorLayoutTests(unittest.TestCase):
         form=self.read("Frame .Group At X 5 Y 3 'Group' Width 50\n"
                        "List .Rows At X 2 Y 12 'Rows' Width 20 Height 10\nExit")
         self.assertEqual((form.named('Group').width,form.named('Group').height),(50,23))
-        self.assertEqual((form.width,form.height),(70,27))
+        self.assertEqual((form.width,form.height),(56,27))
 
     def test_explicit_gaps_alignment_and_width_reference_are_respected(self):
         form=self.read("List .A At X 5 Y 2 'A' Width 20 Height 4\n"

@@ -144,6 +144,7 @@ class Gadget:
     combo_scroll: str = '20'
     combo_tagwid: str = ''
     option_style: str = 'PAIRS'
+    option_width_explicit: bool = False
     slider_orientation: str = 'HORIZONTAL'
     slider_min: float = 0
     slider_max: float = 100
@@ -239,6 +240,7 @@ class Form:
     partial_import_notes: list[str] = field(default_factory=list)
     local_variables: dict[str, str] = field(default_factory=dict)
     form_prefix: str = '!!'
+    size_explicit: bool = True
 
     @property
     def symbol(self):
@@ -422,6 +424,12 @@ class Form:
     def children(self, name):
         return [g for g in self.gadgets if g.parent.lower() == name.lower()]
 
+    def fit_size(self):
+        """Estimate an unsized form from top-level extents, not 70x22."""
+        extents=[self.geometry(g) for g in self.children('')]
+        self.width=max([1,*[x+width+1 for x,y,width,height in extents]])
+        self.height=max([1,*[y+height+1 for x,y,width,height in extents]])
+
     def descendants(self, name):
         result, pending = [], [name.lower()]
         while pending:
@@ -458,6 +466,7 @@ class Form:
         for key in ('name', 'title', 'after_show_code', 'default_body','form_type','initcall','okcall','cancelcall','dock_side','preamble_code','constructor_body','source_mac_path'):
             if not isinstance(getattr(self, key), str): raise ValueError(f'{key} は文字列で指定してください。')
         if not isinstance(self.auto_default,bool):raise ValueError('DEFAULTの自動呼び出し設定は真偽値にしてください。')
+        if not isinstance(self.size_explicit,bool):raise ValueError('フォームのサイズ指定設定は真偽値にしてください。')
         if not isinstance(self.keep_default,bool):raise ValueError('取り込んだDEFAULTの保持設定は真偽値にしてください。')
         if self.default_mode not in ('GENERATED','SOURCE'):raise ValueError('DEFAULTの生成形式が不正です。')
         if self.program_mode not in ('GENERATED','SOURCE'):raise ValueError('表示プログラムの生成形式が不正です。')
@@ -475,6 +484,7 @@ class Form:
         if not isinstance(self.gadgets, list) or any(not isinstance(g,Gadget) for g in self.gadgets):
             raise ValueError('部品は配列で指定してください。')
         for g in self.gadgets:
+            if not isinstance(g.option_width_explicit,bool):raise ValueError('OPTIONの幅指定設定は真偽値にしてください。')
             if g.frame_size_axes not in ('','W','H','WH'):raise ValueError('FRAMEの寸法指定が不正です。')
             if g.path_axes not in ('','X','Y','XY') or not isinstance(g.path_row_step,bool) or not isinstance(g.frame_at,bool):raise ValueError('PATHの座標軸・縦移動の設定が不正です。')
             if not isinstance(g.hidden,bool):raise ValueError('非表示は真偽値で指定してください。')
@@ -526,6 +536,7 @@ class Form:
                 raise ValueError('ローカル変数名が不正、重複、またはフォーム名と同じです。')
             local_names.add(name.lower())
             literal(value,field=f'!{name}: 変数の初期値')
+        if not self.size_explicit:self.fit_size()
         for value in (self.width, self.height):
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 1 <= value <= 300:
                 raise ValueError('フォームサイズは 1〜300 の有限数にしてください。')
@@ -838,7 +849,7 @@ class Form:
         if self.preamble_code.strip():lines.extend([user_code(self.preamble_code).rstrip('\n'),''])
         lines += [f'kill {form_symbol}', '',
                  (f'setup form {form_symbol} MAIN' if self.form_type == 'MAIN' else f'setup form {form_symbol} DIALOG DOCK {self.docking_side()}' if self.docking_side() != 'NONE'
-                  else f'setup form {form_symbol} size {n(self.width)} {n(self.height)} DIALOG'),
+                  else f'setup form {form_symbol}'+(f' size {n(self.width)} {n(self.height)}' if self.size_explicit else '')+' DIALOG'),
                  f'  title {literal(self.title)}']
         bar_menus=[menu for menu in self.menus if not menu.popup and menu.on_bar]
         if bar_menus:
@@ -926,6 +937,8 @@ class Form:
                     line = f"OPTION {object_name} {position} {label}"
                     if not g.item_values:
                         line += f" CALL '$${object_name}'"
+                    if g.option_width_explicit:line += ' '+width_clause
+                    if not g.item_values:
                         line += f'\n  VAR LIST {object_name} PAIRS'
                         commands = g.item_commands or [''] * len(g.items)
                         for display, command in zip(g.items, commands):

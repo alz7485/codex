@@ -127,6 +127,10 @@ class MiniProperties(QDialog):
             widget.setCurrentIndex(widget.findData(getattr(g,direction_key)))
             self.fields[direction_key]=widget;fields.addRow('向き',widget)
         if g.kind=='combo':text('combo_tagwid','TAGWID（表示名の幅）')
+        self.option_width=None
+        if uses_pairs(g):
+            self.option_width=QCheckBox('OPTIONの幅をコードへ出力');self.option_width.setChecked(g.option_width_explicit)
+            fields.addRow('',self.option_width)
         if g.kind!='line':text('label','表示名')
         if g.kind in ('option','combo','list'):
             button=QPushButton('項目・値を表で編集…');button.clicked.connect(self.edit_items);fields.addRow('値',button)
@@ -146,9 +150,12 @@ class MiniProperties(QDialog):
         if g.kind in ('button','paragraph','list'):
             row=QHBoxLayout();widget=QLineEdit(g.background);self.fields['background']=widget;row.addWidget(widget)
             button=QPushButton('色を選ぶ');button.clicked.connect(self.choose_color);row.addWidget(button);fields.addRow('色番号',row)
-        sized=g.kind not in ('toggle','rtoggle','option','frame') or g.display_mode=='PIXMAP' or (g.kind=='option' and not uses_pairs(g)) or (g.kind=='frame' and g.frame_style in ('TABSET','TOOLBAR'))
+        sized=g.kind not in ('toggle','rtoggle','option','frame') or g.display_mode=='PIXMAP' or g.kind=='option' or (g.kind=='frame' and g.frame_style in ('TABSET','TOOLBAR'))
         if g.kind=='combo':text('combo_scroll','SCROLL（表示量）')
         if sized:number('width','WIDTH')
+        if self.option_width is not None:
+            self.fields['width'].setEnabled(g.option_width_explicit)
+            self.option_width.toggled.connect(self.fields['width'].setEnabled)
         if g.kind in ('line','slider','list','view','alpha','container','textpane','selector') or g.display_mode=='PIXMAP' or (g.kind=='frame' and g.frame_style=='TOOLBAR'):number('height','HEIGHT')
         self.hidden=QCheckBox('非表示（WIDTH 0）',self);self.hidden.setChecked(g.hidden)
         if supports_hidden(g):
@@ -203,6 +210,7 @@ class MiniProperties(QDialog):
         dialog.deleteLater()
     def accept(self):
         candidate=copy.deepcopy(self.draft);g=candidate.gadgets[self.index]
+        if self.option_width is not None:g.option_width_explicit=self.option_width.isChecked()
         previous_callback=g.callback
         for key,widget in self.fields.items():
             if key in ('name','action'):continue
@@ -236,6 +244,8 @@ class FormProperties(QDialog):
         self.width=QDoubleSpinBox();self.height=QDoubleSpinBox()
         for widget,value,label in ((self.width,form.width,'WIDTH'),(self.height,form.height,'HEIGHT')):
             widget.setRange(1,300);widget.setDecimals(1);widget.setSingleStep(.1);widget.setValue(value);widget.setProperty('baseline',widget.value());fields.addRow(label,widget)
+        self.auto_size=QCheckBox('部品に合わせて自動サイズ');self.auto_size.setChecked(not form.size_explicit)
+        fields.addRow('',self.auto_size)
         self.docking=QComboBox()
         for label,value in (('通常ダイアログ','NONE'),('右ドッキング','RIGHT'),('左ドッキング','LEFT'),('上ドッキング','TOP'),('下ドッキング','BOTTOM'),('MAIN フォーム','MAIN')):self.docking.addItem(label,value)
         self.docking.setCurrentIndex(self.docking.findData('MAIN' if form.form_type=='MAIN' else form.docking_side()))
@@ -245,9 +255,12 @@ class FormProperties(QDialog):
     def exec(self):return super().exec()
     def accept(self):
         candidate=copy.deepcopy(self.draft);candidate.title=self.title.text()
+        candidate.size_explicit=not self.auto_size.isChecked()
         for key in ('width','height'):
             widget=getattr(self,key)
-            if widget.value()!=widget.property('baseline'):setattr(candidate,key,widget.value())
+            if widget.value()!=widget.property('baseline'):
+                setattr(candidate,key,widget.value());candidate.size_explicit=True
+        if not candidate.size_explicit:candidate.fit_size()
         mode=self.docking.currentData();candidate.form_type='MAIN' if mode=='MAIN' else 'DIALOG'
         candidate.dock_side='NONE' if mode=='MAIN' else mode;candidate.dock_right=candidate.dock_side=='RIGHT'
         try:candidate=rename(candidate,'form',None,self.name.text());candidate.validate()

@@ -1,0 +1,45 @@
+Kill !!MeasureExample
+
+Setup Form !!MeasureExample Dialog
+  Title '<Mesure>'
+  Paragraph .Label1 At X 1 Y 1 Text '距離' Width 8
+  Text .Value1 At X 7 Y 1 '' Width 30 Is String
+  Paragraph .Label2 At X 0 Y 1.9 Text 'Xの距離' Width 8
+  Text .Value2 At X 7 Y 1.9 '' Width 30 Is String
+  Paragraph .Label3 At X 0 Y 2.8 Text 'Yの距離' Width 8
+  Text .Value3 At X 7 Y 2.8 '' Width 30 Is String
+  Paragraph .Label4 At X 0 Y 3.7 Text 'Zの距離' Width 8
+  Text .Value4 At X 7 Y 3.7 '' Width 30 Is String
+  Paragraph .Label5 At X 1 Y 4.6 Text '角度' Width 8
+  Text .Value5 At X 7 Y 4.6 '' Width 30 Is String
+  Paragraph .Label6 At X 0.4 Y 5.5 Text 'P1座標' Width 8
+  Text .Value6 At X 7 Y 5.5 '' Width 30 Is String
+  Paragraph .Label7 At X 0.4 Y 6.4 Text 'P2座標' Width 8
+  Text .Value7 At X 7 Y 6.4 '' Width 30 Is String
+  Button .Button1 At X 0 Y 0 Background 48 '計測' Call '$P |Demo action 1|' Width 4
+  Button .Button2 At X 6 Y 0 Background 168 '結果' Call '$P |Demo action 2|' Width 4
+  Button .Button3 At X 25 Y 0 '▲' Call '$P |Demo action 3|' Width 1.2
+  Button .Button4 At X 27 Y 0 '▼' Call '$P |Demo action 4|' Width 1.2
+  Button .Button5 At X 33 Y 0 'PIN消' Call '$P |Demo action 5|' Width 4
+  Toggle .Decimals At X 12 Y 0 '小数点'
+  Option _Digits At X 19 Y 0 '' Call '$$_Digits' Width 2
+    Var List _Digits Pairs
+    '0' '$P |Precision 0|'
+    '1' '$P |Precision 1|'
+    '2' '$P |Precision 2|'
+    '3' '$P |Precision 3|'
+    '4' '$P |Precision 4|'
+    '5' '$P |Precision 5|'
+    '6' '$P |Precision 6|'
+    '7' '$P |Precision 7|'
+    '8' '$P |Precision 8|'
+    '9' '$P |Precision 9|'
+  Exit
+Exit
+
+Show !!MeasureExample
+
+Define Method .DEFAULT()
+!this.Digits.Val = 5
+!this.Decimals.Val = TRUE
+Endmethod

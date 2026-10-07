@@ -305,7 +305,7 @@ class Item(QGraphicsObject):
 
     def hoverMoveEvent(self, event):
         handle = self.handle_at(event.pos())
-        self.setToolTip(PREVIEW_WIDTH_HINT if handle=='width' and ((self.gadget.kind=='toggle' and self.gadget.display_mode=='TEXT') or uses_pairs(self.gadget)) else '')
+        self.setToolTip(PREVIEW_WIDTH_HINT if handle=='width' and ((self.gadget.kind=='toggle' and self.gadget.display_mode=='TEXT') or (uses_pairs(self.gadget) and not self.gadget.option_width_explicit)) else '')
         self.setCursor({'width':Qt.SizeHorCursor,'height':Qt.SizeVerCursor,'both':Qt.SizeFDiagCursor}.get(handle,Qt.ArrowCursor))
         super().hoverMoveEvent(event)
 
@@ -685,6 +685,9 @@ class Window(QMainWindow):
         form_size.addWidget(QLabel('高さ'));form_size.addWidget(self.fh)
         self.form_fields.addRow('サイズ (PML)',form_size)
         self.connect_field(self.fw,self.update_form);self.connect_field(self.fh,self.update_form)
+        self.auto_form_size=QCheckBox('部品に合わせて自動サイズ')
+        self.auto_form_size.setToolTip('SIZEのないMACを自動サイズで取り込みます。幅・高さの編集やハンドル操作で手動サイズへ切り替わります。')
+        self.auto_form_size.toggled.connect(self.update_form);self.form_fields.addRow('',self.auto_form_size)
         self.docking = QComboBox()
         for label,value in (('通常ダイアログ','NONE'),('右ドッキング','RIGHT'),('左ドッキング','LEFT'),('上ドッキング','TOP'),('下ドッキング','BOTTOM'),('MAIN フォーム','MAIN')):
             self.docking.addItem(label,value)
@@ -774,6 +777,9 @@ class Window(QMainWindow):
         self.hidden=QCheckBox('非表示（WIDTH 0）');self.hidden.toggled.connect(self.update_gadget)
         self.hidden.setToolTip('初期値・コマンド・メソッドを保持し、幅0で出力します。解除すると元の幅に戻します。')
         self.prop_layout.addRow(self.hidden)
+        self.option_width_check=QCheckBox('OPTIONの幅をコードへ出力')
+        self.option_width_check.setToolTip('PAIRS形式でもWIDTHを指定します。元MACに明示されている場合は自動でオンになります。')
+        self.option_width_check.toggled.connect(self.update_gadget);self.prop_layout.addRow(self.option_width_check)
         self.path_rows=QCheckBox('縦移動：1行ずつ（FRAME後は下端）')
         self.path_rows.setToolTip('外すとVDISTを出力し、部品の端から縦間隔を空けて配置します。PATHの移動固定は維持します。')
         self.path_rows.toggled.connect(self.change_path_rows)
@@ -1425,6 +1431,8 @@ class Window(QMainWindow):
         candidate.title=self.ftitle.text()
         candidate.width=self.edited_number(self.fw,candidate.width)
         candidate.height=self.edited_number(self.fh,candidate.height)
+        candidate.size_explicit=not self.auto_form_size.isChecked() or (candidate.width,candidate.height)!=(self.form.width,self.form.height)
+        if not candidate.size_explicit:candidate.fit_size()
         if candidate.symbol!=self.fname.text():
             try:candidate=rename(candidate,'form',None,self.fname.text())
             except ValueError as error:self.statusBar().showMessage(str(error));return
@@ -1479,7 +1487,7 @@ class Window(QMainWindow):
         self.fields['height'].setToolTip(hint)
         if self.form.is_hidden(gadget) and not gadget.hidden:
             self.fields['width'].setToolTip('幅参照元が非表示のため、幅0で表示・出力されます。参照元を表示すると元の幅に戻ります。')
-        if ((gadget.kind=='toggle' and gadget.display_mode=='TEXT') or uses_pairs(gadget)):self.fields['width'].setToolTip(PREVIEW_WIDTH_HINT)
+        if ((gadget.kind=='toggle' and gadget.display_mode=='TEXT') or (uses_pairs(gadget) and not gadget.option_width_explicit)):self.fields['width'].setToolTip(PREVIEW_WIDTH_HINT)
         for key,value in fixed_dimensions(gadget).items():
             self.fields[key].setToolTip('高さは1行固定です。' if gadget.kind not in ('line','slider') else f'太さは{value:.1f}固定です。長さだけ変更できます。')
         parent = self.form.parent_gadget(gadget)
@@ -1494,6 +1502,8 @@ class Window(QMainWindow):
         self.path_rows.setChecked(gadget.path_row_step)
         self.prop_layout.setRowVisible(self.path_rows,gadget.layout_mode=='AUTO')
         self.hidden.setChecked(gadget.hidden)
+        self.option_width_check.setChecked(gadget.option_width_explicit)
+        self.prop_layout.setRowVisible(self.option_width_check,uses_pairs(gadget))
         self.hidden.setEnabled(supports_hidden(gadget))
         self.prop_layout.setRowVisible(self.hidden,supports_hidden(gadget))
         self.fields['selection_mode'].setEnabled(gadget.kind in ('list','selector'))
@@ -1563,7 +1573,7 @@ class Window(QMainWindow):
         self.choices.setPlaceholderText('画像のファイルパスを1行1件で指定' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢の表示文字を1行1件で指定')
         self.prop_layout.setCaption(self.choices,'画像ファイル (1行1画像)' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢 (1行1項目)')
         self.prop_layout.setCaption(self.item_values,'RTEXT 実値 (1行1項目)')
-        width_caption = '幅 (px)' if gadget.display_mode == 'PIXMAP' else '幅（プレビューのみ）' if (gadget.kind=='toggle' or uses_pairs(gadget)) else '幅'
+        width_caption = '幅 (px)' if gadget.display_mode == 'PIXMAP' else '幅（プレビューのみ）' if (gadget.kind=='toggle' or (uses_pairs(gadget) and not gadget.option_width_explicit)) else '幅'
         self.prop_layout.setCaption(self.fields['width'],width_caption)
         self.prop_layout.setCaption(self.fields['height'],'高さ (px)' if gadget.display_mode == 'PIXMAP' else '高さ / 行数')
         basis='フレーム基準' if gadget.parent else 'フォーム基準'
@@ -1825,6 +1835,7 @@ class Window(QMainWindow):
         if g.vgap!=old_vgap:g.path_row_step=False
         if g.kind=='frame' and g.frame_style=='FRAME' and g.layout_mode=='ABSOLUTE' and (g.x,g.y,g.parent)!=old_position and not self.form.is_tab_page(g):g.frame_at=True
         g.hidden=self.hidden.isChecked() if supports_hidden(g) else False
+        if uses_pairs(g):g.option_width_explicit=self.option_width_check.isChecked()
         if direction_key and getattr(g,direction_key) != old_direction:
             new_direction = getattr(g,direction_key);setattr(g,direction_key,old_direction)
             self.form.rotate_gadget(g,new_direction)
@@ -1902,6 +1913,9 @@ class Window(QMainWindow):
         for gadget in self.form.gadgets:
             if sync_image_size(gadget,image_directories):self.dirty=True
             if normalize_dimensions(gadget):self.dirty=True
+        if not self.form.size_explicit:
+            try:self.form.fit_size()
+            except ValueError:pass
         self.inspector_tabs.setEnabled(True)
         if self.selected is not None:self._multi_selection.clear()
         self._multi_selection.intersection_update(g.name for g in self.form.gadgets)
@@ -1923,6 +1937,7 @@ class Window(QMainWindow):
         for event,editor in self.form_callbacks.items():
             if editor.text() != getattr(self.form,event): editor.setText(getattr(self.form,event))
         self.load_number(self.fw,self.form.width); self.load_number(self.fh,self.form.height)
+        self.auto_form_size.setChecked(not self.form.size_explicit)
         self.objects.rebuild(self.form,gadget_title,lambda g:PALETTE[g.kind][0])
         if self.selected is None and not self._multi_selection:self.objects.setCurrentRow(-1,reveal=False)
         self.scene.blockSignals(True); self.scene.clear()
@@ -2057,6 +2072,7 @@ class Window(QMainWindow):
         self.update_scene_rect()
         self.loading=True
         self.load_number(self.fw,self.form.width);self.load_number(self.fh,self.form.height)
+        self.auto_form_size.setChecked(not self.form.size_explicit)
         self.loading=False
 
     def edit_form_properties(self):

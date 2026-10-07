@@ -79,15 +79,15 @@ class RuntimePreviewTests(unittest.TestCase):
         before=form.dumps();controls=self.show_form(form)
         self.assertEqual(controls['Pairs'].width(),controls['Pairs'].sizeHint().width())
         self.assertGreater(controls['Pairs'].width(),3*CHAR_WIDTH)
-        self.assertEqual(controls['GadgetOption'].width(),20*CHAR_WIDTH)
+        self.assertGreater(controls['GadgetOption'].entry.width(),20*CHAR_WIDTH)
         self.assertEqual(form.dumps(),before)
 
     def test_explicit_width_and_combo_tagwid_scroll_are_not_mutated(self):
         form=Form(gadgets=[Gadget(name='Button',width=12.5),Gadget(kind='combo',name='Combo',y=3,width=24,
             label='Choice',combo_tagwid='6.5',combo_scroll='7',items=['A','B'])])
         before=form.dumps();controls=self.show_form(form)
-        self.assertEqual(controls['Button'].width(),125)
-        self.assertEqual(controls['Combo'].width(),240)
+        self.assertGreater(controls['Button'].width(),125)
+        self.assertGreater(controls['Combo'].entry.width(),240)
         self.assertEqual(controls['Combo'].findChild(QLabel).width(),65)
         self.assertEqual(controls['Combo'].entry.maxVisibleItems(),7)
         self.assertEqual(form.dumps(),before)
@@ -175,7 +175,9 @@ class RuntimePreviewTests(unittest.TestCase):
         try:
             form=Form(gadgets=[Gadget(name='Button',x=3,y=2,width=12)]);code=form.pml()
             preview.set_form(form)
-            self.assertEqual(preview.controls['Button'].geometry().getRect(),(24,40,96,20))
+            control=preview.controls['Button']
+            self.assertEqual(control.pos().toTuple(),(24,40));self.assertEqual(control.height(),20)
+            self.assertGreater(control.width(),96)
             self.assertEqual(preview.surface.size().toTuple(),(560,440));self.assertEqual(form.pml(),code)
         finally:preview.close();preview.deleteLater()
 

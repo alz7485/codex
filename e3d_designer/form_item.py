@@ -48,8 +48,9 @@ class FormItem(QGraphicsObject):
         super().mousePressEvent(event)
     def cancel_interaction(self):
         if self._resize is None:return False
-        _,_,width,height,_=self._resize;self._resize=None;self._cancelled=True
+        _,_,width,height,old=self._resize;self._resize=None;self._cancelled=True
         self.form.width,self.form.height=width,height
+        self.form.size_explicit=old.size_explicit
         self.prepareGeometryChange();self._width,self._height=width,height;self.update()
         self.resizing.emit();return True
 
@@ -63,6 +64,7 @@ class FormItem(QGraphicsObject):
         except ValueError:return False
         if (width,height)==(self.form.width,self.form.height):return False
         self.form.width,self.form.height=width,height
+        self.form.size_explicit=True
         self.prepareGeometryChange();self._width,self._height=width,height;self.update()
         self.resizing.emit();return True
     def mouseMoveEvent(self,event):
@@ -80,6 +82,8 @@ class FormItem(QGraphicsObject):
         if self._resize:
             _,_,width,height,old=self._resize;self._resize=None
             if (self.form.width,self.form.height)!=(width,height):self.resized.emit(old)
+            else:
+                self.form.size_explicit=old.size_explicit;self.resizing.emit()
             event.accept();return
         super().mouseReleaseEvent(event)
     def mouseDoubleClickEvent(self,event):

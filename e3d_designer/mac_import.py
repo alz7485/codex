@@ -430,6 +430,7 @@ class Importer:
                 present.discard('width');present.add('auto_width')
                 self.warn('WIDTH 0のフレームは自動幅として読み込み、部品と親タブの寸法から補います。')
             if gadget.kind=='frame':gadget.frame_size_axes=('W' if 'width' in present or 'auto_width' in present else '')+('H' if 'height' in present else '')
+            if uses_pairs(gadget):gadget.option_width_explicit='width' in present
             normalize_dimensions(gadget);self.form.gadgets.append(gadget);self.explicit[gadget.name]=present
             if len(self.form.gadgets)>500:raise MacImportError(row,'部品数は500個までです。')
             if gadget.kind=='frame':stack.append(gadget.name)
@@ -867,9 +868,7 @@ class Importer:
             if 'auto_width' in self.explicit[gadget.name] and self.form.is_tab_page(gadget):
                 gadget.width=self.form.geometry(self.form.parent_gadget(gadget))[2]
         if not self.setup_size:
-            extents=[self.form.geometry(g) for g in self.form.children('')]
-            self.form.width=max([70,*[x+w+1 for x,y,w,h in extents]])
-            self.form.height=max([22,*[y+h+1 for x,y,w,h in extents]])
+            self.form.size_explicit=False;self.form.fit_size()
             self.warn('MACにないフォームの表示サイズは、部品が収まる大きさに推定しました。')
 
 

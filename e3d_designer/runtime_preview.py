@@ -1,12 +1,12 @@
 """Native-widget appearance reference. Never executes PML or changes the design."""
 import copy
 
-from PySide6.QtCore import Qt,QItemSelectionModel
+from PySide6.QtCore import Qt,QItemSelectionModel,QSize
 from PySide6.QtGui import QColor,QPalette,QPixmap,QIcon,QFont
 from PySide6.QtWidgets import (QApplication,QDialog,QVBoxLayout,QHBoxLayout,QWidget,
     QLabel,QPushButton,QCheckBox,QRadioButton,QComboBox,QLineEdit,QGroupBox,QTabWidget,
     QFrame,QSlider,QListWidget,QTableWidget,QTableWidgetItem,QPlainTextEdit,QMenuBar,QMenu,
-    QAbstractItemView,QStyleFactory)
+    QAbstractItemView,QStyleFactory,QStyle,QStyleOptionButton,QStyleOptionComboBox,QStyleOptionFrame)
 
 from .model import CHAR_WIDTH,LINE_HEIGHT,uses_pairs
 from .images import resolve_image_path
@@ -28,7 +28,9 @@ class RuntimePreview(QDialog):
         return widget
 
     def set_form(self,form,image_directories=(),active_pages=None):
-        self.form=copy.deepcopy(form);self.form.validate();self.directories=image_directories
+        self.form=copy.deepcopy(form)
+        if not self.form.size_explicit:self.form.fit_size()
+        self.form.validate();self.directories=image_directories
         self.controls={};self.active_pages=dict(active_pages or {});self.menus=[]
         while self.layout_root.count():
             widget=self.layout_root.takeAt(0).widget()
@@ -43,8 +45,13 @@ class RuntimePreview(QDialog):
         self.menu_bar.setVisible(bool(self.menu_bar.actions()));self.layout_root.addWidget(self.menu_bar)
         self.surface=self.style_widget(QWidget(self));self.surface.setAutoFillBackground(True)
         self.surface.setFixedSize(round(self.form.width*self.char_width),round(self.form.height*self.line_height))
-        self.layout_root.addWidget(self.surface)
+        body=self.style_widget(QWidget(self));body_layout=QVBoxLayout(body)
+        body_layout.addWidget(self.surface);self.layout_root.addWidget(body)
         self.build_children('',self.surface)
+        if not self.form.size_explicit:
+            roots=[w.geometry() for w in self.controls.values() if w.parent() is self.surface]
+            self.surface.setFixedSize(max([round(self.char_width),*[r.x()+r.width() for r in roots]]),
+                max([round(self.line_height),*[r.y()+r.height() for r in roots]]))
         self.adjustSize()
 
     def image(self,g):
@@ -54,6 +61,28 @@ class RuntimePreview(QDialog):
     def choice_index(self,g):
         try:return int(g.initial)-1 if g.initial else -1
         except ValueError:return -1
+
+    def control_width(self,g,widget,width,height):
+        """Reference padding uses Qt metrics; the original PML WIDTH is intact."""
+        if g.display_mode=='PIXMAP':return width
+        size=QSize(round(width),round(height))
+        if g.kind=='button':
+            option=QStyleOptionButton();option.initFrom(widget)
+            return widget.style().sizeFromContents(QStyle.CT_PushButton,option,size,widget).width()
+        if g.kind in ('option','combo','text'):
+            if uses_pairs(g) and not g.option_width_explicit:return widget.sizeHint().width()
+            entry=widget.entry
+            if g.kind=='text':
+                option=QStyleOptionFrame();option.initFrom(entry)
+                option.lineWidth=entry.style().pixelMetric(QStyle.PM_DefaultFrameWidth,option,entry)
+                kind=QStyle.CT_LineEdit
+            else:
+                option=QStyleOptionComboBox();entry.initStyleOption(option);kind=QStyle.CT_ComboBox
+            width=entry.style().sizeFromContents(kind,option,size,entry).width()
+            if g.label:
+                tag=widget.layout().itemAt(0).widget()
+                width+=max(tag.minimumWidth(),tag.sizeHint().width())+widget.layout().spacing()
+        return width
 
     def select_rows(self,widget,g):
         # Initial selections are static design data; no DEFAULT code is run.
@@ -72,7 +101,7 @@ class RuntimePreview(QDialog):
             widget=self.build_gadget(g,parent);self.controls[g.name]=widget
             x,y,width,height=self.form.geometry(g)
             width,height=(g.width,g.height) if g.display_mode=='PIXMAP' else (width*self.char_width,height*self.line_height)
-            if uses_pairs(g):width=max(1,widget.sizeHint().width())
+            width=self.control_width(g,widget,width,height)
             if g.kind=='line':
                 width=2 if g.orientation=='VERT' else width;height=2 if g.orientation=='HORIZ' else height
             widget.setGeometry(round(x*self.char_width),round(y*self.line_height),max(1,round(width)),max(1,round(height)))

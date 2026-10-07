@@ -42,7 +42,7 @@ class MacImportTests(unittest.TestCase):
                 self.assertEqual(Form.loads(restored.dumps()).pml(),restored.pml())
                 self.assertEqual(restored.constructor_mode,'GENERATED')
                 count+=1
-        self.assertEqual(count,11)
+        self.assertEqual(count,12)
 
     def test_manual_modern_option_preserves_case_values_and_command(self):
         code=source("Option .Material At X2 Y1 '材質' Width 18 Call 'HandlePick'",
