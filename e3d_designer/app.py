@@ -18,7 +18,7 @@ from .explorer import ObjectExplorer
 from .form_item import FormItem
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
-from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size, fixed_dimensions, dimension_editable, normalize_dimensions, change_orientation, uses_pairs
+from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size, fixed_dimensions, dimension_editable, normalize_dimensions, change_orientation, uses_pairs, supports_hidden
 from .images import resolve_image_path, sync_image_size
 from .symbols import parse_variables,variable_text
 
@@ -195,10 +195,15 @@ class Item(QGraphicsObject):
         self.setZValue(len(form.descendants(gadget.name)) * -1 if gadget.kind == 'frame' else 1)
 
     def boundingRect(self):
+        if self.gadget.hidden:return QRectF(0,0,8,max(8,self._height*SY))
+        if self.gadget.kind=='line':
+            if self.gadget.orientation=='HORIZ':return QRectF(0,-4,self._width*SX,8)
+            return QRectF(-4,0,8,self._height*SY)
         return QRectF(0, 0, self._width * SX, self._height * SY)
 
     def shape(self):
         path = QPainterPath(); rect = self.boundingRect()
+        if self.gadget.hidden and not self.isSelected():return path
         parent = self.form.parent_gadget(self.gadget)
         if self.gadget.kind == 'frame' and parent and parent.frame_style == 'TABSET': rect = rect.adjusted(0, 26, 0, 0)
         path.addRect(rect)
@@ -279,7 +284,7 @@ class Item(QGraphicsObject):
     def handles(self):
         if not self.isSelected() or self.form.is_tab_page(self.gadget): return {}
         if len(self.selected_names())>1:return {}
-        if self.gadget.display_mode == 'PIXMAP':return {}
+        if self.gadget.display_mode == 'PIXMAP' or self.gadget.hidden:return {}
         r = self.boundingRect(); size = 8
         result = {'height':QRectF(r.center().x()-size/2,r.bottom()-size,size,size)} if dimension_editable(self.gadget,'height') else {}
         if dimension_editable(self.gadget,'width'):
@@ -340,6 +345,11 @@ class Item(QGraphicsObject):
 
     def paint(self, painter, option, widget=None):
         r, g = self.boundingRect(), self.gadget
+        if g.hidden:
+            if self.isSelected():
+                painter.setPen(QPen(QColor('#2277cc'),1,Qt.DashLine));painter.setBrush(Qt.NoBrush)
+                painter.drawRect(r.adjusted(1,1,-1,-1))
+            return
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(QPen(QColor('#7f91a5'), 1))
         background=preview_color(g.background) if g.background and g.kind in ('button','paragraph','list') else None
@@ -693,7 +703,7 @@ class Window(QMainWindow):
             if key in ('slider_min','slider_max','slider_step','slider_value'):
                 w = self.number(-1e9, 1e9)
             elif key in ('x','y','width','height','hgap','vgap','xoffset','yoffset'):
-                w = self.number(-300 if key in ('xoffset','yoffset') else 0 if key in ('x','y','hgap','vgap') else 1, 300)
+                w = self.number(-300 if key in ('xoffset','yoffset') else 0 if key in ('x','y','width','height','hgap','vgap') else 1, 300)
             elif key in ('parent','xref','yref','width_ref','popup_menu'):
                 w = QComboBox(); w.addItem('(フォーム直下)', '')
             elif key in ('value_type','orientation','frame_style','layout_mode','path','halign','valign','xedge','yedge','xanchor','selection_mode','combo_keyword','slider_orientation','view_type','channels','list_mode','display_mode','database','button_role','action_mode'):
@@ -717,6 +727,9 @@ class Window(QMainWindow):
         self.initial_choice.currentIndexChanged.connect(self.update_initial_choice)
         self.initial_choice.setToolTip('空欄＝設定しない。TRUE / FALSEを選ぶとDEFAULTへ自動出力します。')
         self.prop_layout.current='基本';self.prop_layout.addRow('初期値',self.initial_choice,'value_type')
+        self.hidden=QCheckBox('非表示（WIDTH 0）');self.hidden.toggled.connect(self.update_gadget)
+        self.hidden.setToolTip('初期値・コマンド・メソッドを保持し、幅0で出力します。解除すると元の幅に戻します。')
+        self.prop_layout.addRow(self.hidden)
         self.fields['action_mode'].setItemText(0,'手入力のコマンド / メソッド')
         self.fields['action_mode'].setItemText(1,'外部マクロを実行')
         self.fields['macro_flag'].setPlaceholderText('例: buttonFlag（!! は不要・空欄ならフラグなし）')
@@ -1345,12 +1358,13 @@ class Window(QMainWindow):
         for key in ('width','height'):
             pixel = gadget.display_mode == 'PIXMAP'
             self.fields[key].setMaximum(max(8192,getattr(gadget,key)) if pixel else 300)
+            self.fields[key].setMinimum(0 if fixed_dimensions(gadget).get(key)==0 or (key=='width' and gadget.hidden) else 1)
             self.fields[key].setDecimals(1)
             self.fields[key].setSingleStep(.1)
         for key in ('x','y'): self.fields[key].setEnabled(mode == 'ABSOLUTE')
         for key in ('path','halign','valign','hgap','vgap'): self.fields[key].setEnabled(mode == 'AUTO')
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): self.fields[key].setEnabled(mode == 'RELATIVE')
-        self.fields['width_ref'].setEnabled(gadget.display_mode != 'PIXMAP' and 'width' not in fixed_dimensions(gadget) and gadget.kind not in ('toggle','option','rtoggle'))
+        self.fields['width_ref'].setEnabled(not gadget.hidden and gadget.display_mode != 'PIXMAP' and 'width' not in fixed_dimensions(gadget) and gadget.kind not in ('toggle','option','rtoggle'))
         self.fields['width'].setEnabled(dimension_editable(gadget,'width'))
         self.fields['height'].setEnabled(dimension_editable(gadget,'height'))
         hint='元画像のサイズで固定。収まらない場合はフォーム／フレームを広げてください。' if gadget.display_mode == 'PIXMAP' else ''
@@ -1368,6 +1382,9 @@ class Window(QMainWindow):
         # Re-enable page parents before evaluating a different gadget's fields.
         for index in range(self.props.count()):self.props.setTabEnabled(index,True)
         self.prop_layout.batching = True
+        self.hidden.setChecked(gadget.hidden)
+        self.hidden.setEnabled(supports_hidden(gadget))
+        self.prop_layout.setRowVisible(self.hidden,supports_hidden(gadget))
         self.fields['selection_mode'].setEnabled(gadget.kind in ('list','selector'))
         self.fields['list_mode'].setEnabled(gadget.kind == 'list')
         self.fields['table_method'].setEnabled(gadget.kind == 'list' and gadget.list_mode == 'TABLE')
@@ -1407,7 +1424,7 @@ class Window(QMainWindow):
             'database':gadget.kind == 'selector', 'button_role':gadget.kind == 'button',
             'action_mode':gadget.kind == 'button' and gadget.button_role not in ('OK','CANCEL','HELP'),
             'macro_path':macro,'macro_flag':macro,'macro_value':macro,
-            'width_ref':gadget.display_mode != 'PIXMAP' and 'width' not in fixed_dimensions(gadget) and gadget.kind not in ('toggle','option','rtoggle'),
+            'width_ref':not gadget.hidden and gadget.display_mode != 'PIXMAP' and 'width' not in fixed_dimensions(gadget) and gadget.kind not in ('toggle','option','rtoggle'),
         }
         relevant['callback'] = self.fields['callback'].isEnabled()
         relevant['command'] = (gadget.kind in ('button','text','toggle') or (gadget.kind=='option' and gadget.display_mode=='TEXT' and not uses_pairs(gadget))) and gadget.button_role not in ('OK','CANCEL','HELP') and not macro
@@ -1688,9 +1705,11 @@ class Window(QMainWindow):
         old_actual = actual_name(g)
         for key, w in self.fields.items():
             if key=='name':continue
+            if key=='width' and g.hidden:continue
             if (old_display == 'PIXMAP' and key in ('width','height','width_ref')) or key in old_fixed:continue
             value = w.currentData() if key in ('parent','xref','yref','width_ref','popup_menu','action_mode') else self.edited_number(w,getattr(g,key)) if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
             setattr(g, key, value)
+        g.hidden=self.hidden.isChecked() if supports_hidden(g) else False
         if direction_key and getattr(g,direction_key) != old_direction:
             new_direction = getattr(g,direction_key);setattr(g,direction_key,old_direction)
             change_orientation(g,new_direction,preview_geometry(self.form,g)[2:])
@@ -1813,7 +1832,7 @@ class Window(QMainWindow):
             self.enable_layout_fields(g)
             for key, w in self.fields.items():
                 if key in ('parent','xref','yref','width_ref','popup_menu'): continue
-                value = getattr(g, key)
+                value = 0 if key=='width' and g.hidden else getattr(g, key)
                 if isinstance(w, QDoubleSpinBox): self.load_number(w,value)
                 elif key == 'action_mode': w.setCurrentIndex(w.findData(value))
                 elif isinstance(w, QComboBox): w.setCurrentText(value)
@@ -1932,7 +1951,7 @@ class Window(QMainWindow):
             item.setPos((x+ox)*SX,(y+oy)*SY); item._sync_geometry = False; item.update()
         if self.selected is not None:
             g = self.form.gadgets[self.selected]; self.loading = True
-            self.load_number(self.fields['width'],g.width); self.load_number(self.fields['height'],g.height); self.loading = False
+            self.load_number(self.fields['width'],0 if g.hidden else g.width); self.load_number(self.fields['height'],g.height); self.loading = False
 
     def resize_committed(self, old):
         self.history.append(old); self.history = self.history[-100:]; self.future.clear(); self.dirty = True
@@ -2041,7 +2060,7 @@ class Window(QMainWindow):
             self.enable_layout_fields(g)
             for key, w in self.fields.items():
                 if key in ('parent','xref','yref','width_ref','popup_menu'): continue
-                v = getattr(g, key)
+                v = 0 if key=='width' and g.hidden else getattr(g, key)
                 if isinstance(w, QDoubleSpinBox): self.load_number(w,v)
                 elif key == 'action_mode': w.setCurrentIndex(w.findData(v))
                 elif isinstance(w, QComboBox): w.setCurrentText(v)

@@ -31,7 +31,8 @@ class DirectionalDimensionsTests(unittest.TestCase):
         return next(item for item in self.w.scene.items() if isinstance(item,Item) and (name is None or item.gadget.name==name))
     def direction_key(self,kind):return 'orientation' if kind=='line' else 'slider_orientation'
     def vertical(self,kind):return 'VERT' if kind=='line' else 'VERTICAL'
-    def thickness(self,kind):return 1 if kind=='line' else 3
+    def thickness(self,kind):return 0 if kind=='line' else 3
+    def horizontal_thickness(self,kind):return 0 if kind=='line' else 1
 
     def test_legacy_projects_normalize_text_paragraph_line_and_slider_thickness(self):
         form=Form(gadgets=[Gadget(kind='paragraph',name='label'),Gadget(kind='toggle',name='check'),
@@ -44,7 +45,7 @@ class DirectionalDimensionsTests(unittest.TestCase):
             record['width']=12;record['height']=5
             if record['name'].startswith('vertical'):record['width_ref']='horizontalLine'
         loaded=Form.loads(json.dumps(data))
-        self.assertEqual([(g.width,g.height) for g in loaded.gadgets],[(12,1),(12,1),(12,1),(12,1),(12,1),(1,5),(12,1),(3,5)])
+        self.assertEqual([(g.width,g.height) for g in loaded.gadgets],[(12,1),(12,1),(12,1),(12,1),(12,0),(0,5),(12,1),(3,5)])
         self.assertTrue(all(not g.width_ref for g in loaded.gadgets))
         self.assertEqual(Form.loads(loaded.dumps()).dumps(),loaded.dumps())
 
@@ -102,9 +103,9 @@ class DirectionalDimensionsTests(unittest.TestCase):
                     length='height' if vertical else 'width';fixed='width' if vertical else 'height'
                     self.assertEqual(set(self.item().handles()),{length})
                     self.assertTrue(self.w.fields[length].isEnabled());self.assertFalse(self.w.fields[fixed].isEnabled())
-                    self.assertEqual(getattr(gadget,fixed),self.thickness(kind) if vertical else 1)
+                    self.assertEqual(getattr(gadget,fixed),self.thickness(kind) if vertical else self.horizontal_thickness(kind))
                     self.w.fields[fixed].setValue(20)
-                    self.assertEqual(getattr(gadget,fixed),self.thickness(kind) if vertical else 1)
+                    self.assertEqual(getattr(gadget,fixed),self.thickness(kind) if vertical else self.horizontal_thickness(kind))
 
     def test_main_panel_orientation_swap_preserves_length_precision_and_undo(self):
         for kind in ('line','slider'):
@@ -117,10 +118,10 @@ class DirectionalDimensionsTests(unittest.TestCase):
                 self.assertEqual(set(self.item().handles()),{'height'})
                 self.assertEqual(len(self.w.history),1)
                 self.w.fields[key].setCurrentText('HORIZ' if kind=='line' else 'HORIZONTAL')
-                self.assertEqual((gadget.width,gadget.height),(14.25,1))
+                self.assertEqual((gadget.width,gadget.height),(14.25,self.horizontal_thickness(kind)))
                 self.assertEqual(len(self.w.history),2)
                 self.w.undo();self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(self.thickness(kind),14.25))
-                self.w.redo();self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(14.25,1))
+                self.w.redo();self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(14.25,self.horizontal_thickness(kind)))
 
     def test_double_click_opens_direction_editor_and_commits_once(self):
         for kind in ('line','slider'):
@@ -136,7 +137,7 @@ class DirectionalDimensionsTests(unittest.TestCase):
                     QTest.mouseDClick(self.w.view.viewport(),Qt.LeftButton,Qt.NoModifier,point);self.app.processEvents()
                 self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(self.thickness(kind),14.25))
                 self.assertEqual(len(self.w.history),1)
-                self.w.undo();self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(14.25,1))
+                self.w.undo();self.assertEqual((self.w.form.gadgets[0].width,self.w.form.gadgets[0].height),(14.25,self.horizontal_thickness(kind)))
 
     def test_mini_editor_retains_length_edits_when_switching_both_ways(self):
         for kind in ('line','slider'):
@@ -148,9 +149,9 @@ class DirectionalDimensionsTests(unittest.TestCase):
                 self.assertEqual(dialog.fields['height'].value(),17.6)
                 self.assertEqual(dialog.fields['width'].value(),self.thickness(kind))
                 dialog.fields['height'].setValue(19.8);dialog.fields[key].setCurrentIndex(0)
-                self.assertEqual(dialog.fields['width'].value(),19.8);self.assertEqual(dialog.fields['height'].value(),1)
+                self.assertEqual(dialog.fields['width'].value(),19.8);self.assertEqual(dialog.fields['height'].value(),self.horizontal_thickness(kind))
                 dialog.accept();self.assertIsNotNone(dialog.result_form)
-                self.assertEqual((dialog.result_form.gadgets[0].width,dialog.result_form.gadgets[0].height),(19.8,1))
+                self.assertEqual((dialog.result_form.gadgets[0].width,dialog.result_form.gadgets[0].height),(19.8,self.horizontal_thickness(kind)))
                 self.assertEqual(self.w.form.dumps(),original);dialog.deleteLater()
 
     def test_cancelled_direction_edit_preserves_original_project(self):
@@ -184,7 +185,7 @@ class DirectionalDimensionsTests(unittest.TestCase):
                     QTest.mouseRelease(self.w.view.viewport(),Qt.LeftButton,Qt.NoModifier,end);self.app.processEvents()
                     gadget=self.w.form.gadgets[0]
                     self.assertEqual(getattr(gadget,length),12 if vertical else 14.5)
-                    self.assertEqual(getattr(gadget,fixed),self.thickness(kind) if vertical else 1)
+                    self.assertEqual(getattr(gadget,fixed),self.thickness(kind) if vertical else self.horizontal_thickness(kind))
                     self.assertEqual(len(self.w.history),1)
                     self.w.undo();self.assertEqual(getattr(self.w.form.gadgets[0],length),10)
 
@@ -199,5 +200,5 @@ class DirectionalDimensionsTests(unittest.TestCase):
         line=Gadget(kind='line',name='line',label='',width=12);line.height=7
         slider=Gadget(kind='slider',name='slider',slider_orientation='VERTICAL',height=12);slider.width=20
         code=Form(gadgets=[line,slider]).pml(normalize=False)
-        self.assertIn("LINE .line AT X 2 Y 1 '' HORIZ WIDTH 12 HEIGHT 1",code)
+        self.assertIn("LINE .line AT X 2 Y 1 '' HORIZ WIDTH 12 HEIGHT 0",code)
         self.assertIn('VAL 50 WIDTH 3 HEIGHT 12',code)

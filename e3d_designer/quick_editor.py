@@ -1,10 +1,10 @@
 """Transactional compact gadget editor and spreadsheet item editor."""
 import copy
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLineEdit,
-    QComboBox,QDoubleSpinBox,QPushButton,QDialogButtonBox,QTableWidget,QTableWidgetItem,QLabel)
+    QComboBox,QDoubleSpinBox,QPushButton,QDialogButtonBox,QTableWidget,QTableWidgetItem,QLabel,QCheckBox)
 from .names import rename
 from .color_picker import ColorPicker
-from .model import dimension_editable,normalize_dimensions,change_orientation,uses_pairs
+from .model import dimension_editable,normalize_dimensions,change_orientation,uses_pairs,supports_hidden,fixed_dimensions
 
 
 class ItemsDialog(QDialog):
@@ -114,8 +114,8 @@ class MiniProperties(QDialog):
         def text(key,title):
             widget=QLineEdit(str(getattr(g,key)));self.fields[key]=widget;fields.addRow(title,widget)
         def number(key,title):
-            widget=QDoubleSpinBox();widget.setDecimals(1);widget.setSingleStep(.1);widget.setRange(.1,100000) if key in ('width','height') else widget.setRange(-100000,100000)
-            widget.setValue(getattr(g,key));widget.setProperty('baseline',widget.value());self.fields[key]=widget;fields.addRow(title,widget)
+            widget=QDoubleSpinBox();widget.setDecimals(1);widget.setSingleStep(.1);widget.setRange(0 if fixed_dimensions(g).get(key)==0 or (key=='width' and g.hidden) else 1,100000) if key in ('width','height') else widget.setRange(-100000,100000)
+            widget.setValue(0 if key=='width' and g.hidden else getattr(g,key));widget.setProperty('baseline',widget.value());self.fields[key]=widget;fields.addRow(title,widget)
             if key in ('width','height'):
                 widget.setEnabled(dimension_editable(g,key))
                 if not dimension_editable(g,key):widget.setToolTip('元画像のサイズ、1行の高さ、または部品の太さで固定されます。')
@@ -150,6 +150,10 @@ class MiniProperties(QDialog):
         if g.kind=='combo':text('combo_scroll','SCROLL（表示量）')
         if sized:number('width','WIDTH')
         if g.kind in ('line','slider','list','view','alpha','container','textpane','selector') or g.display_mode=='PIXMAP' or (g.kind=='frame' and g.frame_style=='TOOLBAR'):number('height','HEIGHT')
+        self.hidden=QCheckBox('非表示（WIDTH 0）',self);self.hidden.setChecked(g.hidden)
+        if supports_hidden(g):
+            fields.addRow(self.hidden);self.hidden.toggled.connect(self.edit_hidden)
+        else:self.hidden.hide()
         self.error=QLabel();self.error.setWordWrap(True);layout.addWidget(self.error)
         buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);layout.addWidget(buttons)
@@ -163,7 +167,7 @@ class MiniProperties(QDialog):
         if 'pixmap_path' in self.fields:self.gadget.pixmap_path=self.fields['pixmap_path'].text()
         sync_image_size(self.gadget,self.image_directories)
         for key in ('width','height'):
-            if key in self.fields:self.fields[key].setValue(getattr(self.gadget,key))
+            if key in self.fields:self.fields[key].setValue(0 if key=='width' and self.gadget.hidden else getattr(self.gadget,key))
 
     def edit_direction(self,key):
         for dimension in ('width','height'):
@@ -174,9 +178,18 @@ class MiniProperties(QDialog):
         except ValueError:resolved_size=None
         change_orientation(self.gadget,self.fields[key].currentData(),resolved_size)
         for dimension in ('width','height'):
-            widget=self.fields[dimension];widget.setValue(getattr(self.gadget,dimension))
+            widget=self.fields[dimension];widget.setMinimum(0 if fixed_dimensions(self.gadget).get(dimension)==0 or (dimension=='width' and self.gadget.hidden) else 1)
+            widget.setValue(0 if dimension=='width' and self.gadget.hidden else getattr(self.gadget,dimension))
             widget.setProperty('baseline',widget.value());widget.setEnabled(dimension_editable(self.gadget,dimension))
             widget.setToolTip('' if dimension_editable(self.gadget,dimension) else '部品の太さは固定されます。')
+
+    def edit_hidden(self,checked):
+        g=self.gadget;widget=self.fields.get('width')
+        if widget and dimension_editable(g,'width') and widget.value()!=widget.property('baseline'):g.width=widget.value()
+        g.hidden=checked
+        if widget:
+            widget.setMinimum(0 if checked else 1);widget.setValue(0 if checked else g.width)
+            widget.setProperty('baseline',widget.value());widget.setEnabled(dimension_editable(g,'width'))
 
     def choose_color(self):
         dialog=ColorPicker(self,self.fields['background'].text())

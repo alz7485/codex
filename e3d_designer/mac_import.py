@@ -409,6 +409,9 @@ class Importer:
             inline=self.comments[row-1].strip()
             if inline:comments.append(inline[2:].lstrip() if inline.startswith(('--','$*')) else inline)
             gadget.comment='\n'.join(comments);comments=[]
+            if gadget.kind=='frame' and gadget.width==0:
+                present.discard('width');present.add('auto_width')
+                self.warn('WIDTH 0のフレームは自動幅として読み込み、部品と親タブの寸法から補います。')
             normalize_dimensions(gadget);self.form.gadgets.append(gadget);self.explicit[gadget.name]=present
             if len(self.form.gadgets)>500:raise MacImportError(row,'部品数は500個までです。')
             if gadget.kind=='frame':stack.append(gadget.name)
@@ -728,7 +731,7 @@ class Importer:
                 for child in children:
                     if gadget.frame_style=='TABSET':extents.append((child.width,child.height));continue
                     x,y,w,h=self.form.geometry(child);extents.append((x+w+1,y+h+1))
-                width=max([14,*[w for w,_ in extents]]);height=max([5,*[h for _,h in extents]])
+                width=max([1 if 'auto_width' in present else 14,*[w for w,_ in extents]]);height=max([5,*[h for _,h in extents]])
             if 'width' not in present:gadget.width=width
             if 'height' not in present:gadget.height=height
 
@@ -761,6 +764,9 @@ class Importer:
                     if 'y' not in present:child.y=y
                 previous=child
         place_children('')
+        for gadget in self.form.gadgets:
+            if 'auto_width' in self.explicit[gadget.name] and self.form.is_tab_page(gadget):
+                gadget.width=self.form.geometry(self.form.parent_gadget(gadget))[2]
         if not self.setup_size:
             extents=[self.form.geometry(g) for g in self.form.children('')]
             self.form.width=max([70,*[x+w+1 for x,y,w,h in extents]])

@@ -14,34 +14,43 @@ def uses_pairs(gadget):
     return gadget.kind == 'option' and gadget.display_mode == 'TEXT' and gadget.option_style == 'PAIRS'
 
 
+def supports_hidden(gadget):
+    # These declarations emit WIDTH; FRAME zero width means automatic sizing.
+    return gadget.kind not in ('frame','line','rtoggle') and not uses_pairs(gadget) and not (gadget.kind=='toggle' and gadget.display_mode=='TEXT')
+
+
 def fixed_dimensions(gadget):
     if gadget.display_mode == 'PIXMAP':return {}
     if gadget.kind in ('text','paragraph','toggle','option','combo'):return {'height':1}
     if gadget.kind == 'line':
-        return {'width':1} if gadget.orientation == 'VERT' else {'height':1}
+        return {'width':0} if gadget.orientation == 'VERT' else {'height':0}
     if gadget.kind == 'slider':
         return {'width':3} if gadget.slider_orientation == 'VERTICAL' else {'height':1}
     return {}
 
 
 def dimension_editable(gadget, dimension):
-    return gadget.display_mode != 'PIXMAP' and dimension not in fixed_dimensions(gadget) and not (dimension == 'width' and gadget.width_ref)
+    return gadget.display_mode != 'PIXMAP' and dimension not in fixed_dimensions(gadget) and not (dimension == 'width' and (gadget.width_ref or gadget.hidden))
 
 
 def normalize_dimensions(gadget):
-    before = gadget.width,gadget.height,gadget.width_ref
+    before = gadget.width,gadget.height,gadget.width_ref,gadget.hidden
+    if type(gadget.width) in (int,float) and gadget.width==0 and supports_hidden(gadget):
+        gadget.hidden=True;gadget.width=14
     fixed = fixed_dimensions(gadget)
     for key,value in fixed.items():
         current = getattr(gadget,key)
         if type(current) in (int,float) and math.isfinite(current) and current > 0:
             setattr(gadget,key,value)
     if 'width' in fixed:gadget.width_ref = ''
-    return before != (gadget.width,gadget.height,gadget.width_ref)
+    return before != (gadget.width,gadget.height,gadget.width_ref,gadget.hidden)
 
 
 def change_orientation(gadget, direction, resolved_size=None):
     key = 'orientation' if gadget.kind == 'line' else 'slider_orientation'
     if gadget.kind not in ('line','slider') or getattr(gadget,key) == direction:return
+    if gadget.hidden:
+        fixed=fixed_dimensions(gadget);resolved_size=(fixed.get('width',gadget.width),fixed.get('height',gadget.height))
     width,height = resolved_size if resolved_size is not None else display_size(gadget)
     gadget.width,gadget.height = height,width
     gadget.width_ref = ''
@@ -51,9 +60,9 @@ def change_orientation(gadget, direction, resolved_size=None):
 
 def display_size(gadget):
     if gadget.display_mode == 'PIXMAP':
-        return gadget.width/CHAR_WIDTH,gadget.height/LINE_HEIGHT
+        return (0 if gadget.hidden else gadget.width/CHAR_WIDTH),gadget.height/LINE_HEIGHT
     fixed = fixed_dimensions(gadget)
-    return fixed.get('width',gadget.width),fixed.get('height',gadget.height)
+    return (0 if gadget.hidden else fixed.get('width',gadget.width)),fixed.get('height',gadget.height)
 
 
 def native_size(gadget,width,height):
@@ -161,6 +170,7 @@ class Gadget:
     macro_value: str = ''
     tabs: list['Gadget'] = field(default_factory=list, repr=False)
     callback_expression: str = ''
+    hidden: bool = False
 
     def __post_init__(self):
         if self.selection_mode == 'MULTI': self.selection_mode = 'MULTIPLE'
@@ -258,6 +268,25 @@ class Form:
     def sync_tabs(self):
         for g in self.gadgets:
             if isinstance(g,Gadget):g.tabs=self.children(g.name) if g.kind=='frame' and g.frame_style=='TABSET' else []
+        done=set()
+        def fit_auto_tabs(g,trail=()):
+            if g.name.lower() in trail:raise ValueError('親コンテナの循環を解消してください。')
+            if g.name.lower() in done:return
+            for child in self.children(g.name):
+                if child.kind=='frame':fit_auto_tabs(child,(*trail,g.name.lower()))
+            if g.frame_style=='TABSET' and type(g.width) in (int,float) and g.width==0:
+                widths=[1]
+                for page in self.children(g.name):
+                    widths.append(page.width)
+                    for child in self.children(page.name):
+                        x,_,width,_=self.geometry(child);widths.append(x+width+1)
+                g.width=max(widths)
+            done.add(g.name.lower())
+        for g in self.gadgets:
+            if isinstance(g,Gadget) and g.kind=='frame' and g.frame_style=='TABSET' and type(g.width) in (int,float) and g.width==0:fit_auto_tabs(g)
+        for g in self.gadgets:
+            if isinstance(g,Gadget) and self.is_tab_page(g) and type(g.width) in (int,float) and g.width==0:
+                g.width=self.geometry(self.parent_gadget(g))[2]
 
     def named(self, name):
         return next((g for g in self.gadgets if g.name.lower() == name.lower()), None)
@@ -268,7 +297,7 @@ class Form:
         return siblings[index-1] if index else None
 
     def layout_dependencies(self, gadget):
-        names = [gadget.width_ref] if gadget.width_ref else []
+        names = [gadget.width_ref] if gadget.width_ref and not gadget.hidden else []
         if gadget.layout_mode == 'RELATIVE': names += [gadget.xref, gadget.yref]
         if gadget.layout_mode == 'AUTO':
             previous = self.previous(gadget)
@@ -309,7 +338,7 @@ class Form:
             return 0,0,width,height
         dependencies = {g.name.lower(): self.geometry(g, trail) for g in self.layout_dependencies(gadget)}
         width,height = display_size(gadget)
-        if gadget.width_ref and 'width' not in fixed_dimensions(gadget): width = dependencies[gadget.width_ref.lower()][2]
+        if gadget.width_ref and not gadget.hidden and 'width' not in fixed_dimensions(gadget): width = dependencies[gadget.width_ref.lower()][2]
         x, y = gadget.x, gadget.y
         parent = self.parent_gadget(gadget)
         if parent and parent.frame_style == 'TOOLBAR':
@@ -396,6 +425,8 @@ class Form:
         if not isinstance(self.gadgets, list) or any(not isinstance(g,Gadget) for g in self.gadgets):
             raise ValueError('部品は配列で指定してください。')
         for g in self.gadgets:
+            if not isinstance(g.hidden,bool):raise ValueError('非表示は真偽値で指定してください。')
+            if g.hidden and not supports_hidden(g):raise ValueError(f'{g.name}: この部品はWIDTH 0による非表示に対応していません。')
             for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','combo_scroll','combo_tagwid','option_style','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method','display_mode','pixmap_path','popup_menu','database','button_role','action_mode','macro_path','macro_flag','macro_value','comment'):
                 if not isinstance(getattr(g,key),str): raise ValueError(f'部品の {key} は文字列で指定してください。')
             for key in ('items','item_commands','item_values','headings','pane_lines'):
@@ -491,7 +522,11 @@ class Form:
             parent_width = self.geometry(parent)[2] if parent else self.width
             parent_height = self.geometry(parent)[3] if parent else self.height
             min_width,min_height = (1/CHAR_WIDTH,1/LINE_HEIGHT) if g.display_mode == 'PIXMAP' else (1,1)
-            if g.width < 1 or g.height < 1 or x < -.001 or y < -.001 or width < min_width or height < min_height or x + width > parent_width + .001 or y + height > parent_height + .001:
+            fixed=fixed_dimensions(g)
+            if 'width' in fixed and fixed['width']==0:min_width=0
+            if 'height' in fixed and fixed['height']==0:min_height=0
+            if g.hidden:min_width=0
+            if g.width < (0 if fixed.get('width')==0 else 1) or g.height < (0 if fixed.get('height')==0 else 1) or x < -.001 or y < -.001 or width < min_width or height < min_height or x + width > parent_width + .001 or y + height > parent_height + .001:
                 raise ValueError(f'{g.name}: 部品を親コンテナ内に収めてください。')
             if g.background:
                 if g.kind not in ('paragraph', 'button', 'list') or not re.fullmatch(r'[0-9]+', g.background):
@@ -785,7 +820,8 @@ class Form:
                 lines.append(indent+f'-- Auto placement follows {previous.name}')
                 position = ''
             width,height = (g.width,g.height) if g.display_mode == 'PIXMAP' else display_size(g)
-            width_clause = f'WIDTH.{member_name(g.width_ref)}' if g.width_ref else f'WIDTH {n(width)}'
+            if g.hidden:width=0
+            width_clause = f'WIDTH.{member_name(g.width_ref)}' if g.width_ref and not g.hidden else f'WIDTH {n(width)}'
             at = (f'at x{n(g.x)} y{n(g.y)}' if g.layout_mode == 'ABSOLUTE' else position) + ' ' + width_clause
             callback = ' callback '+literal(callback_expression(g),allow_expansion=True) if active_callback(g) else ''
             label = literal(g.label)

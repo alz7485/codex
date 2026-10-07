@@ -315,7 +315,7 @@ class ModelTests(unittest.TestCase):
     def test_line_orientations_and_roundtrip(self):
         for orientation in ('HORIZ', 'VERT'):
             f=Form(gadgets=[Gadget(kind='line',name='separator',label='',x=2,y=3,width=20,height=2,orientation=orientation)])
-            size='WIDTH 20 HEIGHT 1' if orientation=='HORIZ' else 'WIDTH 1 HEIGHT 2'
+            size='WIDTH 20 HEIGHT 0' if orientation=='HORIZ' else 'WIDTH 0 HEIGHT 2'
             self.assertIn(f"LINE .separator AT X 2 Y 3 '' {orientation} {size}",Form.loads(f.dumps()).pml(normalize=False))
         f.gadgets[0].orientation='INVALID'
         with self.assertRaises(ValueError): f.pml(normalize=False)
@@ -825,7 +825,7 @@ class GuiTests(unittest.TestCase):
         self.w.add('line')
         self.assertFalse(self.w.fields['label'].isEnabled())
         self.w.fields['orientation'].setCurrentText('VERT')
-        self.assertIn(canonical_pml("LINE .line1 AT X 0 Y 0 '' VERT WIDTH 1 HEIGHT 18"),self.w.code.toPlainText())
+        self.assertIn(canonical_pml("LINE .line1 AT X 0 Y 0 '' VERT WIDTH 0 HEIGHT 18"),self.w.code.toPlainText())
         self.w.undo()
         self.assertEqual(self.w.form.gadgets[0].orientation,'HORIZ')
 
