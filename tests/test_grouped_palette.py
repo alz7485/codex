@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt,QPoint,QTimer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 from e3d_designer.app import Window
@@ -38,6 +38,24 @@ class GroupedPaletteTests(unittest.TestCase):
         self.assertEqual(len(w.form.gadgets),2);self.assertTrue(all(g.orientation=='VERT' for g in w.form.gadgets))
         self.assertEqual(len(w.history),2);w.form.validate()
         w.undo();w.undo();self.assertEqual(w.form.gadgets,[])
+
+    def test_widened_arrow_opens_choices_without_adding_and_body_repeats_selection(self):
+        w=self.w;button=w.palette_buttons['line'];menu=button.menu();action=w.palette_actions['line_vert']
+        observations=[]
+        def choose():
+            observations.append((menu.isVisible(),len(w.form.gadgets)))
+            if menu.isVisible():QTest.mouseClick(menu,Qt.LeftButton,Qt.NoModifier,menu.actionGeometry(action).center())
+            menu.close()
+        QTimer.singleShot(50,choose)
+        # 18px from the right is inside the expanded arrow area.
+        QTest.mouseClick(button,Qt.LeftButton,Qt.NoModifier,QPoint(button.width()-18,button.height()//2))
+        self.app.processEvents()
+        QTest.qWait(80);self.app.processEvents()
+        self.assertEqual(observations,[(True,0)])
+        self.assertEqual(len(w.form.gadgets),1);self.assertEqual(w.form.gadgets[0].orientation,'VERT')
+        self.assertIs(button.defaultAction(),action)
+        QTest.mouseClick(button,Qt.LeftButton,Qt.NoModifier,QPoint(10,button.height()//2));self.app.processEvents()
+        self.assertEqual(len(w.form.gadgets),2);self.assertEqual(w.form.gadgets[1].orientation,'VERT')
     def test_each_choice_emits_correct_kind_and_direction_once(self):
         palette=GadgetPalette();received=[];menus=[]
         palette.addRequested.connect(lambda kind,direction:received.append((kind,direction)))

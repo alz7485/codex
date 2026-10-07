@@ -1,8 +1,23 @@
 """Compact split buttons: choose a variant once, click again to repeat it."""
 from math import ceil
-from PySide6.QtCore import QSize,Signal
+from PySide6.QtCore import Qt,QSize,Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget,QToolButton,QMenu,QGridLayout,QLayout,QSizePolicy
+from .palette_icons import palette_icon
+
+BUTTON_HEIGHT,SPACING,PADDING,MENU_WIDTH=35,5,6,22
+BUTTON_STYLE=f'''
+QToolButton {{ background: white; color: #273b52; border: 1px solid #d3dce7;
+    border-radius: 4px; padding: 1px 2px; font-size: 11px; }}
+QToolButton:hover {{ background: #edf5ff; border-color: #8cafdc; }}
+QToolButton:pressed {{ background: #dcecff; border-color: #608bc2; }}
+QToolButton:focus {{ border-color: #3566a8; }}
+QToolButton::menu-button {{ width: {MENU_WIDTH}px; border-left: 1px solid #e2e8f0;
+    border-top-right-radius: 4px; border-bottom-right-radius: 4px; }}
+QToolButton::menu-button:hover {{ background: #e4effd; }}
+QToolButton::menu-button:pressed {{ background: #dcecff; }}
+QToolButton::menu-arrow {{ width: 7px; height: 7px; }}
+'''
 
 GROUPS = (
     ('button',(('button','button',None,'🖱️','ボタン'),)),
@@ -27,14 +42,17 @@ class GadgetPalette(QWidget):
     menuRequested=Signal()
     def __init__(self,parent=None):
         super().__init__(parent)
+        self.setObjectName('gadgetPalette')
+        self.setStyleSheet('QWidget#gadgetPalette { background: #f5f8fc; border: 1px solid #dce4ef; border-radius: 5px; }')
         self.buttons={};self.actions={};self._columns=0
-        self.grid=QGridLayout(self);self.grid.setContentsMargins(0,0,0,0);self.grid.setSpacing(4)
+        self.grid=QGridLayout(self);self.grid.setContentsMargins(PADDING,PADDING,PADDING,PADDING);self.grid.setSpacing(SPACING)
         self.grid.setSizeConstraint(QLayout.SetNoConstraint)
         for group,variants in GROUPS:
-            button=QToolButton(self);button.setFixedHeight(28)
+            button=QToolButton(self);button.setFixedHeight(BUTTON_HEIGHT)
+            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon);button.setIconSize(QSize(18,18))
             button.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Fixed)
             button.setMinimumWidth(0)
-            button.setStyleSheet('font-size: 11px; padding: 1px 3px;')
+            button.setStyleSheet(BUTTON_STYLE)
             title=' / '.join(entry[4] for entry in variants)
             button.setAccessibleName(title)
             button.setToolTip(title+'：矢印で種類を選択、ボタン本体で同じ種類を追加' if len(variants)>1 else title+'を編集' if group=='menubar' else title+'を追加')
@@ -42,22 +60,24 @@ class GadgetPalette(QWidget):
             if menu:
                 button.setMenu(menu);button.setPopupMode(QToolButton.MenuButtonPopup)
             for key,kind,direction,icon,label in variants:
-                action=QAction(f'{icon} {label}',button);action.setData(key)
+                action=QAction(palette_icon(key),label,button);action.setData(key)
                 action.setToolTip(title+'：矢印で種類を選択、ボタン本体で同じ種類を追加' if menu else title+'を編集' if group=='menubar' else title+'を追加')
                 action.triggered.connect(lambda checked=False,b=button,a=action,k=kind,d=direction:self.activate(b,a,k,d))
                 self.actions[key]=action
                 if menu:menu.addAction(action)
             button.setDefaultAction(self.actions[variants[0][0]])
+            if group=='slider':button.setText('スライダー')
             self.buttons[group]=button
         self.reflow(7)
     def activate(self,button,action,kind,direction):
         button.setDefaultAction(action)
+        if action.data() in ('slider_horiz','slider_vert'):button.setText('スライダー')
         if kind is None:self.menuRequested.emit()
         else:self.addRequested.emit(kind,direction)
-    def sizeHint(self):return QSize(724,60)
-    def minimumSizeHint(self):return QSize(104,60)
+    def sizeHint(self):return QSize(754,2*BUTTON_HEIGHT+SPACING+2*PADDING)
+    def minimumSizeHint(self):return QSize(104+2*PADDING,2*BUTTON_HEIGHT+SPACING+2*PADDING)
     def resizeEvent(self,event):
-        self.reflow(max(1,min(7,(event.size().width()+4)//104)))
+        self.reflow(max(1,min(7,(event.size().width()-2*PADDING+SPACING)//104)))
         super().resizeEvent(event)
     def reflow(self,columns):
         if columns==self._columns:return
@@ -66,4 +86,5 @@ class GadgetPalette(QWidget):
         for index,button in enumerate(self.buttons.values()):self.grid.addWidget(button,index//columns,index%columns)
         for column in range(columns):self.grid.setColumnStretch(column,1)
         self._columns=columns
-        self.setFixedHeight(ceil(len(self.buttons)/columns)*32-4)
+        rows=ceil(len(self.buttons)/columns)
+        self.setFixedHeight(rows*BUTTON_HEIGHT+(rows-1)*SPACING+2*PADDING)
