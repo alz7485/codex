@@ -89,13 +89,13 @@ class MacCursorLayoutTests(unittest.TestCase):
                        "Button .B 'B' Width 5\nButton .C At X 10 Y 8 'C' Width 5\nButton .D 'D' Width 5")
         self.assertEqual([self.pos(form,n) for n in ('A','B','C','D')],[(3,5),(3,4),(10,8),(10,7)])
 
-    def test_nested_frames_reset_cursor_and_restore_outer_position_and_path(self):
+    def test_nested_frames_reset_coordinates_and_keep_last_path(self):
         form=self.read("Path Down\nButton .Before At X 2 Y 3 'Before' Width 5\n"
                        "Frame .Outer 'Outer'\nButton .A 'A' Width 8\nPath Right\n"
                        "Frame .Inner 'Inner'\nButton .Long 'Long' Width 25\nExit\n"
                        "Button .B 'B' Width 4\nExit\nButton .After 'After' Width 5")
         for name,pos in {'Before':(2,3),'Outer':(2,4),'A':(0,0),'Inner':(9,0),
-                         'Long':(0,0),'B':(36,0),'After':(2,5)}.items():
+                         'Long':(0,0),'B':(36,0),'After':(44,4)}.items():
             self.assertEqual(self.pos(form,name),pos,name)
         self.assertEqual(form.named('Inner').width,26)
         self.assertEqual(form.named('Outer').width,41)
@@ -113,10 +113,10 @@ class MacCursorLayoutTests(unittest.TestCase):
         form=self.read("Frame .Group 'Group'\n"
                        "List .Rows At X 0 Y 0 'Rows' Width 20 Height 20\n"
                        "Exit\nButton .After 'After' Width 8",
-                       header='Setup Form !!Demo Dialog Size 70 22')
+                       header='Setup Form !!Demo Dialog Size 70 24')
         self.assertEqual((form.named('Group').width,form.named('Group').height),(21,21))
-        self.assertEqual(self.pos(form,'After'),(0,1))
-        self.assertEqual((form.width,form.height),(70,22))
+        self.assertEqual(self.pos(form,'After'),(0,22))
+        self.assertEqual((form.width,form.height),(70,24))
 
     def test_tab_pages_fit_nested_frames_and_share_tabset_size(self):
         form=self.read("Frame .Tabs Tabset 'Tabs'\n"

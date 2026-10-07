@@ -275,7 +275,7 @@ class Importer:
             preamble.append(self.raw[index])
         self.form.preamble_code='\n'.join(preamble).strip('\n')
         stack=[];layout={};comments=[];assembly=namespace='';members={};member_rows={};imports=[];index=start+1
-        bar_entries=[];bar_row=None;explicit_exit=False;declaration_choices=[]
+        bar_entries=[];bar_row=None;explicit_exit=False;declaration_choices=[];current_path='DOWN'
         kinds={'BUTTON':'button','PARAGRAPH':'paragraph','PARA':'paragraph','TEXT':'text','TOGGLE':'toggle','OPTION':'option',
                'LIST':'list','LINE':'line','FRAME':'frame','SLIDER':'slider','RTOGGLE':'rtoggle','COMBO':'combo','COMBOBOX':'combo',
                'VIEW':'view','CONTAINER':'container','TEXTPANE':'textpane','TEXTPANEL':'textpane','SELECTOR':'selector'}
@@ -327,7 +327,8 @@ class Importer:
                 choices={'path':('DOWN','UP','LEFT','RIGHT'),'halign':('LEFT','CENTRE','RIGHT'),'valign':('TOP','CENTRE','BOTTOM')}
                 if field in choices and value not in choices[field]:raise MacImportError(row,'配置方向・整列の指定が不正です: '+str(value))
                 if field in ('hgap','vgap') and value<0:raise MacImportError(row,'配置間隔は0以上で指定してください。')
-                layout.setdefault(parent,{})[field]=value
+                if field=='path':current_path=value
+                else:layout.setdefault(parent,{})[field]=value
                 if tokens.more():raise MacImportError(row,'配置指定の後に未対応の指定があります。')
                 continue
             if key=='IMPORT':
@@ -403,6 +404,7 @@ class Importer:
             if gadget.kind=='textpane':gadget.fixed_font=False
             present=set();self.attributes(tokens,gadget,present)
             self.placements[gadget.name]=layout.get(parent,{}).copy()
+            self.placements[gadget.name]['path']=current_path
             for field,value in self.placements[gadget.name].items():setattr(gadget,field,value)
             if not {'x','y'}<=present and gadget.layout_mode!='RELATIVE':
                 self.warn('省略されたATの座標は、コンテナごとの現在地とPATHから補いました。キャンバスで配置を確認してください。')
@@ -827,7 +829,7 @@ class Importer:
         def place_children(parent,trail=()):
             if parent.lower() in trail:raise ValueError('親コンテナの循環を解消してください。')
             children=self.form.children(parent)
-            # Fit inner frames first so a following RIGHT/LEFT uses their real edge.
+            # Fit inner frames first so following controls use their real edge.
             for child in children:
                 if child.kind=='frame':
                     place_children(child.name,(*trail,parent.lower()))
@@ -844,7 +846,8 @@ class Importer:
                         x,y=px,py
                         if path in ('DOWN','UP'):
                             x+= {'LEFT':0,'CENTRE':(pw-cw)/2,'RIGHT':pw-cw}[settings.get('halign','LEFT')]
-                            step=(ph if path=='DOWN' else ch)+settings['vgap'] if 'vgap' in settings else 1
+                            step=ph+1 if path=='DOWN' and previous.kind=='frame' else 1
+                            if 'vgap' in settings:step=(ph if path=='DOWN' else ch)+settings['vgap']
                             y+=step if path=='DOWN' else -step
                         else:
                             x+=pw+settings.get('hgap',1) if path=='RIGHT' else -cw-settings.get('hgap',1)
