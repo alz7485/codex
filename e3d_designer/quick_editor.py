@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLine
     QComboBox,QDoubleSpinBox,QPushButton,QDialogButtonBox,QTableWidget,QTableWidgetItem,QLabel,QCheckBox)
 from .names import rename
 from .color_picker import ColorPicker
-from .model import dimension_editable,normalize_dimensions,change_orientation,uses_pairs,supports_hidden,fixed_dimensions
+from .model import dimension_editable,normalize_dimensions,uses_pairs,supports_hidden,fixed_dimensions
 
 
 class ItemsDialog(QDialog):
@@ -114,8 +114,8 @@ class MiniProperties(QDialog):
         def text(key,title):
             widget=QLineEdit(str(getattr(g,key)));self.fields[key]=widget;fields.addRow(title,widget)
         def number(key,title):
-            widget=QDoubleSpinBox();widget.setDecimals(1);widget.setSingleStep(.1);widget.setRange(0 if fixed_dimensions(g).get(key)==0 or (key=='width' and g.hidden) else 1,100000) if key in ('width','height') else widget.setRange(-100000,100000)
-            widget.setValue(0 if key=='width' and g.hidden else getattr(g,key));widget.setProperty('baseline',widget.value());self.fields[key]=widget;fields.addRow(title,widget)
+            widget=QDoubleSpinBox();widget.setDecimals(1);widget.setSingleStep(.1);widget.setRange(0 if fixed_dimensions(g).get(key)==0 or (key=='width' and self.draft.is_hidden(g)) else 1,100000) if key in ('width','height') else widget.setRange(-100000,100000)
+            widget.setValue(self.draft.display_width(g) if key=='width' else getattr(g,key));widget.setProperty('baseline',widget.value());self.fields[key]=widget;fields.addRow(title,widget)
             if key in ('width','height'):
                 widget.setEnabled(dimension_editable(g,key))
                 if not dimension_editable(g,key):widget.setToolTip('元画像のサイズ、1行の高さ、または部品の太さで固定されます。')
@@ -174,12 +174,11 @@ class MiniProperties(QDialog):
             widget=self.fields[dimension]
             if dimension_editable(self.gadget,dimension) and widget.value()!=widget.property('baseline'):
                 setattr(self.gadget,dimension,widget.value())
-        try:resolved_size=self.draft.geometry(self.gadget)[2:]
-        except ValueError:resolved_size=None
-        change_orientation(self.gadget,self.fields[key].currentData(),resolved_size)
+        self.draft.rotate_gadget(self.gadget,self.fields[key].currentData())
+        self.hidden.setChecked(self.gadget.hidden)
         for dimension in ('width','height'):
-            widget=self.fields[dimension];widget.setMinimum(0 if fixed_dimensions(self.gadget).get(dimension)==0 or (dimension=='width' and self.gadget.hidden) else 1)
-            widget.setValue(0 if dimension=='width' and self.gadget.hidden else getattr(self.gadget,dimension))
+            widget=self.fields[dimension];widget.setMinimum(0 if fixed_dimensions(self.gadget).get(dimension)==0 or (dimension=='width' and self.draft.is_hidden(self.gadget)) else 1)
+            widget.setValue(self.draft.display_width(self.gadget) if dimension=='width' else getattr(self.gadget,dimension))
             widget.setProperty('baseline',widget.value());widget.setEnabled(dimension_editable(self.gadget,dimension))
             widget.setToolTip('' if dimension_editable(self.gadget,dimension) else '部品の太さは固定されます。')
 
@@ -188,7 +187,8 @@ class MiniProperties(QDialog):
         if widget and dimension_editable(g,'width') and widget.value()!=widget.property('baseline'):g.width=widget.value()
         g.hidden=checked
         if widget:
-            widget.setMinimum(0 if checked else 1);widget.setValue(0 if checked else g.width)
+            hidden=self.draft.is_hidden(g)
+            widget.setMinimum(0 if hidden else 1);widget.setValue(self.draft.display_width(g))
             widget.setProperty('baseline',widget.value());widget.setEnabled(dimension_editable(g,'width'))
 
     def choose_color(self):

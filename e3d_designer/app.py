@@ -18,7 +18,7 @@ from .explorer import ObjectExplorer
 from .form_item import FormItem
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
-from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size, fixed_dimensions, dimension_editable, normalize_dimensions, change_orientation, uses_pairs, supports_hidden
+from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size, fixed_dimensions, dimension_editable, normalize_dimensions, uses_pairs, supports_hidden
 from .images import resolve_image_path, sync_image_size
 from .symbols import parse_variables,variable_text
 
@@ -195,7 +195,7 @@ class Item(QGraphicsObject):
         self.setZValue(len(form.descendants(gadget.name)) * -1 if gadget.kind == 'frame' else 1)
 
     def boundingRect(self):
-        if self.gadget.hidden:return QRectF(0,0,8,max(8,self._height*SY))
+        if self.hidden_in_preview():return QRectF(0,0,8,max(8,self._height*SY))
         if self.gadget.kind=='line':
             if self.gadget.orientation=='HORIZ':return QRectF(0,-4,self._width*SX,8)
             return QRectF(-4,0,8,self._height*SY)
@@ -203,7 +203,7 @@ class Item(QGraphicsObject):
 
     def shape(self):
         path = QPainterPath(); rect = self.boundingRect()
-        if self.gadget.hidden and not self.isSelected():return path
+        if self.hidden_in_preview() and not self.isSelected():return path
         parent = self.form.parent_gadget(self.gadget)
         if self.gadget.kind == 'frame' and parent and parent.frame_style == 'TABSET': rect = rect.adjusted(0, 26, 0, 0)
         path.addRect(rect)
@@ -284,7 +284,7 @@ class Item(QGraphicsObject):
     def handles(self):
         if not self.isSelected() or self.form.is_tab_page(self.gadget): return {}
         if len(self.selected_names())>1:return {}
-        if self.gadget.display_mode == 'PIXMAP' or self.gadget.hidden:return {}
+        if self.gadget.display_mode == 'PIXMAP' or self.hidden_in_preview():return {}
         r = self.boundingRect(); size = 8
         result = {'height':QRectF(r.center().x()-size/2,r.bottom()-size,size,size)} if dimension_editable(self.gadget,'height') else {}
         if dimension_editable(self.gadget,'width'):
@@ -343,9 +343,12 @@ class Item(QGraphicsObject):
         entry=rect.adjusted(label_width+4 if label_width else 1,1,-1,-1)
         return label,entry
 
+    def hidden_in_preview(self):
+        return self.gadget.hidden or (self._width==0 and supports_hidden(self.gadget))
+
     def paint(self, painter, option, widget=None):
         r, g = self.boundingRect(), self.gadget
-        if g.hidden:
+        if self.hidden_in_preview():
             if self.isSelected():
                 painter.setPen(QPen(QColor('#2277cc'),1,Qt.DashLine));painter.setBrush(Qt.NoBrush)
                 painter.drawRect(r.adjusted(1,1,-1,-1))
@@ -1358,7 +1361,7 @@ class Window(QMainWindow):
         for key in ('width','height'):
             pixel = gadget.display_mode == 'PIXMAP'
             self.fields[key].setMaximum(max(8192,getattr(gadget,key)) if pixel else 300)
-            self.fields[key].setMinimum(0 if fixed_dimensions(gadget).get(key)==0 or (key=='width' and gadget.hidden) else 1)
+            self.fields[key].setMinimum(0 if fixed_dimensions(gadget).get(key)==0 or (key=='width' and self.form.is_hidden(gadget)) else 1)
             self.fields[key].setDecimals(1)
             self.fields[key].setSingleStep(.1)
         for key in ('x','y'): self.fields[key].setEnabled(mode == 'ABSOLUTE')
@@ -1370,6 +1373,8 @@ class Window(QMainWindow):
         hint='元画像のサイズで固定。収まらない場合はフォーム／フレームを広げてください。' if gadget.display_mode == 'PIXMAP' else ''
         self.fields['width'].setToolTip(hint)
         self.fields['height'].setToolTip(hint)
+        if self.form.is_hidden(gadget) and not gadget.hidden:
+            self.fields['width'].setToolTip('幅参照元が非表示のため、幅0で表示・出力されます。参照元を表示すると元の幅に戻ります。')
         if ((gadget.kind=='toggle' and gadget.display_mode=='TEXT') or uses_pairs(gadget)):self.fields['width'].setToolTip(PREVIEW_WIDTH_HINT)
         for key,value in fixed_dimensions(gadget).items():
             self.fields[key].setToolTip('高さは1行固定です。' if gadget.kind not in ('line','slider') else f'太さは{value:.1f}固定です。長さだけ変更できます。')
@@ -1712,7 +1717,7 @@ class Window(QMainWindow):
         g.hidden=self.hidden.isChecked() if supports_hidden(g) else False
         if direction_key and getattr(g,direction_key) != old_direction:
             new_direction = getattr(g,direction_key);setattr(g,direction_key,old_direction)
-            change_orientation(g,new_direction,preview_geometry(self.form,g)[2:])
+            self.form.rotate_gadget(g,new_direction)
         if g.command and g.command!=old_command:g.callback=''
         elif g.callback and g.callback!=old_callback:g.command=''
         if old_display != g.display_mode:
@@ -1832,7 +1837,7 @@ class Window(QMainWindow):
             self.enable_layout_fields(g)
             for key, w in self.fields.items():
                 if key in ('parent','xref','yref','width_ref','popup_menu'): continue
-                value = 0 if key=='width' and g.hidden else getattr(g, key)
+                value = self.form.display_width(g) if key=='width' else getattr(g, key)
                 if isinstance(w, QDoubleSpinBox): self.load_number(w,value)
                 elif key == 'action_mode': w.setCurrentIndex(w.findData(value))
                 elif isinstance(w, QComboBox): w.setCurrentText(value)
@@ -1907,8 +1912,9 @@ class Window(QMainWindow):
         draft=copy.deepcopy(self.form);moved=draft.gadgets[index]
         try:
             x,y,width,height=draft.geometry(moved);ox,oy=draft.offset(moved);x+=ox;y+=oy
+            saved_size=draft.restored_size(moved);hidden=draft.is_hidden(moved)
             moved.parent=parent_name;moved.layout_mode='ABSOLUTE';moved.xref=moved.yref=moved.width_ref=''
-            moved.width,moved.height=native_size(moved,width,height)
+            moved.hidden=hidden;moved.width,moved.height=native_size(moved,*saved_size)
             ox,oy=draft.offset(moved);pw,ph=draft.geometry(draft.parent_gadget(moved))[2:] if parent else (draft.width,draft.height)
             if width>pw+.001 or height>ph+.001:
                 self.statusBar().showMessage('移動先のフレームに部品全体が収まりません。');return
@@ -1951,7 +1957,7 @@ class Window(QMainWindow):
             item.setPos((x+ox)*SX,(y+oy)*SY); item._sync_geometry = False; item.update()
         if self.selected is not None:
             g = self.form.gadgets[self.selected]; self.loading = True
-            self.load_number(self.fields['width'],0 if g.hidden else g.width); self.load_number(self.fields['height'],g.height); self.loading = False
+            self.load_number(self.fields['width'],self.form.display_width(g)); self.load_number(self.fields['height'],g.height); self.loading = False
 
     def resize_committed(self, old):
         self.history.append(old); self.history = self.history[-100:]; self.future.clear(); self.dirty = True
@@ -2060,7 +2066,7 @@ class Window(QMainWindow):
             self.enable_layout_fields(g)
             for key, w in self.fields.items():
                 if key in ('parent','xref','yref','width_ref','popup_menu'): continue
-                v = 0 if key=='width' and g.hidden else getattr(g, key)
+                v = self.form.display_width(g) if key=='width' else getattr(g, key)
                 if isinstance(w, QDoubleSpinBox): self.load_number(w,v)
                 elif key == 'action_mode': w.setCurrentIndex(w.findData(v))
                 elif isinstance(w, QComboBox): w.setCurrentText(v)
@@ -2089,6 +2095,7 @@ class Window(QMainWindow):
         candidate=copy.deepcopy(self.form);g=candidate.gadgets[index]
         try:
             _,_,width,height=candidate.geometry(g)
+            saved_size=candidate.restored_size(g);hidden=candidate.is_hidden(g)
             excluded={name.lower(),*(child.lower() for child in candidate.descendants(name))}
             visible={item.gadget.name.lower() for item in self.scene.items() if isinstance(item,Item) and item.isVisible()}
             targets=[]
@@ -2107,7 +2114,7 @@ class Window(QMainWindow):
             changed_parent=g.parent.lower()!=(parent.name.lower() if parent else '')
             g.parent=parent.name if parent else ''
             if changed_parent:
-                g.width,g.height=native_size(g,width,height)
+                g.hidden=hidden;g.width,g.height=native_size(g,*saved_size)
                 g.xref=g.yref=g.width_ref=''
             ox,oy=candidate.offset(g);g.x=round(x-ox,2);g.y=round(y-oy,2)
             candidate.validate()

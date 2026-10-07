@@ -731,7 +731,9 @@ class Importer:
                 for child in children:
                     if gadget.frame_style=='TABSET':extents.append((child.width,child.height));continue
                     x,y,w,h=self.form.geometry(child);extents.append((x+w+1,y+h+1))
-                width=max([1 if 'auto_width' in present else 14,*[w for w,_ in extents]]);height=max([5,*[h for _,h in extents]])
+                parent=self.form.parent_gadget(gadget)
+                auto_page=bool(self.form.is_tab_page(gadget) and 'auto_width' in self.explicit[parent.name])
+                width=max([1 if 'auto_width' in present or auto_page else 14,*[w for w,_ in extents]]);height=max([5,*[h for _,h in extents]])
             if 'width' not in present:gadget.width=width
             if 'height' not in present:gadget.height=height
 

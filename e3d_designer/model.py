@@ -49,7 +49,7 @@ def normalize_dimensions(gadget):
 def change_orientation(gadget, direction, resolved_size=None):
     key = 'orientation' if gadget.kind == 'line' else 'slider_orientation'
     if gadget.kind not in ('line','slider') or getattr(gadget,key) == direction:return
-    if gadget.hidden:
+    if gadget.hidden and (resolved_size is None or resolved_size[0]==0):
         fixed=fixed_dimensions(gadget);resolved_size=(fixed.get('width',gadget.width),fixed.get('height',gadget.height))
     width,height = resolved_size if resolved_size is not None else display_size(gadget)
     gadget.width,gadget.height = height,width
@@ -58,11 +58,12 @@ def change_orientation(gadget, direction, resolved_size=None):
     normalize_dimensions(gadget)
 
 
-def display_size(gadget):
+def display_size(gadget,*,reveal=False):
+    hidden=gadget.hidden and not reveal
     if gadget.display_mode == 'PIXMAP':
-        return (0 if gadget.hidden else gadget.width/CHAR_WIDTH),gadget.height/LINE_HEIGHT
+        return (0 if hidden else gadget.width/CHAR_WIDTH),gadget.height/LINE_HEIGHT
     fixed = fixed_dimensions(gadget)
-    return (0 if gadget.hidden else fixed.get('width',gadget.width)),fixed.get('height',gadget.height)
+    return (0 if hidden else fixed.get('width',gadget.width)),fixed.get('height',gadget.height)
 
 
 def native_size(gadget,width,height):
@@ -296,8 +297,8 @@ class Form:
         index = next(i for i,g in enumerate(siblings) if g is gadget)
         return siblings[index-1] if index else None
 
-    def layout_dependencies(self, gadget):
-        names = [gadget.width_ref] if gadget.width_ref and not gadget.hidden else []
+    def layout_dependencies(self, gadget,*,reveal=False):
+        names = [gadget.width_ref] if gadget.width_ref and (not gadget.hidden or reveal) else []
         if gadget.layout_mode == 'RELATIVE': names += [gadget.xref, gadget.yref]
         if gadget.layout_mode == 'AUTO':
             previous = self.previous(gadget)
@@ -327,24 +328,24 @@ class Form:
                 raise ValueError(f'{gadget.name}: 自動配置の直前に基準部品が来るよう部品順と参照を変更してください。')
         return result
 
-    def geometry(self, gadget, trail=None):
+    def geometry(self, gadget, trail=None,*,reveal=False):
         trail = set() if trail is None else set(trail)
         key = gadget.name.lower()
         if key in trail: raise ValueError('配置・幅の循環参照を解消してください。')
         trail.add(key)
         parent = self.parent_gadget(gadget)
         if parent and parent.frame_style=='TABSET':
-            _,_,width,height=self.geometry(parent,trail)
+            _,_,width,height=self.geometry(parent,trail,reveal=reveal)
             return 0,0,width,height
-        dependencies = {g.name.lower(): self.geometry(g, trail) for g in self.layout_dependencies(gadget)}
-        width,height = display_size(gadget)
-        if gadget.width_ref and not gadget.hidden and 'width' not in fixed_dimensions(gadget): width = dependencies[gadget.width_ref.lower()][2]
+        dependencies = {g.name.lower(): self.geometry(g, trail,reveal=reveal) for g in self.layout_dependencies(gadget,reveal=reveal)}
+        width,height = display_size(gadget,reveal=reveal)
+        if gadget.width_ref and (not gadget.hidden or reveal) and 'width' not in fixed_dimensions(gadget): width = dependencies[gadget.width_ref.lower()][2]
         x, y = gadget.x, gadget.y
         parent = self.parent_gadget(gadget)
         if parent and parent.frame_style == 'TOOLBAR':
             siblings = self.children(parent.name)
             index = next(i for i,g in enumerate(siblings) if g is gadget)
-            return 1+sum(display_size(g)[0]+1 for g in siblings[:index]),1,width,height
+            return 1+sum(display_size(g,reveal=reveal)[0]+1 for g in siblings[:index]),1,width,height
         if gadget.layout_mode == 'RELATIVE':
             xr, yr = dependencies[gadget.xref.lower()], dependencies[gadget.yref.lower()]
             x = xr[0] + (xr[2] if gadget.xedge == 'XMAX' else 0) + gadget.xoffset
@@ -359,6 +360,35 @@ class Form:
                 x = prev[0]+prev[2]+gadget.hgap if gadget.path == 'RIGHT' else prev[0]-width-gadget.hgap
                 y = prev[1] + {'TOP': 0, 'CENTRE': (prev[3]-height)/2, 'BOTTOM': prev[3]-height}[gadget.valign]
         return x, y, width, height
+
+    def is_hidden(self,gadget):
+        if gadget.hidden:return True
+        if supports_hidden(gadget) and gadget.width_ref:
+            try:return self.geometry(gadget)[2]==0
+            except ValueError:return False
+        return False
+
+    def restored_size(self,gadget):
+        hidden=self.is_hidden(gadget)
+        try:return self.geometry(gadget,reveal=hidden)[2:]
+        except ValueError:
+            if not hidden:raise
+            # A suspended width reference can be missing or cyclic while hidden.
+            return display_size(gadget,reveal=True)
+
+    def display_width(self,gadget):
+        if self.is_hidden(gadget):return 0
+        if gadget.width_ref:
+            try:return native_size(gadget,*self.geometry(gadget)[2:])[0]
+            except ValueError:pass
+        return gadget.width
+
+    def rotate_gadget(self,gadget,direction):
+        key='orientation' if gadget.kind=='line' else 'slider_orientation'
+        if gadget.kind not in ('line','slider') or getattr(gadget,key)==direction:return
+        hidden=self.is_hidden(gadget)
+        change_orientation(gadget,direction,self.restored_size(gadget))
+        gadget.hidden=hidden
 
     def offset(self, gadget):
         x = y = 0
@@ -525,7 +555,7 @@ class Form:
             fixed=fixed_dimensions(g)
             if 'width' in fixed and fixed['width']==0:min_width=0
             if 'height' in fixed and fixed['height']==0:min_height=0
-            if g.hidden:min_width=0
+            if self.is_hidden(g):min_width=0
             if g.width < (0 if fixed.get('width')==0 else 1) or g.height < (0 if fixed.get('height')==0 else 1) or x < -.001 or y < -.001 or width < min_width or height < min_height or x + width > parent_width + .001 or y + height > parent_height + .001:
                 raise ValueError(f'{g.name}: 部品を親コンテナ内に収めてください。')
             if g.background:

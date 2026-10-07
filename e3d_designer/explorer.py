@@ -25,7 +25,8 @@ class ObjectExplorer(QTreeWidget):
         self.root.setFlags(self.root.flags() & ~Qt.ItemIsDragEnabled);self.addTopLevelItem(self.root)
         for index,g in enumerate(form.gadgets):
             icon='🗂️' if g.kind=='frame' and g.frame_style=='TABSET' else '📁' if g.kind=='frame' else icon_for(g) if icon_for else '•'
-            item=QTreeWidgetItem([f'{icon} {g.label or title(g)}  .{g.name}'+(' （非表示）' if g.hidden else '')]);item.setData(0,Qt.UserRole,index);item.setData(0,Qt.UserRole+1,g.name)
+            suffix=' （非表示）' if g.hidden else ' （非表示：幅参照）' if form.is_hidden(g) else ''
+            item=QTreeWidgetItem([f'{icon} {g.label or title(g)}  .{g.name}'+suffix]);item.setData(0,Qt.UserRole,index);item.setData(0,Qt.UserRole+1,g.name)
             if g.kind!='frame':item.setFlags(item.flags() & ~Qt.ItemIsDropEnabled)
             self.nodes[index]=item
         lookup={g.name.lower():self.nodes[i] for i,g in enumerate(form.gadgets)}

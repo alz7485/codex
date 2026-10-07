@@ -113,7 +113,8 @@ def clone_subtree(target,source,index,restore_names=False):
             if detached:
                 ox,oy = source.offset(original);x += ox;y += oy
             gadget.x,gadget.y = x,y
-            gadget.width,gadget.height = native_size(gadget,width,height)
+            gadget.hidden=source.is_hidden(original)
+            gadget.width,gadget.height = native_size(gadget,*source.restored_size(original))
             gadget.layout_mode = 'ABSOLUTE';gadget.xref = gadget.yref = gadget.width_ref = ''
         if restore_names: draft.gadgets.insert(min(original_index,len(draft.gadgets)),gadget)
         else: draft.gadgets.append(gadget)
