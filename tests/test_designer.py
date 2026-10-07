@@ -387,7 +387,7 @@ class ModelTests(unittest.TestCase):
     def test_option_pairs_commands_and_existing_underscore(self):
         for name in ('mode','_mode'):
             f=Form(gadgets=[Gadget(kind='option',name=name,label='Mode',x=2,y=3,items=['First','Second','Third'],item_commands=['FIRST','SECOND',"$p 'third'"])])
-            self.assertIn("OPTION _mode AT X 2 Y 3 'Mode' CALL '$$_mode'\n  VAR LIST _mode PAIRS\n  'First' 'FIRST'\n  'Second' 'SECOND'\n  'Third' |$p 'third'|\n  EXIT",Form.loads(f.dumps()).pml(normalize=False))
+            self.assertIn("OPTION _mode AT X 2 Y 3 'Mode' CALL '$$_mode'\n    VAR LIST _mode PAIRS\n    'First' 'FIRST'\n    'Second' 'SECOND'\n    'Third' |$p 'third'|\n  EXIT",Form.loads(f.dumps()).pml(normalize=False))
             self.assertNotIn('!this.'+name+'.dtext',f.pml(normalize=False))
         f.gadgets[0].item_commands=['FIRST']
         with self.assertRaises(ValueError): f.pml(normalize=False)
@@ -775,7 +775,7 @@ class GuiTests(unittest.TestCase):
     def test_option_pair_commands_edit_and_save(self):
         self.w.add('option')
         self.w.choice_commands.setPlainText('FIRST\nSECOND')
-        self.assertIn(canonical_pml("'Item A' 'FIRST'\n  'Item B' 'SECOND'"),self.w.code.toPlainText())
+        self.assertIn(canonical_pml("'Item A' 'FIRST'\n    'Item B' 'SECOND'"),self.w.code.toPlainText())
         self.assertEqual(Form.loads(self.w.form.dumps()).gadgets[0].item_commands,['FIRST','SECOND'])
         self.assertFalse(self.w.fields['callback'].isEnabled())
 

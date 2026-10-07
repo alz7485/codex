@@ -7,9 +7,9 @@ Setup Form !!tabdemo Dialog Dock Right
     Frame .settings 'Settings'
       Text .name At X 1 Y 1 'Name' Width 24 Is String
       Option _mode At X 1 Y 3 'Mode' Call '$$_mode'
-      Var List _mode Pairs
-      'Mode A' |$p 'Mode A'|
-      'Mode B' |$p 'Mode B'|
+        Var List _mode Pairs
+        'Mode A' |$p 'Mode A'|
+        'Mode B' |$p 'Mode B'|
       Exit
     Exit
     Frame .results 'Results'

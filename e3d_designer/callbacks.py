@@ -11,6 +11,7 @@ def callback_body(form, gadget):
 def join_callback(form, gadget, previous_name):
     if gadget.callback.lower() == previous_name.lower():
         return
+    gadget.callback_expression = ''
     if gadget.callback.lower() == 'default':
         gadget.body = ''
     elif gadget.callback:

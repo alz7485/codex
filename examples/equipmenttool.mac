@@ -8,10 +8,10 @@ Setup Form !!equipmenttool Dialog Dock Right
   Paragraph .heading At X 2 Y 1 Text 'Equipment settings' Width 35
   Text .equipmentName At X 2 Y 3 'Name' Width 28 Is String
   Option _equipmentType At X 2 Y 5 'Type' Call '$$_equipmentType'
-  Var List _equipmentType Pairs
-  'Pump' |$p 'Pump selected'|
-  'Tank' |$p 'Tank selected'|
-  'Vessel' |$p 'Vessel selected'|
+    Var List _equipmentType Pairs
+    'Pump' |$p 'Pump selected'|
+    'Tank' |$p 'Tank selected'|
+    'Vessel' |$p 'Vessel selected'|
   Exit
   Toggle .enabled At X 2 Y 7 'Enabled'
   List .results At X 2 Y 9 'Results' Single Width 40 Height 5

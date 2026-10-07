@@ -13,7 +13,7 @@ def code_slots(form):
     for method in form.extra_methods:yield f'追加メソッド {method.name}',method,'body'
     for event in ('initcall','okcall','cancelcall'): yield event.upper(),form,event
     for g in form.gadgets:
-        for key in ('command','body','view_code'):
+        for key in ('command','body','view_code','callback_expression'):
             yield f'{g.name}: {key}', g, key
         for index in range(len(g.item_commands)):
             yield f'{g.name}: OPTION {index+1}', g.item_commands, index

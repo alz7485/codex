@@ -146,6 +146,7 @@ class Gadget:
     macro_flag: str = ''
     macro_value: str = ''
     tabs: list['Gadget'] = field(default_factory=list, repr=False)
+    callback_expression: str = ''
 
     def __post_init__(self):
         if self.selection_mode == 'MULTI': self.selection_mode = 'MULTIPLE'
@@ -421,6 +422,9 @@ class Form:
         if len(self.gadgets) > 500:
             raise ValueError('部品数は 500 個までです。')
         for g in self.gadgets:
+            if not isinstance(g.callback_expression,str):
+                raise ValueError('取り込んだCALLの文字列が不正です。')
+            literal(g.callback_expression,allow_expansion=True,field='取り込んだCALL')
             if g.layout_mode not in ('ABSOLUTE','AUTO','RELATIVE') or g.path not in ('DOWN','UP','LEFT','RIGHT') or g.halign not in ('LEFT','CENTRE','RIGHT') or g.valign not in ('TOP','CENTRE','BOTTOM') or g.xedge not in ('XMIN','XMAX') or g.yedge not in ('YMIN','YMAX') or g.xanchor not in ('LEFT','RIGHT'):
                 raise ValueError('配置方式・整列・参照辺の指定が不正です。')
             if g.hgap < 0 or g.vgap < 0: raise ValueError('配置間隔は0以上で指定してください。')
@@ -696,6 +700,10 @@ class Form:
         active_methods = {g.callback.lower() for g in self.gadgets if g.callback and has_code(g.body) and g.callback.lower() != 'default'}
         if initial_lines or has_code(default_code) or self.keep_default:active_methods.add('default')
         def active_callback(g):return bool(g.callback and g.callback.lower() in active_methods)
+        def callback_expression(g):
+            if g.callback_expression and re.fullmatch(r'\s*!this\.'+re.escape(g.callback)+r'\s*\(\s*\)\s*',g.callback_expression,re.I):
+                return g.callback_expression
+            return f'!this.{g.callback}()'
         n = lambda v: format(v, '.8g')
         lines = [f'VAR !!{name} {literal(value)}' for name, value in self.variables.items()]
         if self.preamble_code:lines.extend([user_code(self.preamble_code),''])
@@ -738,7 +746,7 @@ class Form:
             width,height = (g.width,g.height) if g.display_mode == 'PIXMAP' else display_size(g)
             width_clause = f'WIDTH.{member_name(g.width_ref)}' if g.width_ref else f'WIDTH {n(width)}'
             at = (f'at x{n(g.x)} y{n(g.y)}' if g.layout_mode == 'ABSOLUTE' else position) + ' ' + width_clause
-            callback = f" callback '!this.{g.callback}()'" if active_callback(g) else ''
+            callback = ' callback '+literal(callback_expression(g),allow_expansion=True) if active_callback(g) else ''
             label = literal(g.label)
             parent = self.parent_gadget(g)
             if parent and parent.frame_style == 'TOOLBAR': position = ''
@@ -765,7 +773,7 @@ class Form:
                     line += f' TEXT {label} {width_clause}'
             elif g.kind == 'text':
                 line = f'TEXT .{g.name} {position} {label}'
-                command = f'!this.macro_{g.name}()' if g.action_mode == 'MACRO' else g.command or (f'!this.{g.callback}()' if active_callback(g) else '')
+                command = f'!this.macro_{g.name}()' if g.action_mode == 'MACRO' else g.command or (callback_expression(g) if active_callback(g) else '')
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
                 line += f' {width_clause} IS {g.value_type}'
             elif g.kind == 'option':
@@ -773,17 +781,17 @@ class Form:
                     line = f'OPTION .{g.name} {position} {label} PIXMAP {width_clause} HEIGHT {n(g.height)}'+callback
                 elif not uses_pairs(g):
                     line = f'OPTION .{g.name} {position} {label} {width_clause}'
-                    command=g.command or (f'!this.{g.callback}()' if active_callback(g) else '')
+                    command=g.command or (callback_expression(g) if active_callback(g) else '')
                     if command:line += ' CALL '+literal(command,allow_expansion=True)
                 else:
                     object_name = '_' + g.name.lstrip('_')
                     line = f"OPTION {object_name} {position} {label}"
                     if not g.item_values:
                         line += f" CALL '$${object_name}'"
-                        line += f'\nVAR LIST {object_name} PAIRS'
+                        line += f'\n  VAR LIST {object_name} PAIRS'
                         commands = g.item_commands or [''] * len(g.items)
                         for display, command in zip(g.items, commands):
-                            line += '\n' + literal(display) + ' ' + literal(command, allow_expansion=True)
+                            line += '\n  ' + literal(display) + ' ' + literal(command, allow_expansion=True)
                         line += '\nEXIT'
             elif g.kind == 'list':
                 selection = 'MULTIPLE' if g.selection_mode == 'MULTI' else g.selection_mode
@@ -820,13 +828,13 @@ class Form:
                 if g.background: line += f' BACKGROUND {int(g.background)}'
                 line += ' PIXMAP' if g.display_mode == 'PIXMAP' else f' {label}'
                 if g.button_role != 'NORMAL': line += ' '+g.button_role
-                command = f'!this.macro_{g.name}()' if g.action_mode == 'MACRO' else g.command or (f'!this.{g.callback}()' if active_callback(g) else '')
+                command = f'!this.macro_{g.name}()' if g.action_mode == 'MACRO' else g.command or (callback_expression(g) if active_callback(g) else '')
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
                 line += f' {width_clause}'
                 if g.display_mode == 'PIXMAP': line += f' HEIGHT {n(g.height)}'
             elif g.kind == 'toggle':
                 line = f'TOGGLE .{g.name} {position}'+(f' PIXMAP {width_clause} HEIGHT {n(g.height)}' if g.display_mode == 'PIXMAP' else f' {label}')
-                command = f'!this.macro_{g.name}()' if g.action_mode == 'MACRO' else g.command or (f'!this.{g.callback}()' if active_callback(g) else '')
+                command = f'!this.macro_{g.name}()' if g.action_mode == 'MACRO' else g.command or (callback_expression(g) if active_callback(g) else '')
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
             else:
                 line = f'{g.kind} .{g.name} {label} {at}' + callback

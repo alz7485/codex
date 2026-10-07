@@ -16,7 +16,7 @@ HEADER = re.compile(r'^\s*DEFINE\s+METHOD\s+\.('+NAME+r')\s*(\(.*\)(?:\s+IS\s+\S
 ARRAY_START = re.compile(r'^!('+NAME+r')\s*=\s*(?:OBJECT\s+)?ARRAY\s*\(\s*\)\s*$',re.I)
 CELL = re.compile(r'^!('+NAME+r')\s*((?:\[\d+\])+)\s*=\s*(.*)$',re.I)
 PROPERTY = re.compile(r'^!this\.('+NAME+r')\.(DTEXT|RTEXT|VAL)\s*=\s*(.*)$',re.I)
-CALL = re.compile(r'^!this\.('+NAME+r')\(\s*\)$',re.I)
+CALL = re.compile(r'^!this\.('+NAME+r')\s*\(\s*\)$',re.I)
 ATTRIBUTE_KINDS = {
     'TAGWID':{'combo'},'TAGWIDTH':{'combo'},'SCROLL':{'combo'},
     'ASPECT':{'view'},'BACKGROUND':{'button','paragraph','list'},
@@ -36,6 +36,11 @@ class MacImportError(ValueError):
     def __init__(self,line,message):
         super().__init__(f'MAC {line}行: {message}')
         self.line=line
+
+
+def empty_signature(signature):
+    """Recognize an argument-free method regardless of spacing inside ()."""
+    return bool(re.fullmatch(r'\(\s*\)',signature.strip()))
 
 
 @dataclass
@@ -419,7 +424,7 @@ class Importer:
         default=source_methods.pop('default',None)
         self.form.auto_default=False
         self.form.keep_default=default is not None
-        if default and default.signature.strip()!='()':raise MacImportError(index+method_rows['default'],'DEFAULTの引数には対応していません。')
+        if default and not empty_signature(default.signature):raise MacImportError(index+method_rows['default'],'DEFAULTの引数には対応していません。')
         before_defaults=copy.deepcopy(self.form)
         defaults_structured=self.read_defaults(default.body) if default else False
         if not defaults_structured:
@@ -429,7 +434,7 @@ class Importer:
                 self.form.default_body=default.body
                 self.warn('DEFAULTは元コードとして保持しました。初期値は「取り込みコード」のDEFAULT欄で編集してください。')
         if constructor:
-            if constructor.signature.strip()!='()':raise MacImportError(index+method_rows[self.form.name.lower()],'フォームのコンストラクタに引数があります。')
+            if not empty_signature(constructor.signature):raise MacImportError(index+method_rows[self.form.name.lower()],'フォームのコンストラクタに引数があります。')
             if self.read_constructor(constructor.body,source_methods):
                 pass
             else:
@@ -443,18 +448,21 @@ class Importer:
             if uses_pairs(gadget):
                 if command.lower()!=('$$'+actual_name(gadget)).lower():raise MacImportError(row,'PAIRS OPTIONのCALLが対象名と一致しません。')
                 continue
-            match=CALL.fullmatch(command)
+            match=CALL.fullmatch(command.strip())
             method=source_methods.get(match.group(1).lower()) if match else None
             if match and match.group(1).lower()=='default' and default:
                 gadget.callback=default.name
+                gadget.callback_expression=command if command!=f'!this.{default.name}()' else ''
                 gadget.body=''
                 continue
             if gadget.kind in ('button','text','toggle') or (gadget.kind=='option' and gadget.display_mode=='TEXT'):
-                if method and method.signature.strip()=='()' and has_code(method.body):
+                if method and empty_signature(method.signature) and has_code(method.body):
                     gadget.callback=method.name;gadget.body=method.body
+                    gadget.callback_expression=command if command!=f'!this.{method.name}()' else ''
                 else:gadget.command=command
-            elif method and method.signature.strip()=='()' and has_code(method.body):
+            elif method and empty_signature(method.signature) and has_code(method.body):
                 gadget.callback=method.name;gadget.body=method.body
+                gadget.callback_expression=command if command!=f'!this.{method.name}()' else ''
             else:raise MacImportError(row,'この部品のCALLを復元できません。引数なしの!this.メソッド()にしてください。')
         linked={g.callback.lower() for g in self.form.gadgets if g.callback}
         callback_counts={}
@@ -620,9 +628,9 @@ class Importer:
                 name=call.group(1).lower()
                 if name=='default':default_rows.append(row);continue
                 method=methods.get(name)
-                referenced=any(CALL.fullmatch(command) and CALL.fullmatch(command).group(1).lower()==name for command,_ in self.callbacks.values())
+                referenced=any(CALL.fullmatch(command.strip()) and CALL.fullmatch(command.strip()).group(1).lower()==name for command,_ in self.callbacks.values())
                 if referenced:return False
-                table=self.read_table(method) if method and method.signature.strip()=='()' else None
+                table=self.read_table(method) if method and empty_signature(method.signature) else None
                 if table:
                     previous=table_names.get(table.name.lower())
                     if previous and previous!=name:return False
