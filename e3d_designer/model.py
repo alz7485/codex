@@ -124,6 +124,7 @@ class Gadget:
     path_axes: str = ''
     path_row_step: bool = False
     frame_at: bool = False
+    frame_size_axes: str = ''
     path: str = 'DOWN'
     halign: str = 'LEFT'
     valign: str = 'TOP'
@@ -474,6 +475,7 @@ class Form:
         if not isinstance(self.gadgets, list) or any(not isinstance(g,Gadget) for g in self.gadgets):
             raise ValueError('部品は配列で指定してください。')
         for g in self.gadgets:
+            if g.frame_size_axes not in ('','W','H','WH'):raise ValueError('FRAMEの寸法指定が不正です。')
             if g.path_axes not in ('','X','Y','XY') or not isinstance(g.path_row_step,bool) or not isinstance(g.frame_at,bool):raise ValueError('PATHの座標軸・縦移動の設定が不正です。')
             if not isinstance(g.hidden,bool):raise ValueError('非表示は真偽値で指定してください。')
             if g.hidden and not supports_hidden(g):raise ValueError(f'{g.name}: この部品はWIDTH 0による非表示に対応していません。')
@@ -855,6 +857,9 @@ class Form:
         def member_name(name):
             target=self.named(name)
             return '_'+name.lstrip('_') if uses_pairs(target) else name
+        # VDIST stays active for later declarations in the same container.
+        # Never drop it to imply the default row step: that changes geometry.
+        vdist_scopes=set()
         def render(g, depth):
             indent = '  '*depth
             for comment in g.comment.splitlines():lines.append(indent+'-- '+comment)
@@ -864,6 +869,9 @@ class Form:
                 right = '-SIZE' if g.xanchor == 'RIGHT' else ''
                 position = f'AT {g.xedge}.{member_name(g.xref)}{right}{delta(g.xoffset)} {g.yedge}.{member_name(g.yref)}{delta(g.yoffset)}'
             elif g.layout_mode == 'AUTO':
+                if g.path_row_step and g.parent.lower() in vdist_scopes:
+                    raise ValueError(f'{g.name}: 同じコンテナ内でVDIST指定後に1行PATHへ戻す設定は再出力できません。「縦移動：1行ずつ」を外して縦間隔を指定するか、座標指定に変更してください。')
+                if not g.path_row_step:vdist_scopes.add(g.parent.lower())
                 commands=[f'PATH {g.path}',f'HDIST {n(g.hgap)}',f'HALIGN {g.halign}',f'VALIGN {g.valign}']
                 if not g.path_row_step:commands.insert(2,f'VDIST {n(g.vgap)}')
                 for command in commands:
@@ -887,7 +895,8 @@ class Form:
                 else:
                     line = f'FRAME .{g.name} {label}'
                     if g.layout_mode != 'ABSOLUTE' or g.frame_at: line += ' '+position
-                    if g.width_ref: line += ' '+width_clause
+                if g.frame_style != 'TABSET' and (g.width_ref or 'W' in g.frame_size_axes):line += ' '+width_clause
+                if 'H' in g.frame_size_axes:line += f' HEIGHT {n(g.height)}'
             elif g.kind == 'line':
                 line = f"LINE .{g.name} {position} '' {g.orientation} {width_clause} HEIGHT {n(height)}"
             elif g.kind == 'paragraph':

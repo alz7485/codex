@@ -740,6 +740,10 @@ class Window(QMainWindow):
         self.hidden=QCheckBox('非表示（WIDTH 0）');self.hidden.toggled.connect(self.update_gadget)
         self.hidden.setToolTip('初期値・コマンド・メソッドを保持し、幅0で出力します。解除すると元の幅に戻します。')
         self.prop_layout.addRow(self.hidden)
+        self.path_rows=QCheckBox('縦移動：1行ずつ（FRAME後は下端）')
+        self.path_rows.setToolTip('外すとVDISTを出力し、部品の端から縦間隔を空けて配置します。PATHの移動固定は維持します。')
+        self.path_rows.toggled.connect(self.change_path_rows)
+        self.prop_layout.current='配置';self.prop_layout.addRow(self.path_rows)
         self.fields['action_mode'].setItemText(0,'手入力のコマンド / メソッド')
         self.fields['action_mode'].setItemText(1,'外部マクロを実行')
         self.fields['macro_flag'].setPlaceholderText('例: buttonFlag（!! は不要・空欄ならフラグなし）')
@@ -1156,6 +1160,21 @@ class Window(QMainWindow):
         self.checkpoint();self.form=candidate;self.selected=index;self._multi_selection.clear();self.refresh()
         self.statusBar().showMessage('座標指定に変更しました。現在の位置を保ったまま移動できます。' if mode=='ABSOLUTE' else '配置方式を変更しました。PATH・相対配置の部品は直接移動できません。')
 
+    def change_path_rows(self,enabled):
+        if self.loading or self.selected is None or self._multi_selection:return
+        original=self.form.gadgets[self.selected]
+        if original.layout_mode!='AUTO' or original.path_row_step==enabled:return
+        candidate=copy.deepcopy(self.form);candidate.gadgets[self.selected].path_row_step=enabled
+        try:candidate.validate()
+        except ValueError as error:
+            self.refresh();self.statusBar().showMessage(str(error));return
+        self.checkpoint();self.form=candidate;self.refresh()
+
+    def inspector_value(self,gadget,key):
+        if key=='width':return self.form.display_width(gadget)
+        if key in ('x','y') and gadget.layout_mode!='ABSOLUTE':return preview_geometry(self.form,gadget)[0 if key=='x' else 1]
+        return getattr(gadget,key)
+
     def select_frame_subtree(self,name):
         index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name and g.kind=='frame'),None)
         if index is None:return
@@ -1436,6 +1455,8 @@ class Window(QMainWindow):
         # Re-enable page parents before evaluating a different gadget's fields.
         for index in range(self.props.count()):self.props.setTabEnabled(index,True)
         self.prop_layout.batching = True
+        self.path_rows.setChecked(gadget.path_row_step)
+        self.prop_layout.setRowVisible(self.path_rows,gadget.layout_mode=='AUTO')
         self.hidden.setChecked(gadget.hidden)
         self.hidden.setEnabled(supports_hidden(gadget))
         self.prop_layout.setRowVisible(self.hidden,supports_hidden(gadget))
@@ -1888,7 +1909,7 @@ class Window(QMainWindow):
             self.enable_layout_fields(g)
             for key, w in self.fields.items():
                 if key in ('parent','xref','yref','width_ref','popup_menu'): continue
-                value = self.form.display_width(g) if key=='width' else getattr(g, key)
+                value = self.inspector_value(g,key)
                 if isinstance(w, QDoubleSpinBox): self.load_number(w,value)
                 elif key == 'action_mode': w.setCurrentIndex(w.findData(value))
                 elif isinstance(w, QComboBox): w.setCurrentText(value)
@@ -2010,6 +2031,7 @@ class Window(QMainWindow):
             item.setPos((x+ox)*SX,(y+oy)*SY); item._sync_geometry = False; item.update()
         if self.selected is not None:
             g = self.form.gadgets[self.selected]; self.loading = True
+            for key in ('x','y'):self.load_number(self.fields[key],self.inspector_value(g,key))
             self.load_number(self.fields['width'],self.form.display_width(g)); self.load_number(self.fields['height'],g.height); self.loading = False
 
     def resize_committed(self, old):
@@ -2119,7 +2141,7 @@ class Window(QMainWindow):
             self.enable_layout_fields(g)
             for key, w in self.fields.items():
                 if key in ('parent','xref','yref','width_ref','popup_menu'): continue
-                v = self.form.display_width(g) if key=='width' else getattr(g, key)
+                v = self.inspector_value(g,key)
                 if isinstance(w, QDoubleSpinBox): self.load_number(w,v)
                 elif key == 'action_mode': w.setCurrentIndex(w.findData(v))
                 elif isinstance(w, QComboBox): w.setCurrentText(v)

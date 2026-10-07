@@ -152,6 +152,8 @@ class PathLayoutLockGuiTests(unittest.TestCase):
         self.assertTrue(self.w.form.named('Rows').path_row_step)
         self.w.fields['vgap'].setValue(2)
         g=self.w.form.named('Rows');self.assertFalse(g.path_row_step);self.assertEqual(g.layout_mode,'AUTO')
+        with self.assertRaisesRegex(ValueError,'Partial.*VDIST'):self.w.form.pml()
+        self.w.choose_row(2);self.w.path_rows.setChecked(False)
         self.assertIn('Vdist 2',self.w.form.pml())
 
     def test_import_edit_export_keeps_path_until_explicit_switch(self):
