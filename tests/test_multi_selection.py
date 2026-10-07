@@ -32,10 +32,11 @@ class MultiSelectionTests(unittest.TestCase):
         event=QContextMenuEvent(QContextMenuEvent.Mouse,point,widget.mapToGlobal(point))
         self.app.sendEvent(widget,event);self.app.processEvents()
         popup=self.app.activePopupWidget();self.assertIsNotNone(popup)
-        self.assertEqual([a.text() for a in popup.actions()],['子を含めてすべて選択'])
+        self.assertIn('子を含めてすべて選択',[a.text() for a in popup.actions()])
         return popup
     def activate_context_selection(self,popup):
-        QTest.mouseClick(popup,Qt.LeftButton,Qt.NoModifier,popup.actionGeometry(popup.actions()[0]).center())
+        action=next(a for a in popup.actions() if a.text()=='子を含めてすべて選択')
+        QTest.mouseClick(popup,Qt.LeftButton,Qt.NoModifier,popup.actionGeometry(action).center())
         self.app.processEvents()
     def test_button_order_in_two_rows(self):
         expected=['button','option','frame','toggle','line','menubar','container','text','paragraph','list','slider','commandline','selector','toolbar']

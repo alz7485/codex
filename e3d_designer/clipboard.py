@@ -108,16 +108,21 @@ def clone_subtree(target,source,index,restore_names=False):
         detached = bool(original.parent and original.parent.lower() not in subtree and original.parent.lower() not in existing)
         if detached: gadget.parent = ''
         missing = any(name and name.lower() not in available for name in (gadget.xref,gadget.yref,gadget.width_ref))
-        if detached or missing or (gadget.layout_mode == 'AUTO' and not restore_names):
+        if detached or missing:
             x,y,width,height = source.geometry(original)
             if detached:
                 ox,oy = source.offset(original);x += ox;y += oy
             gadget.x,gadget.y = x,y
             gadget.hidden=source.is_hidden(original)
             gadget.width,gadget.height = native_size(gadget,*source.restored_size(original))
-            gadget.layout_mode = 'ABSOLUTE';gadget.xref = gadget.yref = gadget.width_ref = ''
+            if gadget.layout_mode!='AUTO':gadget.layout_mode = 'ABSOLUTE'
+            gadget.xref = gadget.yref = gadget.width_ref = ''
+        if gadget.layout_mode=='AUTO' and not gadget.path_axes:gadget.path_axes='XY'
         if restore_names: draft.gadgets.insert(min(original_index,len(draft.gadgets)),gadget)
         else: draft.gadgets.append(gadget)
+        if gadget.layout_mode=='AUTO' and draft.previous(gadget) is None:
+            if 'X' in gadget.path_axes:gadget.x=0
+            if 'Y' in gadget.path_axes:gadget.y=0
     for _,owner,key in code_slots(draft):
         if id(owner) in owners:
             write_slot(owner,key,rewrite_code(read_slot(owner,key),source,draft,members,methods,preserve_literals=True))

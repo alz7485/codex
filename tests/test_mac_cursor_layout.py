@@ -60,7 +60,7 @@ class MacCursorLayoutTests(unittest.TestCase):
                        "Button .B 'B' Width 5\nButton .C 'C' Width 5")
         self.assertEqual([self.pos(form,n) for n in ('A','B','C')],[(0,0),(0,1),(0,2)])
         self.assertEqual(form.named('A').height,5)
-        self.assertTrue(all(g.layout_mode=='ABSOLUTE' for g in form.gadgets))
+        self.assertTrue(all(g.layout_mode=='AUTO' for g in form.gadgets))
         restored=import_mac(form.pml()).form
         self.assertEqual([self.pos(restored,n) for n in ('A','B','C')],[(0,0),(0,1),(0,2)])
 

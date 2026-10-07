@@ -26,8 +26,10 @@ class ObjectExplorer(QTreeWidget):
         for index,g in enumerate(form.gadgets):
             icon='🗂️' if g.kind=='frame' and g.frame_style=='TABSET' else '📁' if g.kind=='frame' else icon_for(g) if icon_for else '•'
             suffix=' （非表示）' if g.hidden else ' （非表示：幅参照）' if form.is_hidden(g) else ''
+            if g.layout_mode=='AUTO':suffix+=' 🔒PATH'
             item=QTreeWidgetItem([f'{icon} {g.label or title(g)}  .{g.name}'+suffix]);item.setData(0,Qt.UserRole,index);item.setData(0,Qt.UserRole+1,g.name)
             if g.kind!='frame':item.setFlags(item.flags() & ~Qt.ItemIsDropEnabled)
+            if g.layout_mode!='ABSOLUTE' and not form.is_tab_page(g):item.setFlags(item.flags() & ~Qt.ItemIsDragEnabled)
             self.nodes[index]=item
         lookup={g.name.lower():self.nodes[i] for i,g in enumerate(form.gadgets)}
         for index,g in enumerate(form.gadgets):lookup.get(g.parent.lower(),self.root).addChild(self.nodes[index])
@@ -67,6 +69,7 @@ class ObjectExplorer(QTreeWidget):
         if len(self.selectedItems())>1:return
         self._drag_index=self.currentRow()
         if self._drag_index<0:return
+        if not self.currentItem().flags() & Qt.ItemIsDragEnabled:return
         # Own the drag so Qt cannot remove tree rows after our model transaction.
         drag=QDrag(self);drag.setMimeData(self.mimeData(self.selectedItems()))
         drag.setPixmap(self.viewport().grab(self.visualItemRect(self.currentItem())))

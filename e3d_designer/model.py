@@ -121,6 +121,9 @@ class Gadget:
     parent: str = ''
     body: str = ''
     layout_mode: str = 'ABSOLUTE'
+    path_axes: str = ''
+    path_row_step: bool = False
+    frame_at: bool = False
     path: str = 'DOWN'
     halign: str = 'LEFT'
     valign: str = 'TOP'
@@ -302,8 +305,8 @@ class Form:
         if gadget.layout_mode == 'RELATIVE': names += [gadget.xref, gadget.yref]
         if gadget.layout_mode == 'AUTO':
             previous = self.previous(gadget)
-            if not previous: raise ValueError(f'{gadget.name}: 自動配置の前に基準部品を配置してください。')
-            names.append(previous.name)
+            if not previous and not gadget.path_axes: raise ValueError(f'{gadget.name}: 自動配置の前に基準部品を配置してください。')
+            if previous:names.append(previous.name)
         result = []
         for name in names:
             target = self.named(name)
@@ -324,7 +327,7 @@ class Form:
             visiting.remove(key); done.add(key); result.append(g)
         for g in self.children(parent): visit(g)
         for index, gadget in enumerate(result):
-            if gadget.layout_mode == 'AUTO' and (index == 0 or result[index-1] is not self.previous(gadget)):
+            if gadget.layout_mode == 'AUTO' and self.previous(gadget) is not None and (index == 0 or result[index-1] is not self.previous(gadget)):
                 raise ValueError(f'{gadget.name}: 自動配置の直前に基準部品が来るよう部品順と参照を変更してください。')
         return result
 
@@ -351,15 +354,31 @@ class Form:
             x = xr[0] + (xr[2] if gadget.xedge == 'XMAX' else 0) + gadget.xoffset
             if gadget.xanchor == 'RIGHT': x -= width
             y = yr[1] + (yr[3] if gadget.yedge == 'YMAX' else 0) + gadget.yoffset
-        elif gadget.layout_mode == 'AUTO':
-            prev = dependencies[self.previous(gadget).name.lower()]
+        elif gadget.layout_mode == 'AUTO' and self.previous(gadget) is not None:
+            previous=self.previous(gadget);prev = dependencies[previous.name.lower()]
+            original_x,original_y=x,y
             if gadget.path in ('DOWN', 'UP'):
                 x = prev[0] + {'LEFT': 0, 'CENTRE': (prev[2]-width)/2, 'RIGHT': prev[2]-width}[gadget.halign]
-                y = prev[1]+prev[3]+gadget.vgap if gadget.path == 'DOWN' else prev[1]-height-gadget.vgap
+                step=prev[3]+gadget.vgap if gadget.path=='DOWN' else height+gadget.vgap
+                if gadget.path_row_step:step=prev[3]+1 if gadget.path=='DOWN' and previous.kind=='frame' else 1
+                y=prev[1]+step if gadget.path=='DOWN' else prev[1]-step
             else:
                 x = prev[0]+prev[2]+gadget.hgap if gadget.path == 'RIGHT' else prev[0]-width-gadget.hgap
                 y = prev[1] + {'TOP': 0, 'CENTRE': (prev[3]-height)/2, 'BOTTOM': prev[3]-height}[gadget.valign]
+            if gadget.path_axes and 'X' not in gadget.path_axes:x=original_x
+            if gadget.path_axes and 'Y' not in gadget.path_axes:y=original_y
         return x, y, width, height
+
+    def change_layout(self,gadget,mode):
+        if mode==gadget.layout_mode:return
+        x,y,_,_=self.geometry(gadget)
+        gadget.layout_mode=mode
+        if mode=='ABSOLUTE':
+            gadget.x,gadget.y=x,y;gadget.path_axes='';gadget.xref=gadget.yref=''
+            if gadget.kind=='frame':gadget.frame_at=True
+        elif mode=='AUTO':
+            gadget.path_axes='XY';gadget.xref=gadget.yref=''
+            if self.previous(gadget) is None:gadget.x=gadget.y=0
 
     def is_hidden(self,gadget):
         if gadget.hidden:return True
@@ -455,6 +474,7 @@ class Form:
         if not isinstance(self.gadgets, list) or any(not isinstance(g,Gadget) for g in self.gadgets):
             raise ValueError('部品は配列で指定してください。')
         for g in self.gadgets:
+            if g.path_axes not in ('','X','Y','XY') or not isinstance(g.path_row_step,bool) or not isinstance(g.frame_at,bool):raise ValueError('PATHの座標軸・縦移動の設定が不正です。')
             if not isinstance(g.hidden,bool):raise ValueError('非表示は真偽値で指定してください。')
             if g.hidden and not supports_hidden(g):raise ValueError(f'{g.name}: この部品はWIDTH 0による非表示に対応していません。')
             for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','combo_scroll','combo_tagwid','option_style','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method','display_mode','pixmap_path','popup_menu','database','button_role','action_mode','macro_path','macro_flag','macro_value','comment'):
@@ -844,11 +864,13 @@ class Form:
                 right = '-SIZE' if g.xanchor == 'RIGHT' else ''
                 position = f'AT {g.xedge}.{member_name(g.xref)}{right}{delta(g.xoffset)} {g.yedge}.{member_name(g.yref)}{delta(g.yoffset)}'
             elif g.layout_mode == 'AUTO':
-                for command in (f'PATH {g.path}',f'HDIST {n(g.hgap)}',f'VDIST {n(g.vgap)}',f'HALIGN {g.halign}',f'VALIGN {g.valign}'):
+                commands=[f'PATH {g.path}',f'HDIST {n(g.hgap)}',f'HALIGN {g.halign}',f'VALIGN {g.valign}']
+                if not g.path_row_step:commands.insert(2,f'VDIST {n(g.vgap)}')
+                for command in commands:
                     lines.append(indent+command)
                 previous = self.previous(g)
-                lines.append(indent+f'-- Auto placement follows {previous.name}')
-                position = ''
+                if previous:lines.append(indent+f'-- Auto placement follows {previous.name}')
+                position = f'AT Y {n(g.y)}' if g.path_axes=='X' else f'AT X {n(g.x)}' if g.path_axes=='Y' else ''
             width,height = (g.width,g.height) if g.display_mode == 'PIXMAP' else display_size(g)
             if g.hidden:width=0
             width_clause = f'WIDTH.{member_name(g.width_ref)}' if g.width_ref and not g.hidden else f'WIDTH {n(width)}'
@@ -864,7 +886,7 @@ class Form:
                     line = f'FRAME .{g.name} TABSET {position} {label} {width_clause}'
                 else:
                     line = f'FRAME .{g.name} {label}'
-                    if g.layout_mode != 'ABSOLUTE': line += ' '+position
+                    if g.layout_mode != 'ABSOLUTE' or g.frame_at: line += ' '+position
                     if g.width_ref: line += ' '+width_clause
             elif g.kind == 'line':
                 line = f"LINE .{g.name} {position} '' {g.orientation} {width_clause} HEIGHT {n(height)}"

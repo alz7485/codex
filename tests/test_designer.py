@@ -940,16 +940,20 @@ class GuiTests(unittest.TestCase):
         QTest.mouseRelease(self.w.objects.viewport(),Qt.LeftButton,Qt.NoModifier,position)
         self.assertEqual(self.w.fields['name'].text(),'second')
 
-    def test_list_move_preserves_parents_and_reports_invalid_auto_order(self):
+    def test_list_move_requires_explicit_coordinate_mode_for_auto_object(self):
         group=Gadget(kind='frame',name='group',width=30,height=10)
         a=Gadget(name='a',parent='group')
         b=Gadget(name='b',parent='group',layout_mode='AUTO')
         self.w.form=Form(gadgets=[group,a,b]);self.w.selected=2;self.w.refresh()
         self.w.objects.move_item(2,'group',1)
         self.app.processEvents()
-        self.assertEqual([g.name for g in self.w.form.gadgets],['group','b','a'])
+        self.assertEqual([g.name for g in self.w.form.gadgets],['group','a','b'])
         self.assertEqual((a.parent,b.parent),('group','group'))
-        self.assertIn(canonical_pml('出力できません'),self.w.code.toPlainText())
-        self.w.undo();self.assertNotIn(canonical_pml('出力できません'),self.w.code.toPlainText())
+        self.assertEqual(self.w.form.named('b').layout_mode,'AUTO')
+        self.w.change_selected_layout('ABSOLUTE','b')
+        self.w.objects.move_item(2,'group',1);self.app.processEvents()
+        self.assertEqual([g.name for g in self.w.form.gadgets],['group','b','a'])
+        self.assertNotIn(canonical_pml('出力できません'),self.w.code.toPlainText())
+        self.w.undo();self.w.undo();self.assertEqual(self.w.form.named('b').layout_mode,'AUTO')
 
 if __name__=='__main__': unittest.main()

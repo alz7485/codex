@@ -686,6 +686,11 @@ class Window(QMainWindow):
         self.selection_hint=QLabel();self.selection_hint.setWordWrap(True)
         self.selection_hint.setStyleSheet('color: #46566b; padding: 4px;')
         rl.addWidget(self.selection_hint)
+        quick_row=QHBoxLayout();quick_row.addWidget(QLabel('配置方式'))
+        self.quick_layout=QComboBox()
+        for label,mode in (('座標指定（移動可）','ABSOLUTE'),('PATH（配置を保持）','AUTO'),('相対配置','RELATIVE')):self.quick_layout.addItem(label,mode)
+        self.quick_layout.currentIndexChanged.connect(lambda:self.change_selected_layout(self.quick_layout.currentData()))
+        quick_row.addWidget(self.quick_layout);rl.addLayout(quick_row)
         self.props = QTabWidget(); self.prop_layout = PropertyPages(self.props)
         self.fields = {}
         pairs = {}
@@ -721,7 +726,9 @@ class Window(QMainWindow):
             action_keys={'callback','command','popup_menu','action_mode','macro_path','macro_flag','macro_value'}
             self.prop_layout.current='配置' if key in layout_keys else '内容' if key in content_keys else '動作' if key in action_keys else '基本'
             if key in ('name','callback'):label+='（任意変更）'
-            self.fields[key] = w; self.prop_layout.addRow(label, w,pairs.get(key)); self.connect_field(w, self.update_gadget)
+            self.fields[key] = w; self.prop_layout.addRow(label, w,pairs.get(key))
+            if key=='layout_mode':w.currentTextChanged.connect(self.change_selected_layout)
+            else:self.connect_field(w, self.update_gadget)
             if key in ('name','callback','table_method','macro_flag','macro_value'):
                 w.setToolTip('自動設定・自動生成されます。管理用の名前にしたい場合だけ変更してください。')
         self.fields['action_mode'].setItemData(0,'CODE');self.fields['action_mode'].setItemData(1,'MACRO')
@@ -1088,10 +1095,13 @@ class Window(QMainWindow):
         if not isinstance(item,Item):return
         if item.gadget.kind=='frame':
             self.frame_selection_popup(item.gadget.name,self.view,self.view.viewport().mapToGlobal(position));return
-        if not item.gadget.popup_menu:return
+        if not item.gadget.popup_menu:
+            popup=QMenu(self.view);self.add_layout_actions(popup,item.gadget.name)
+            popup.setAttribute(Qt.WA_DeleteOnClose);popup.popup(self.view.viewport().mapToGlobal(position));return
         source = next((menu for menu in self.form.menus if menu.popup and menu.name.lower() == item.gadget.popup_menu.lower()),None)
         if source is None: return
         popup = QMenu(self.view)
+        self.add_layout_actions(popup,item.gadget.name);popup.addSeparator()
         for entry in source.items:
             action = popup.addAction(entry.label)
             action.triggered.connect(lambda checked=False,command=entry.command:self.statusBar().showMessage('E3D で実行するコマンド: '+command))
@@ -1105,12 +1115,46 @@ class Window(QMainWindow):
         gadget=self.form.gadgets[index]
         if gadget.kind=='frame':
             self.frame_selection_popup(gadget.name,self.objects,self.objects.viewport().mapToGlobal(position))
+        else:
+            popup=QMenu(self.objects);self.add_layout_actions(popup,gadget.name)
+            popup.setAttribute(Qt.WA_DeleteOnClose);popup.popup(self.objects.viewport().mapToGlobal(position))
 
     def frame_selection_popup(self,name,parent,position):
         popup=QMenu(parent)
+        self.add_layout_actions(popup,name);popup.addSeparator()
         action=popup.addAction('子を含めてすべて選択')
         action.triggered.connect(lambda checked=False:self.select_frame_subtree(name))
         popup.setAttribute(Qt.WA_DeleteOnClose);popup.popup(position)
+
+    def add_layout_actions(self,popup,name):
+        gadget=self.form.named(name)
+        if gadget is None:return
+        parent=self.form.parent_gadget(gadget)
+        allowed=not self.form.is_tab_page(gadget) and not (parent and parent.frame_style=='TOOLBAR')
+        for label,mode in (('座標指定にする（移動可）','ABSOLUTE'),('PATH配置にする（移動を固定）','AUTO')):
+            action=popup.addAction(label);action.setEnabled(allowed and gadget.layout_mode!=mode)
+            action.triggered.connect(lambda checked=False,n=name,m=mode:self.change_selected_layout(m,n))
+
+    def change_selected_layout(self,mode,name=None):
+        if self.loading:return
+        index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name),None) if name else self.selected
+        if index is None:return
+        original=self.form.gadgets[index];parent=self.form.parent_gadget(original)
+        if original.layout_mode==mode:return
+        if self.form.is_tab_page(original) or (parent and parent.frame_style=='TOOLBAR'):return
+        candidate=copy.deepcopy(self.form);g=candidate.gadgets[index]
+        try:
+            candidate.change_layout(g,mode)
+            if mode=='RELATIVE':
+                siblings=[other for other in candidate.children(g.parent) if other is not g]
+                if siblings:
+                    if not g.xref:g.xref=siblings[0].name
+                    if not g.yref:g.yref=siblings[0].name
+            candidate.validate()
+        except ValueError as error:
+            self.refresh();self.statusBar().showMessage(str(error));return
+        self.checkpoint();self.form=candidate;self.selected=index;self._multi_selection.clear();self.refresh()
+        self.statusBar().showMessage('座標指定に変更しました。現在の位置を保ったまま移動できます。' if mode=='ABSOLUTE' else '配置方式を変更しました。PATH・相対配置の部品は直接移動できません。')
 
     def select_frame_subtree(self,name):
         index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name and g.kind=='frame'),None)
@@ -1357,6 +1401,9 @@ class Window(QMainWindow):
 
     def enable_layout_fields(self, gadget):
         mode = gadget.layout_mode
+        parent=self.form.parent_gadget(gadget)
+        self.quick_layout.blockSignals(True);self.quick_layout.setCurrentIndex(self.quick_layout.findData(mode));self.quick_layout.blockSignals(False)
+        self.quick_layout.setEnabled(not self.form.is_tab_page(gadget) and not (parent and parent.frame_style=='TOOLBAR'))
         self.fields['layout_mode'].setEnabled(True)
         for key in ('width','height'):
             pixel = gadget.display_mode == 'PIXMAP'
@@ -1366,6 +1413,8 @@ class Window(QMainWindow):
             self.fields[key].setSingleStep(.1)
         for key in ('x','y'): self.fields[key].setEnabled(mode == 'ABSOLUTE')
         for key in ('path','halign','valign','hgap','vgap'): self.fields[key].setEnabled(mode == 'AUTO')
+        self.fields['vgap'].setToolTip('通常は1行ずつ移動し、FRAME後は下端の1行下です。この値を変更するとVDISTを出力し、部品端からの間隔になります。' if gadget.path_row_step else '')
+        self.quick_layout.setToolTip('PATH・相対配置ではドラッグと矢印キーによる移動を固定します。座標指定への変更時は現在の位置を保持します。')
         for key in ('xref','xedge','xanchor','xoffset','yref','yedge','yoffset'): self.fields[key].setEnabled(mode == 'RELATIVE')
         self.fields['width_ref'].setEnabled(not gadget.hidden and gadget.display_mode != 'PIXMAP' and 'width' not in fixed_dimensions(gadget) and gadget.kind not in ('toggle','option','rtoggle'))
         self.fields['width'].setEnabled(dimension_editable(gadget,'width'))
@@ -1699,6 +1748,7 @@ class Window(QMainWindow):
         g.comment = self.gadget_comment.toPlainText()
         old_action = g.action_mode
         old_mode = g.list_mode
+        old_vgap=g.vgap
         old_name = g.name
         old_role = g.button_role
         old_display = g.display_mode
@@ -1714,6 +1764,7 @@ class Window(QMainWindow):
             if (old_display == 'PIXMAP' and key in ('width','height','width_ref')) or key in old_fixed:continue
             value = w.currentData() if key in ('parent','xref','yref','width_ref','popup_menu','action_mode') else self.edited_number(w,getattr(g,key)) if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
             setattr(g, key, value)
+        if g.vgap!=old_vgap:g.path_row_step=False
         g.hidden=self.hidden.isChecked() if supports_hidden(g) else False
         if direction_key and getattr(g,direction_key) != old_direction:
             new_direction = getattr(g,direction_key);setattr(g,direction_key,old_direction)
@@ -1889,6 +1940,8 @@ class Window(QMainWindow):
     def move_tree_gadget(self,index,parent_name,before=-1):
         if self.loading or not 0<=index<len(self.form.gadgets):return
         g=self.form.gadgets[index];parent=self.form.named(parent_name) if parent_name else None
+        if g.layout_mode!='ABSOLUTE' and not self.form.is_tab_page(g):
+            self.statusBar().showMessage('配置方式を「座標指定」に変更してから移動・並べ替えしてください。');return
         if parent and parent.frame_style=='TABSET' and not self.form.is_tab_page(g):
             parent=self.current_tab_page(parent)
             if parent is None:
@@ -2093,6 +2146,8 @@ class Window(QMainWindow):
         index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name),None)
         if index is None:return
         candidate=copy.deepcopy(self.form);g=candidate.gadgets[index]
+        if g.layout_mode!='ABSOLUTE':
+            QTimer.singleShot(0,self.refresh);self.statusBar().showMessage('配置方式を「座標指定」に変更してから移動してください。');return
         try:
             _,_,width,height=candidate.geometry(g)
             saved_size=candidate.restored_size(g);hidden=candidate.is_hidden(g)

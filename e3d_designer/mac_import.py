@@ -403,6 +403,7 @@ class Importer:
             if gadget.kind=='view':gadget.channels='NONE'
             if gadget.kind=='textpane':gadget.fixed_font=False
             present=set();self.attributes(tokens,gadget,present)
+            if gadget.kind=='frame' and 'position' in present:gadget.frame_at=True
             self.placements[gadget.name]=layout.get(parent,{}).copy()
             self.placements[gadget.name]['path']=current_path
             for field,value in self.placements[gadget.name].items():setattr(gadget,field,value)
@@ -854,6 +855,11 @@ class Importer:
                             y+= {'TOP':0,'CENTRE':(ph-ch)/2,'BOTTOM':ph-ch}[settings.get('valign','TOP')]
                     if 'x' not in present:child.x=x
                     if 'y' not in present:child.y=y
+                    if not {'x','y'}<=present:
+                        child.layout_mode='AUTO'
+                        child.path_axes=''.join(axis.upper() for axis in ('x','y') if axis not in present)
+                        child.path_row_step='vgap' not in settings
+                        if child.path_row_step:child.vgap=1
                 previous=child
         place_children('')
         for gadget in self.form.gadgets:
