@@ -101,7 +101,8 @@ class AuditGuiRegressionTests(unittest.TestCase):
 
     def test_cut_restore_references_order_repeated_paste_and_undo(self):
         form=Form(gadgets=[Gadget(name='base',width=10),Gadget(kind='text',name='follower',layout_mode='RELATIVE',xref='base',yref='base',xedge='XMAX',yedge='YMIN',width=10)])
-        self.load(form);self.w.cut_gadget();self.w.paste_gadget()
+        # Cut the dependent part; cutting its referenced base is now blocked.
+        self.load(form,1);self.w.cut_gadget();self.w.paste_gadget()
         self.assertEqual([g.name for g in self.w.form.gadgets],['base','follower'])
         self.assertEqual(self.w.form.gadgets[1].xref,'base');self.w.form.validate()
         with tempfile.TemporaryDirectory() as folder:

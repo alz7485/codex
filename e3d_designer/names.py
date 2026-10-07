@@ -2,7 +2,7 @@
 import copy
 import re
 from .model import IDENTIFIER,uses_pairs
-from .pml_syntax import reference_mask,own_reference_pattern
+from .pml_syntax import reference_mask,own_reference_pattern,method_call_sites
 from .symbols import form_reference,SYMBOL_NAME,split_form_reference
 
 
@@ -36,7 +36,44 @@ def actual_name(g):
     return '_'+g.name.lstrip('_') if uses_pairs(g) else g.name
 
 
-def rewrite_code(value, source_form, target_form, members, methods=None, *, preserve_literals=False):
+def member_references(value, form):
+    """Return executable own-form member references, excluding method calls."""
+    masked=reference_mask(value,form)
+    pattern=re.compile(own_reference_pattern(form)+r'\.([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_]|\s*\()',re.I)
+    return [(match.group(1),match.group(2)) for match in pattern.finditer(masked)]
+
+
+def deletion_dependencies(form, removed):
+    """Describe surviving references before deleting a subtree transactionally."""
+    removed={name.lower() for name in removed}
+    deleted=[g for g in form.gadgets if g.name.lower() in removed]
+    owners={id(g) for g in deleted}|{id(g.item_commands) for g in deleted}
+    members={actual_name(g).lower() for g in deleted}
+    members.update((g.name+'Control').lower() for g in deleted if g.kind=='container')
+    def generated_methods(g):
+        result={g.callback.lower()} if g.callback and g.callback.lower()!='default' else set()
+        if g.action_mode=='MACRO':result.add(('macro_'+g.name).lower())
+        if g.kind=='list' and g.list_mode=='TABLE':result.add((g.table_method or 'populate_'+g.name).lower())
+        return result
+    methods=set().union(*(generated_methods(g) for g in deleted))
+    for g in form.gadgets:
+        if g.name.lower() not in removed:methods-=generated_methods(g)
+    methods-={m.name.lower() for m in form.extra_methods}
+    dependencies=[]
+    for g in form.gadgets:
+        if g.name.lower() in removed:continue
+        for key in ('xref','yref','width_ref'):
+            if getattr(g,key).lower() in removed:dependencies.append(f'{g.name}: {key}')
+    for label,owner,key in code_slots(form):
+        if id(owner) in owners:continue
+        if any(name.lower() in members for _,name in member_references(read_slot(owner,key),form)):
+            dependencies.append(label)
+        elif any(name.lower() in methods for _,_,name in method_call_sites(read_slot(owner,key),form)):
+            dependencies.append(label)
+    return list(dict.fromkeys(dependencies))
+
+
+def rewrite_code(value, source_form, target_form, members, methods=None, *, preserve_literals=True):
     """Replace qualified symbols in one pass, without cascading replacements."""
     members = {key.lower():name for key,name in members.items()}
     methods = {key.lower():name for key,name in (methods or {}).items()}
@@ -69,7 +106,7 @@ def reference_locations(form, kind, name):
     locations = []
     for label,owner,key in code_slots(form):
         if kind=='local_variable' and not (owner is form and key in ('preamble_code','after_show_code')):continue
-        count = len(pattern.findall(read_slot(owner,key)))
+        count = len(pattern.findall(reference_mask(read_slot(owner,key),form)))
         if count: locations.append((label,count))
     if kind == 'gadget':
         stored = next((g.name for g in form.gadgets if actual_name(g).lower()==name.lower()),name)
@@ -146,6 +183,7 @@ def rename_many(form, changes, update_code=True):
         pattern = re.compile(r'(?<![A-Za-z0-9_!.])(!this|'+re.escape(form.symbol)+r'(?![A-Za-z0-9_])|!![A-Za-z_][A-Za-z0-9_]*|![A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?',re.I)
         for _,owner,attribute in code_slots(result):
             value = read_slot(owner,attribute)
+            masked=reference_mask(value,form)
             def replace(match):
                 prefix,member = match.groups()
                 own = prefix.lower() in ('!this',form.symbol.lower())
@@ -157,10 +195,13 @@ def rename_many(form, changes, update_code=True):
                 if member is None: return target_prefix
                 target_member = member
                 if own:
-                    method_call = value[match.end():].lstrip().startswith('(')
+                    method_call = masked[match.end():].lstrip().startswith('(')
                     target_member = methods.get(member.lower(),member) if method_call else members.get(member.lower(),methods.get(member.lower(),member))
                 return target_prefix+'.'+target_member
-            write_slot(owner,attribute,pattern.sub(replace,value))
+            pieces=[];cursor=0
+            for match in pattern.finditer(masked):
+                pieces.extend((value[cursor:match.start()],replace(match)));cursor=match.end()
+            pieces.append(value[cursor:]);write_slot(owner,attribute,''.join(pieces))
     result.validate()
     return result
 

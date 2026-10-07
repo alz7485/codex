@@ -31,7 +31,7 @@ class RecoveryStore:
     def write(self,form,source=None,pending_variables=None):
         data={'version':1,'saved_at':datetime.now().astimezone().isoformat(timespec='seconds'),
               'source':str(Path(source).resolve()) if source else None,
-              'design':form.dumps(),'pending_variables':pending_variables}
+              'design':form.dumps(allow_incomplete=True),'pending_variables':pending_variables}
         encoded=json.dumps(data,ensure_ascii=False,indent=2).encode('utf-8')
         self.directory.mkdir(parents=True,exist_ok=True)
         if not self.lock.isLocked() and not self.lock.tryLock(0):raise OSError('バックアップのロックを取得できません。')

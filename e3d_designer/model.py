@@ -10,6 +10,12 @@ IDENTIFIER = re.compile(r'[A-Za-z][A-Za-z0-9_]*\Z')
 CHAR_WIDTH, LINE_HEIGHT = 10, 26
 
 
+def pml_number(value):
+    """Shortest round-trip spelling; UI rounding must not change exported values."""
+    value=repr(value)
+    return value[:-2] if value.endswith('.0') else value
+
+
 def uses_pairs(gadget):
     return gadget.kind == 'option' and gadget.display_mode == 'TEXT' and gadget.option_style == 'PAIRS'
 
@@ -334,16 +340,20 @@ class Form:
                 raise ValueError(f'{gadget.name}: 自動配置の直前に基準部品が来るよう部品順と参照を変更してください。')
         return result
 
-    def geometry(self, gadget, trail=None,*,reveal=False):
+    def geometry(self, gadget, trail=None,*,reveal=False,_memo=None):
+        # Cache only this resolution pass; edits and Undo never reuse stale geometry.
+        memo={} if _memo is None else _memo
         trail = set() if trail is None else set(trail)
         key = gadget.name.lower()
         if key in trail: raise ValueError('配置・幅の循環参照を解消してください。')
+        cache_key=id(gadget)
+        if cache_key in memo:return memo[cache_key]
         trail.add(key)
         parent = self.parent_gadget(gadget)
         if parent and parent.frame_style=='TABSET':
-            _,_,width,height=self.geometry(parent,trail,reveal=reveal)
-            return 0,0,width,height
-        dependencies = {g.name.lower(): self.geometry(g, trail,reveal=reveal) for g in self.layout_dependencies(gadget,reveal=reveal)}
+            _,_,width,height=self.geometry(parent,trail,reveal=reveal,_memo=memo)
+            memo[cache_key]=(0,0,width,height);return memo[cache_key]
+        dependencies = {g.name.lower(): self.geometry(g, trail,reveal=reveal,_memo=memo) for g in self.layout_dependencies(gadget,reveal=reveal)}
         width,height = display_size(gadget,reveal=reveal)
         if gadget.width_ref and (not gadget.hidden or reveal) and 'width' not in fixed_dimensions(gadget): width = dependencies[gadget.width_ref.lower()][2]
         x, y = gadget.x, gadget.y
@@ -351,7 +361,8 @@ class Form:
         if parent and parent.frame_style == 'TOOLBAR':
             siblings = self.children(parent.name)
             index = next(i for i,g in enumerate(siblings) if g is gadget)
-            return 1+sum(display_size(g,reveal=reveal)[0]+1 for g in siblings[:index]),1,width,height
+            memo[cache_key]=(1+sum(display_size(g,reveal=reveal)[0]+1 for g in siblings[:index]),1,width,height)
+            return memo[cache_key]
         if gadget.layout_mode == 'RELATIVE':
             xr, yr = dependencies[gadget.xref.lower()], dependencies[gadget.yref.lower()]
             x = xr[0] + (xr[2] if gadget.xedge == 'XMAX' else 0) + gadget.xoffset
@@ -370,7 +381,7 @@ class Form:
                 y = prev[1] + {'TOP': 0, 'CENTRE': (prev[3]-height)/2, 'BOTTOM': prev[3]-height}[gadget.valign]
             if gadget.path_axes and 'X' not in gadget.path_axes:x=original_x
             if gadget.path_axes and 'Y' not in gadget.path_axes:y=original_y
-        return x, y, width, height
+        memo[cache_key]=(x,y,width,height);return memo[cache_key]
 
     def change_layout(self,gadget,mode):
         if mode==gadget.layout_mode:return
@@ -424,11 +435,12 @@ class Form:
     def children(self, name):
         return [g for g in self.gadgets if g.parent.lower() == name.lower()]
 
-    def fit_size(self):
+    def fit_size(self,*,limit=False):
         """Estimate an unsized form from top-level extents, not 70x22."""
-        extents=[self.geometry(g) for g in self.children('')]
+        memo={};extents=[self.geometry(g,_memo=memo) for g in self.children('')]
         self.width=max([1,*[x+width+1 for x,y,width,height in extents]])
         self.height=max([1,*[y+height+1 for x,y,width,height in extents]])
+        if limit:self.width,self.height=min(300,self.width),min(300,self.height)
 
     def descendants(self, name):
         result, pending = [], [name.lower()]
@@ -542,6 +554,7 @@ class Form:
                 raise ValueError('フォームサイズは 1〜300 の有限数にしてください。')
         if len(self.gadgets) > 500:
             raise ValueError('部品数は 500 個までです。')
+        geometry_memo={}
         for g in self.gadgets:
             if not isinstance(g.callback_expression,str):
                 raise ValueError('取り込んだCALLの文字列が不正です。')
@@ -581,9 +594,9 @@ class Form:
             for value in (g.x, g.y, g.width, g.height):
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                     raise ValueError('座標とサイズには有限数を指定してください。')
-            x, y, width, height = self.geometry(g)
-            parent_width = self.geometry(parent)[2] if parent else self.width
-            parent_height = self.geometry(parent)[3] if parent else self.height
+            x, y, width, height = self.geometry(g,_memo=geometry_memo)
+            parent_width = self.geometry(parent,_memo=geometry_memo)[2] if parent else self.width
+            parent_height = self.geometry(parent,_memo=geometry_memo)[3] if parent else self.height
             min_width,min_height = (1/CHAR_WIDTH,1/LINE_HEIGHT) if g.display_mode == 'PIXMAP' else (1,1)
             fixed=fixed_dimensions(g)
             if 'width' in fixed and fixed['width']==0:min_width=0
@@ -623,7 +636,7 @@ class Form:
             if g.kind == 'text' and g.initial:
                 if g.value_type == 'REAL':
                     try:
-                        if not math.isfinite(float(g.initial)): raise ValueError()
+                        if not re.fullmatch(r'[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?',g.initial.strip()) or not math.isfinite(float(g.initial)): raise ValueError()
                     except ValueError:
                         raise ValueError(f'{g.name}: REAL の初期値は有限数にしてください。') from None
                 else:
@@ -732,11 +745,22 @@ class Form:
         self.initial_lines()
         self.sync_tabs()
 
-    def dumps(self):
-        self.validate()
+    def dumps(self,*,allow_incomplete=False):
+        incomplete=False
+        try:self.validate()
+        except ValueError:
+            if not allow_incomplete:raise
+            from .draft_validation import validate_draft
+            if not self.size_explicit:
+                try:self.fit_size(limit=True)
+                except ValueError:pass
+            validate_draft(self);incomplete=True
+        self.sync_tabs()
         raw=asdict(self)
         raw['gadgets']=[value for g,value in zip(self.gadgets,raw['gadgets']) if not self.is_tab_page(g)]
-        return json.dumps({'version': 2, 'form': raw, 'gadget_order':[g.name for g in self.gadgets]}, ensure_ascii=False, indent=2)
+        data={'version':2,'form':raw,'gadget_order':[g.name for g in self.gadgets]}
+        if incomplete:data['incomplete']=True
+        return json.dumps(data,ensure_ascii=False,indent=2)
 
     @classmethod
     def loads(cls, text):
@@ -765,9 +789,13 @@ class Form:
                 if not isinstance(order,list) or any(not isinstance(name,str) for name in order) or len(order)!=len(result.gadgets) or len(set(order))!=len(order) or set(order)!={g.name for g in result.gadgets}:
                     raise ValueError('部品順の情報が不正です。')
                 by_name={g.name:g for g in result.gadgets};result.gadgets=[by_name[name] for name in order]
-            result.validate()
+            if 'incomplete' in data and type(data['incomplete']) is not bool:raise ValueError('編集途中の設定が不正です。')
+            if data.get('incomplete'):
+                from .draft_validation import validate_draft
+                validate_draft(result)
+            else:result.validate()
             return result
-        except (KeyError, TypeError, AttributeError) as e:
+        except (KeyError, TypeError, AttributeError, RecursionError) as e:
             raise ValueError('設計ファイルの形式が不正です。') from e
 
     def initial_lines(self):
@@ -777,7 +805,7 @@ class Form:
         for g in self.gadgets:
             target='_'+g.name.lstrip('_') if uses_pairs(g) else g.name
             if g.kind == 'slider':
-                lines.append(f'  !this.{g.name}.val = {format(g.slider_value,".8g")}')
+                lines.append(f'  !this.{g.name}.val = {pml_number(g.slider_value)}')
             elif g.kind == 'textpane':
                 lines.append('  !paneLines = ARRAY()')
                 for i,value in enumerate(g.pane_lines,1):lines.append(f'  !paneLines[{i}] = {literal(value)}')
@@ -810,7 +838,7 @@ class Form:
                         for i,index in enumerate(indices,1):lines.append(f'  !initialSelection[{i}] = {index}')
                         value='!initialSelection'
                     else:value=str(indices[0])
-                else:value=format(float(g.initial),'.8g') if g.kind == 'text' and g.value_type == 'REAL' else literal(g.initial)
+                else:value=g.initial.strip() if g.kind == 'text' and g.value_type == 'REAL' else literal(g.initial)
                 lines.append(f'  !this.{target}.val = {value}')
         return lines
 
@@ -842,7 +870,7 @@ class Form:
                 return g.callback_expression
             return f'!this.{g.callback}()'
         form_symbol=user_code(self.symbol)
-        n = lambda v: format(v, '.8g')
+        n = pml_number
         lines = [f'VAR !!{name} {literal(value)}' for name, value in self.variables.items()]
         lines.extend(f'VAR !{name} {literal(value)}' for name,value in self.local_variables.items())
         if lines:lines.append('')

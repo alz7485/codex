@@ -2,11 +2,11 @@
 import copy
 import re
 from .model import uses_pairs,native_size
-from .names import actual_name,code_slots,read_slot,write_slot,rewrite_code
+from .names import actual_name,code_slots,read_slot,write_slot,rewrite_code,member_references
 from .pml_syntax import reference_mask,method_call_sites
 
 
-def clone_subtree(target,source,index,restore_names=False):
+def clone_subtree(target,source,index,restore_names=False,*,same_project=False):
     if type(index) is not int or not 0 <= index < len(source.gadgets):
         raise ValueError('コピー元の部品が不正です。')
     root = source.gadgets[index]
@@ -91,6 +91,21 @@ def clone_subtree(target,source,index,restore_names=False):
             methods[original.name]=helper.name;helper_copies.append(helper)
     draft.extra_methods.extend(helper_copies)
     owners.update(id(method) for method in helper_copies)
+    # !THIS binds to the destination. Reject known source dependencies which
+    # would otherwise disappear when the copied code runs in another form.
+    source_members={actual_name(g).lower() for g in source.gadgets}
+    source_members.update((g.name+'Control').lower() for g in source.gadgets if g.kind=='container')
+    available_members={name.lower() for name in members}
+    if same_project or source is target:
+        available_members.update(actual_name(g).lower() for g in target.gadgets)
+        available_members.update((g.name+'Control').lower() for g in target.gadgets if g.kind=='container')
+    missing_members=set()
+    for value in snippets+helper_snippets:
+        for prefix,name in member_references(value,source):
+            if prefix.lower()!='!this' and source.symbol.lower()!=target.symbol.lower():continue
+            if name.lower() in source_members and name.lower() not in available_members:missing_members.add(name)
+    if missing_members:
+        raise ValueError('コピー範囲外の参照先を確認してください: '+', '.join(sorted(missing_members))+'。別設計の同名部品へは自動接続しません。参照先を含むフレームをコピーするか、コマンドを修正してください。')
     # Carry registered globals used by the copied code, retaining existing bindings.
     globals_by_name={name.lower():(name,value) for name,value in source.variables.items()}
     occupied_globals={name.lower() for name in draft.variables}

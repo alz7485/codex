@@ -101,12 +101,15 @@ class RecoveryRecentTests(unittest.TestCase):
         with patch('e3d_designer.app.QMessageBox.question',return_value=QMessageBox.Discard):self.w.new()
         self.assertFalse(live.path.exists());self.assertFalse(self.w.dirty)
 
-    def test_backup_errors_preserve_last_valid_snapshot_and_source(self):
+    def test_incomplete_backup_and_write_errors_preserve_last_snapshot(self):
         w=self.w;w.form=Form(gadgets=[Gadget(kind='slider',name='level')]);w.dirty=True;w.refresh()
         w.backup_work();before=w.recovery.path.read_bytes()
         w.form.gadgets[0].slider_step=0
-        w.backup_work();self.assertEqual(w.recovery.path.read_bytes(),before)
-        self.assertIn('自動バックアップを保存できません',w.statusBar().currentMessage())
+        w.backup_work();self.assertNotEqual(w.recovery.path.read_bytes(),before)
+        restored,_=w.recovery.read(w.recovery.path)
+        self.assertEqual(restored.gadgets[0].slider_step,0)
+        with self.assertRaises(ValueError):restored.pml()
+        before=w.recovery.path.read_bytes()
         w.form.gadgets[0].slider_step=1
         with patch('e3d_designer.recovery.os.replace',side_effect=OSError('read only')):w.backup_work()
         self.assertEqual(w.recovery.path.read_bytes(),before)

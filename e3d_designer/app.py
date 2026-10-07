@@ -1024,7 +1024,9 @@ class Window(QMainWindow):
         self.variable_error=False;self.dirty=True;self.refresh()
         self.set_workflow('layout')
         if data['pending_variables'] is not None:self.variables.setPlainText(data['pending_variables'])
-        self.statusBar().showMessage('未保存の作業を復元しました。内容を確認して設計を保存してください。');return True
+        message='未保存の作業を復元しました。内容を確認して設計を保存してください。'
+        if self.validation_error:message+=' MAC出力には修正が必要です: '+self.validation_error
+        self.statusBar().showMessage(message);return True
 
     @staticmethod
     def number(low, high):
@@ -1795,6 +1797,8 @@ class Window(QMainWindow):
         name=self.page_tabs.tabData(self.page_tabs.currentIndex())
         page=self.form.named(name) if name else None
         if page is None:return
+        removed={name.lower(),*(child.lower() for child in self.form.descendants(name))}
+        if not self.can_delete_gadgets(removed):return
         if self.form.descendants(name) and QMessageBox.question(self,'タブの削除','このタブ内の部品も削除します。続けますか？',QMessageBox.Yes|QMessageBox.No)!=QMessageBox.Yes:return
         parent=page.parent;removed={name.lower(),*(child.lower() for child in self.form.descendants(name))}
         self.checkpoint();self.form.gadgets=[g for g in self.form.gadgets if g.name.lower() not in removed]
@@ -1915,7 +1919,7 @@ class Window(QMainWindow):
             if sync_image_size(gadget,image_directories):self.dirty=True
             if normalize_dimensions(gadget):self.dirty=True
         if not self.form.size_explicit:
-            try:self.form.fit_size()
+            try:self.form.fit_size(limit=True)
             except ValueError:pass
         self.inspector_tabs.setEnabled(True)
         if self.selected is not None:self._multi_selection.clear()
@@ -2428,6 +2432,10 @@ class Window(QMainWindow):
         return True
 
     def cut_gadget(self):
+        names=self.selection_names()
+        removed=set(names)
+        for name in names:removed.update(self.form.descendants(name))
+        if not self.can_delete_gadgets(removed):return
         if self.copy_gadget(cut=True): self.delete()
 
     def paste_gadget(self):
@@ -2438,8 +2446,9 @@ class Window(QMainWindow):
             source = Form.loads(payload['form']);index = payload['root']
             if type(index) is not int or not 0 <= index < len(source.gadgets): raise ValueError('コピー元の部品が不正です。')
             from .clipboard import clone_subtree
-            restore = payload.get('cut') is True and payload.get('project') == self.project_key
-            draft,selected = clone_subtree(self.form,source,index,restore_names=restore)
+            same_project=payload.get('project') == self.project_key
+            restore = payload.get('cut') is True and same_project
+            draft,selected = clone_subtree(self.form,source,index,restore_names=restore,same_project=same_project)
         except (ValueError,KeyError,TypeError,UnicodeError) as error:
             self.statusBar().showMessage(f'貼り付けできません: {error}');return
         self.checkpoint();self.form = draft
@@ -2451,8 +2460,17 @@ class Window(QMainWindow):
         if not names:return
         removed=set(names)
         for name in names:removed.update(self.form.descendants(name))
+        if not self.can_delete_gadgets(removed):return
         self.checkpoint();self.form.gadgets=[g for g in self.form.gadgets if g.name not in removed]
         self.selected=None;self._multi_selection.clear();self.refresh()
+
+    def can_delete_gadgets(self,removed):
+        from .names import deletion_dependencies
+        dependencies=deletion_dependencies(self.form,removed)
+        if dependencies:
+            self.statusBar().showMessage('削除できません。先に参照を修正してください: '+', '.join(dependencies))
+            return False
+        return True
 
     def undo(self):
         if not self.history: return
@@ -2533,7 +2551,8 @@ class Window(QMainWindow):
                 QMessageBox.information(self,'MAC取り込み結果','\n'.join(result.warnings))
         else:
             warning=self.remember_project()
-            if warning:self.statusBar().showMessage(warning)
+            if self.validation_error:self.statusBar().showMessage('編集途中の設計を開きました。MAC出力には修正が必要です: '+self.validation_error+(' / '+warning if warning else ''))
+            elif warning:self.statusBar().showMessage(warning)
         return True
 
     def save_as(self):
@@ -2542,7 +2561,7 @@ class Window(QMainWindow):
     def save(self, *, force_dialog=False):
         try:
             if self.variable_error: raise ValueError('変数欄を修正してください。')
-            data = self.form.dumps()
+            data = self.form.dumps(allow_incomplete=True)
         except ValueError as e:
             QMessageBox.warning(self, '保存エラー', str(e)); return False
         path = self.path
@@ -2560,7 +2579,9 @@ class Window(QMainWindow):
             QMessageBox.warning(self, '保存エラー', str(e)); return False
         self.path = path; self.dirty = False; self.refresh()
         self.clear_backup();warning=self.remember_project()
-        self.statusBar().showMessage(f'設計を保存しました: {path}'+(' / '+warning if warning else ''));return True
+        message=f'設計を保存しました: {path}'+(' / '+warning if warning else '')
+        if self.validation_error:message+=' / MAC出力には修正が必要です: '+self.validation_error
+        self.statusBar().showMessage(message);return True
 
     def mac_output_path(self,filename):
         selected=Path(filename);path=selected.with_suffix('.mac')
