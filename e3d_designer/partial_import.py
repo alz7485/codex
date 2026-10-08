@@ -1,6 +1,6 @@
 """Conservative recovery of declarations; rejected source is retained as data."""
 import re
-from .mac_import import Importer, MacImportError, comment_lines
+from .mac_import import Importer, MacImportError, comment_lines, bar_closing_exit
 from .pml_syntax import mask_non_code
 from .method_output import check_editable_code
 
@@ -10,7 +10,7 @@ LEAVES={'MENU','VIEW','VAR'}
 FORM_DIRECTIVES=set('TITLE PATH HDIST HDISTANCE VDIST VDISTANCE HALIGN VALIGN BAR IMPORT USING MEMBER'.split())
 
 
-def declaration_spans(text):
+def declaration_spans(text,known_bar_exits=()):
     """Locate complete blocks so skipping a bad parent never reparents its children."""
     code=mask_non_code(text,strings=False).splitlines()
     structure=mask_non_code(text).splitlines()
@@ -18,8 +18,23 @@ def declaration_spans(text):
     boundary=next((i for i in range(start+1,len(code))
                    if re.match(r'^\s*(?:SHOW|DEFINE\s+METHOD)\b',structure[i],re.I)),len(code))
     keys=[line.strip().split(maxsplit=1)[0].upper() if line.strip() else '' for line in code]
+    # Retain established BAR boundaries if recovery removes the referenced MENU.
+    bar_exits={row for row in known_bar_exits if start<row<boundary and keys[row]=='EXIT'}
+    defined_menus=set()
+    for row in range(start+1,boundary):
+        if keys[row]=='MENU':
+            match=re.match(r'^\s*MENU\s+\.?([A-Za-z_][A-Za-z0-9_]*)(?=\s|$)',code[row],re.I)
+            if match:defined_menus.add(match.group(1).lower())
+        if keys[row]!='BAR':continue
+        end=row+1;targets=set()
+        while end<boundary and keys[end] in ('','ADD'):
+            # Quoted labels are masked with question marks, including quotes.
+            match=re.fullmatch(r'\s*ADD\s+\?+\s+\.([A-Za-z_][A-Za-z0-9_]*)\s*',structure[end],re.I)
+            if match:targets.add(match.group(1).lower())
+            end+=1
+        if bar_closing_exit(code,end,targets-defined_menus):bar_exits.add(end)
     # An unfamiliar gadget with an extra EXIT is an opaque block, not a FRAME.
-    surplus=max(0,sum(key=='EXIT' for key in keys[start+1:boundary])-
+    surplus=max(0,sum(key=='EXIT' for key in keys[start+1:boundary])-len(bar_exits)-
                 sum(key=='FRAME' or key in LEAVES for key in keys[start+1:boundary])-1)
     spans=[];stack=[];i=start+1
     def opaque_exit(begin):
@@ -70,6 +85,7 @@ def declaration_spans(text):
         elif key=='BAR':
             j=i+1
             while j<boundary and keys[j] in ('','ADD'):j+=1
+            if j in bar_exits:j+=1
             spans.append((i,j,key));i=j;continue
         elif key=='EXIT':
             if stack:
@@ -97,6 +113,9 @@ def recover_mac(text):
     if len(starts)!=1:
         raise ValueError('部分取り込みにもSETUP FORMを1つ含むMACが必要です。')
     original=text;working=text.splitlines();comments=comment_lines(text)
+    _,initial_spans=declaration_spans(text)
+    known_bar_exits={end-1 for _,end,kind in initial_spans if kind=='BAR'
+                     and mask_non_code(working[end-1]).strip().upper()=='EXIT'}
     skipped=set();notes=[]
     # Bound work and retain the normal limits on file size and gadget count.
     for _ in range(101):
@@ -112,7 +131,7 @@ def recover_mac(text):
             key=mask_non_code(working[row],strings=False).strip().split(maxsplit=1)
             if key and key[0].upper() in ('EXIT','SHOW','SETUP'):
                 raise ValueError('フォームの境界を判断できません: '+str(error)) from error
-            _,spans=declaration_spans(current)
+            _,spans=declaration_spans(current,known_bar_exits)
             unfinished=[span for span in spans if span[1]==row and span[2].endswith('なし）')]
             candidates=unfinished or [span for span in spans if span[0]<=row<span[1]]
             # An invalid FRAME header discards its whole subtree. Other errors
@@ -136,7 +155,7 @@ def recover_mac(text):
                 row=next((i for i,line in enumerate(importer.code)
                           if re.match(r'^\s*\w+\s+[._]'+re.escape(dependant.name)+r'(?![A-Za-z0-9_])',line,re.I)),None)
                 if row is not None:
-                    _,spans=declaration_spans(current)
+                    _,spans=declaration_spans(current,known_bar_exits)
                     candidates=[span for span in spans if span[0]<=row<span[1]]
                     begin,end,kind=min(candidates,key=lambda item:item[1]-item[0]) if candidates else (row,row+1,'行')
                     notes.append(f'{begin+1}〜{end}行（{kind}）を省略: 配置の参照先が復元できません。')

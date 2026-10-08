@@ -36,6 +36,16 @@ ATTRIBUTE_KINDS = {
 }
 
 
+def bar_closing_exit(code,index,targets):
+    """Recognize an explicit BAR terminator by its next referenced MENU."""
+    if index>=len(code) or code[index].strip().upper()!='EXIT':return False
+    following=index+1
+    while following<len(code) and not code[following].strip():following+=1
+    if following>=len(code):return False
+    match=re.match(r'^\s*MENU\s+\.?('+NAME+r')(?=\s|$)',code[following],re.I)
+    return bool(match and match.group(1).lower() in targets)
+
+
 class MacImportError(ValueError):
     def __init__(self,line,message):
         super().__init__(f'MAC {line}行: {message}')
@@ -378,6 +388,13 @@ class Importer:
                     if any(name.lower()==target[1:].lower() for _,name,_ in bar_entries):raise MacImportError(entry_row,'同じメニューをBARへ複数回登録できません。')
                     bar_entries.append((label,target[1:],entry_row))
                 if not bar_entries:raise MacImportError(row,'BARにはADDでタイトルとメニュー名を指定してください。')
+                # Some macros close BAR explicitly before declaring its MENU.
+                # Only claim this EXIT when the next declaration resolves an
+                # outstanding BAR reference; never cross SHOW or program code.
+                outstanding={name.lower() for _,name,_ in bar_entries}-{menu.name.lower() for menu in self.form.menus}
+                if bar_closing_exit(self.code,index,outstanding):
+                    index+=1
+                    self.warn('BAR直後のEXITをメニューバーの終端として読み込みました。後続のMENUとフォーム宣言を保持します。')
                 continue
             if key=='MENU':
                 if stack:raise MacImportError(row,'フレーム内でのMENU宣言は未対応です。')
@@ -469,7 +486,14 @@ class Importer:
             for menu in self.form.menus:menu.on_bar=False
             for label,name,row in bar_entries:
                 menu=next((m for m in self.form.menus if m.name.lower()==name.lower()),None)
-                if menu is None or menu.popup:raise MacImportError(row,'BARの登録先には定義済みの通常MENUを指定してください: '+name)
+                if menu is None:
+                    later=[i+1 for i in range(index,len(self.code))
+                           if re.match(r'^\s*MENU\s+\.?'+re.escape(name)+r'(?=\s|$)',self.code[i],re.I)]
+                    detail=(f'MENU .{name} はフォーム宣言の終了後（{later[0]}行）にあります。EXIT／SHOWの位置を確認してください。' if later
+                            else f'フォーム宣言内に MENU .{name} と、その項目のADDを記載してください。')
+                    raise MacImportError(row,'BARの参照先MENUが見つかりません: .'+name+'。'+detail)
+                if menu.popup:
+                    raise MacImportError(row,'BARの参照先 .'+name+' はPOPUPです。メニューバーには通常のMENUを指定してください。')
                 menu.label=label;menu.on_bar=True;ordered.append(menu)
             self.form.menus=ordered+[m for m in self.form.menus if not m.on_bar]
         elif any(not menu.popup for menu in self.form.menus):
