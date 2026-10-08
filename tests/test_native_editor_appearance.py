@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from shiboken6 import isValid
-from PySide6.QtCore import Qt,QCoreApplication,QEvent
+from PySide6.QtCore import Qt,QCoreApplication,QEvent,QRectF
 from PySide6.QtGui import QFont,QFontMetrics
 from PySide6.QtWidgets import QApplication,QLabel
 from e3d_designer.app import Window,Item
@@ -74,7 +74,7 @@ class NativeEditorAppearanceTests(unittest.TestCase):
         self.assertTrue(preview.isVisible());self.assertTrue(self.w.runtime_action.isChecked())
         self.assertEqual(preview.controls['Value'].entry.text(),'unfinished')
         self.assertIn('REAL',preview.preview_warning)
-        self.assertTrue(any('MAC出力前に修正' in label.text() for label in preview.findChildren(QLabel)))
+        self.assertTrue(any('MAC出力前に修正' in label.text() for label in preview.form_root.findChildren(QLabel)))
         self.assertEqual(self.w.form,before)
         with self.assertRaises(ValueError):self.w.form.pml()
         self.w.form.gadgets[0].initial='1.2';self.w.refresh();preview=self.preview()
@@ -98,14 +98,18 @@ class NativeEditorAppearanceTests(unittest.TestCase):
         self.assertFalse(preview.isMinimized());self.assertTrue(preview.isVisible())
         self.assertTrue(self.w.screen().availableGeometry().contains(preview.frameGeometry()))
 
-    def test_large_reference_uses_scrollbars_with_accessible_title_and_no_source_changes(self):
+    def test_large_reference_fits_whole_form_with_accessible_title_and_no_source_changes(self):
         self.load(Form(width=300,height=300,gadgets=[Gadget(name='Far',x=270,y=270)]))
         before=self.w.form.dumps();preview=self.preview()
         available=self.w.screen().availableGeometry()
         self.assertTrue(preview.isVisible());self.assertLessEqual(preview.width(),available.width())
         self.assertLessEqual(preview.height(),available.height())
-        self.assertGreater(preview.scroll.horizontalScrollBar().maximum(),0)
-        self.assertGreater(preview.scroll.verticalScrollBar().maximum(),0)
+        view=preview.form_view
+        self.assertFalse(view.horizontalScrollBar().isVisible())
+        self.assertFalse(view.verticalScrollBar().isVisible())
+        self.assertLess(view.display_scale,1)
+        self.assertTrue(QRectF(view.viewport().rect()).adjusted(-1,-1,1,1).contains(
+            view.viewportTransform().mapRect(view.sceneRect())))
         self.assertEqual(self.w.form.dumps(),before)
 
     def test_one_click_recovers_hidden_minimized_or_offscreen_preview(self):

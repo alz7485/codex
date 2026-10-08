@@ -9,7 +9,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (QApplication,QPushButton,QComboBox,QLabel,QGroupBox,
-    QTabWidget,QCheckBox,QRadioButton,QFrame,QTableWidget,QSlider,QGraphicsView)
+    QTabWidget,QCheckBox,QRadioButton,QFrame,QTableWidget,QSlider)
 from e3d_designer.app import Window
 from e3d_designer.model import Form,Gadget,Menu,MenuItem,CHAR_WIDTH,LINE_HEIGHT
 from e3d_designer.runtime_preview import RuntimePreview
@@ -28,7 +28,7 @@ class RuntimePreviewTests(unittest.TestCase):
         self.preview.set_form(form,**kwargs);self.preview.show();self.app.processEvents()
         return self.preview.controls
 
-    def test_native_controls_without_editor_names_or_graphics_and_no_mutation(self):
+    def test_native_controls_without_editor_names_and_no_mutation(self):
         form=Form(title='Equipment',gadgets=[
             Gadget(name='InternalButton',label='Run',command='SAVEWORK'),
             Gadget(kind='text',name='InternalText',label='Name',initial='P-101',y=3,width=30),
@@ -41,8 +41,9 @@ class RuntimePreviewTests(unittest.TestCase):
         self.assertEqual(controls['InternalChoice'].entry.currentText(),'Pump')
         self.assertEqual(controls['InternalLabel'].textFormat(),Qt.PlainText)
         self.assertEqual(self.preview.windowTitle(),'Equipment')
-        self.assertFalse(self.preview.findChildren(QGraphicsView))
-        visible_text=[widget.text() for widget in self.preview.findChildren(QLabel)]
+        self.assertEqual(self.preview.form_view.proxy.widget(),self.preview.form_root)
+        self.assertEqual(len(self.preview.form_view.scene().items()),1)
+        visible_text=[widget.text() for widget in self.preview.form_root.findChildren(QLabel)]
         self.assertFalse(any('Internal' in text for text in visible_text))
         controls['InternalButton'].click();controls['InternalChoice'].entry.setCurrentIndex(0)
         self.assertEqual(form.dumps(),before);self.assertEqual(form.pml(),code)

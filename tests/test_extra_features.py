@@ -52,7 +52,7 @@ class ExtraModelTests(unittest.TestCase):
         form=Form(gadgets=gadgets);pml=Form.loads(form.dumps()).pml(normalize=False)
         self.assertIn("PARAGRAPH .paragraphPic AT X 2 Y 1 PIXMAP 'C:\\Images\\sample.png' WIDTH 14 HEIGHT 1",pml)
         for name in ('buttonPic','togglePic'): self.assertIn(f"!this.{name}.AddPixmap('C:\\Images\\sample.png')",pml)
-        self.assertIn("OPTION .imageChoice AT X 2 Y 1 'Run' PIXMAP WIDTH 14 HEIGHT 1 callback '!this.imageChanged()'",pml)
+        self.assertIn("OPTION .imageChoice AT X 2 Y 1 'Run' PIXMAP callback '!this.imageChanged()' WIDTH 14 HEIGHT 1",pml)
         self.assertIn('!this.imageChoice.dtext = !choices',pml);self.assertIn('!this.imageChoice.rtext = !values',pml)
         self.assertNotIn('VAR LIST',pml);self.assertEqual(actual_name(gadgets[-1]),'imageChoice')
         gadgets[-1].item_values=['RED']

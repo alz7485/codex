@@ -1,10 +1,41 @@
 """Native-widget appearance reference. Never executes PML or changes the design."""
 import copy
-from PySide6.QtCore import Qt,QPoint,QSize
-from PySide6.QtWidgets import QDialog,QVBoxLayout,QWidget,QLabel,QMenuBar,QMenu,QScrollArea,QFrame
+from PySide6.QtCore import Qt,QPoint,QSize,QRectF
+from PySide6.QtGui import QTransform,QPainter,QColor
+from PySide6.QtWidgets import QDialog,QVBoxLayout,QWidget,QLabel,QMenuBar,QMenu,QFrame,QGraphicsView,QGraphicsScene
 from .model import CHAR_WIDTH,LINE_HEIGHT,supports_hidden
-from .appearance import NativeControls,FORM_PADDING,FORM_BORDER,FORM_MARGIN
+from .appearance import NativeControls,FORM_PADDING,FORM_BORDER,FORM_MARGIN,FORM_BACKGROUND
 from .draft_validation import validate_draft
+
+
+class FitFormView(QGraphicsView):
+    """Scale the native form as a whole; its widget geometry stays at 100%."""
+    def __init__(self,parent):
+        super().__init__(parent)
+        self.setScene(QGraphicsScene(self));self.form_widget=None;self.display_scale=1.
+        self.setFrameShape(QFrame.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setRenderHints(QPainter.TextAntialiasing|QPainter.SmoothPixmapTransform)
+        self.setBackgroundBrush(QColor(FORM_BACKGROUND))
+
+    def set_form_widget(self,widget):
+        self.form_widget=widget
+        self.proxy=self.scene().addWidget(widget)
+        self.setSceneRect(QRectF(widget.rect()))
+        self.fit_form()
+
+    def fit_form(self):
+        if self.form_widget is None:return
+        rect=self.sceneRect()
+        self.display_scale=min(1.,max(1,self.viewport().width()-2)/rect.width(),
+                               max(1,self.viewport().height()-2)/rect.height())
+        self.setTransform(QTransform.fromScale(self.display_scale,self.display_scale))
+        self.centerOn(rect.center())
+        self.setToolTip(f'全体表示 {self.display_scale*100:.1f}%（部品の寸法・座標は変更しません）')
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event);self.fit_form()
 
 
 class RuntimePreview(QDialog,NativeControls):
@@ -13,6 +44,7 @@ class RuntimePreview(QDialog,NativeControls):
         self.init_appearance(font,char_width,line_height)
         self.layout_root=QVBoxLayout(self);self.layout_root.setContentsMargins(0,0,0,0);self.layout_root.setSpacing(0)
         self.surface=None;self.menu_bar=None;self.controls={};self.preview_warning=''
+        self.form_view=FitFormView(self);self.layout_root.addWidget(self.form_view)
 
     def validate_display(self):
         self.preview_warning=''
@@ -33,35 +65,33 @@ class RuntimePreview(QDialog,NativeControls):
         self.form=copy.deepcopy(form)
         self.validate_display();self.directories=image_directories
         self.controls={};self.active_pages=dict(active_pages or {});self.menus=[]
-        while self.layout_root.count():
-            widget=self.layout_root.takeAt(0).widget()
-            if widget:widget.hide();widget.deleteLater()
+        self.form_view.form_widget=None;self.form_view.scene().clear()
+        self.form_root=self.style_widget(QWidget())
+        form_layout=QVBoxLayout(self.form_root);form_layout.setContentsMargins(0,0,0,0);form_layout.setSpacing(0)
         self.setWindowTitle(self.form.title)
+        warning=None
         if self.preview_warning:
-            warning=self.style_widget(QLabel('MAC出力前に修正してください: '+self.preview_warning,self))
+            warning=self.style_widget(QLabel('MAC出力前に修正してください: '+self.preview_warning,self.form_root))
             warning.setWordWrap(True);warning.setStyleSheet('background: #fff4d6; padding: 6px;')
-            self.layout_root.addWidget(warning)
-        self.menu_bar=self.style_widget(QMenuBar(self));self.menu_bar.setNativeMenuBar(False)
+            form_layout.addWidget(warning)
+        self.menu_bar=self.style_widget(QMenuBar(self.form_root));self.menu_bar.setNativeMenuBar(False)
         for menu in self.form.menus:
             if menu.popup or not menu.on_bar:continue
             popup=self.style_widget(QMenu(menu.display_label,self.menu_bar))
             self.menus.append(popup);self.menu_bar.addMenu(popup)
             for item in menu.items:popup.addAction(item.label)
-        self.menu_bar.setVisible(bool(self.menu_bar.actions()));self.layout_root.addWidget(self.menu_bar)
-        self.surface=self.style_widget(QWidget(self));self.surface.setAutoFillBackground(True)
+        self.menu_bar.setVisible(bool(self.menu_bar.actions()));form_layout.addWidget(self.menu_bar)
+        self.surface=self.style_widget(QWidget(self.form_root));self.surface.setAutoFillBackground(True)
         # Padding is inside the drawable surface so negative AT coordinates can
         # use it. The source origin stays unchanged, including in child frames.
         self.layout_origin=QPoint(FORM_PADDING,FORM_PADDING)
         self.content_size=QSize(self.pixels(self.form.width*self.char_width),self.pixels(self.form.height*self.line_height))
         self.surface.setFixedSize(self.content_size+QSize(2*FORM_PADDING,2*FORM_PADDING))
-        body=self.style_widget(QWidget(self));body_layout=QVBoxLayout(body);body_layout.setContentsMargins(0,0,0,0)
-        self.client=self.style_widget(QFrame(body));self.client.setFrameShape(QFrame.WinPanel)
+        self.client=self.style_widget(QFrame(self.form_root));self.client.setFrameShape(QFrame.WinPanel)
         self.client.setFrameShadow(QFrame.Sunken);self.client.setLineWidth(FORM_BORDER);self.client.setAutoFillBackground(True)
         client_layout=QVBoxLayout(self.client);client_layout.setContentsMargins(0,0,0,0)
         client_layout.addWidget(self.surface)
-        body_layout.addWidget(self.client,0,Qt.AlignLeft|Qt.AlignTop)
-        self.scroll=QScrollArea(self);self.scroll.setFrameShape(QFrame.NoFrame)
-        self.scroll.setWidgetResizable(True);self.scroll.setWidget(body);self.layout_root.addWidget(self.scroll,1)
+        form_layout.addWidget(self.client)
         self.build_children('',self.surface,{})
         if not self.form.size_explicit:
             roots=[w.geometry() for w in self.controls.values() if w.parent() is self.surface]
@@ -69,17 +99,28 @@ class RuntimePreview(QDialog,NativeControls):
                 max([round(self.line_height),*[r.y()+r.height()-self.layout_origin.y() for r in roots]]))
             self.surface.setFixedSize(self.content_size+QSize(2*FORM_PADDING,2*FORM_PADDING))
         self.client.setFixedSize(self.content_size+QSize(2*FORM_MARGIN,2*FORM_MARGIN))
-        self.adjustSize();self.keep_on_screen()
+        width=self.client.width()
+        extra=(self.menu_bar.sizeHint().height() if self.menu_bar.actions() else 0)
+        if warning:extra+=max(warning.sizeHint().height(),warning.heightForWidth(width))
+        self.form_root.setFixedSize(width,self.client.height()+extra)
+        form_layout.activate()
+        self.form_view.set_form_widget(self.form_root)
+        self.resize(self.form_root.size()+QSize(2,2));self.keep_on_screen()
 
     def keep_on_screen(self):
         screen=self.parentWidget().screen() if self.parentWidget() else self.screen()
         if screen is None:return
         available=screen.availableGeometry()
-        self.resize(min(self.width(),max(1,int(available.width()*.9))),
-                    min(self.height(),max(1,int(available.height()*.9))))
+        frame=self.frameGeometry().size()-self.size()
+        self.resize(min(self.width(),max(1,available.width()-max(24,frame.width()+12))),
+                    min(self.height(),max(1,available.height()-max(48,frame.height()+12))))
         rect=self.frameGeometry()
         self.move(max(available.left(),min(rect.left(),available.right()-rect.width()+1)),
                   max(available.top(),min(rect.top(),available.bottom()-rect.height()+1)))
+        self.layout_root.activate();self.form_view.fit_form()
+
+    def showEvent(self,event):
+        super().showEvent(event);self.keep_on_screen()
 
     def build_children(self,name,parent,geometry_memo):
         for g in self.form.children(name):

@@ -995,11 +995,12 @@ class Form:
                 line += f' {width_clause} IS {g.value_type}'
             elif g.kind == 'option':
                 if g.display_mode == 'PIXMAP':
-                    line = f'OPTION .{g.name} {position} {label} PIXMAP {width_clause} HEIGHT {n(g.height)}'+callback
+                    line = f'OPTION .{g.name} {position} {label} PIXMAP'+callback+f' {width_clause} HEIGHT {n(g.height)}'
                 elif not uses_pairs(g):
-                    line = f'OPTION .{g.name} {position} {label} {width_clause}'
+                    line = f'OPTION .{g.name} {position} {label}'
                     command=command_code(g.command) or (callback_expression(g) if active_callback(g) else '')
                     if command:line += ' CALL '+literal(command,allow_expansion=True)
+                    line += ' '+width_clause
                 else:
                     object_name = '_' + g.name.lstrip('_')
                     line = f"OPTION {object_name} {position} {label}"
