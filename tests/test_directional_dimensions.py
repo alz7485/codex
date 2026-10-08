@@ -54,7 +54,8 @@ class DirectionalDimensionsTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 self.load([Gadget(kind=kind,height=5,option_width_explicit=kind=='option')])
                 self.assertEqual(self.w.form.gadgets[0].height,1)
-                self.assertEqual(self.item().boundingRect().height(),26)
+                # PARAGRAPH keeps a one-row model with a 0.2-row visual inset.
+                self.assertEqual(self.item().boundingRect().height(),round(.8*26) if kind=='paragraph' else 26)
                 self.assertEqual(set(self.item().handles()),{'width'})
                 self.assertFalse(self.w.fields['height'].isEnabled());self.assertTrue(self.w.fields['width'].isEnabled())
                 self.w.fields['height'].setValue(5)

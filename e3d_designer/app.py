@@ -632,6 +632,10 @@ class Window(QMainWindow):
         source_action.triggered.connect(self.edit_imported_code)
         methods_action=edit_menu.addAction('補助メソッド管理…')
         methods_action.triggered.connect(self.manage_methods)
+        self.bulk_edit_action=QAction('📋 部品の一覧・一括編集…',self)
+        self.bulk_edit_action.setShortcut(QKeySequence('Ctrl+Shift+B'))
+        self.bulk_edit_action.triggered.connect(self.edit_bulk_properties)
+        edit_menu.addAction(self.bulk_edit_action)
         self.partial_notice=QPushButton('部分取り込みの省略箇所')
         self.partial_notice.setToolTip('未復元の宣言と元MACを確認します。省略した処理はMACへ出力されません。')
         self.partial_notice.clicked.connect(self.edit_imported_code)
@@ -721,6 +725,10 @@ class Window(QMainWindow):
         self.runtime_preview_button.setToolTip('実機仕様の参考表示を開きます。表示中も手前へ戻します（F6で表示切り替え）。')
         self.runtime_preview_button.clicked.connect(self.show_runtime_preview)
         drag_row.addWidget(self.code_display_button);drag_row.addWidget(self.runtime_preview_button)
+        self.bulk_edit_button=QPushButton('📋 一覧編集')
+        self.bulk_edit_button.setToolTip('部品タイプで絞り込み、項目を切り替えて個別入力・一括設定（Ctrl＋Shift＋B）')
+        self.bulk_edit_button.clicked.connect(self.edit_bulk_properties)
+        drag_row.addWidget(self.bulk_edit_button)
         drag_row.addStretch()
         self.display_font_button=QPushButton('表示フォント…');self.display_font_button.clicked.connect(self.choose_display_font)
         self.display_font_button.setToolTip('編集画面と参考表示の表示フォントを設定します。')
@@ -2772,6 +2780,16 @@ class Window(QMainWindow):
         if dialog.exec()==QDialog.Accepted:
             self.checkpoint();self.form=dialog.result_form;self.refresh()
         dialog.deleteLater()
+
+    def edit_bulk_properties(self):
+        if self.variable_error:
+            self.statusBar().showMessage('変数欄の入力エラーを修正してから一覧編集を開いてください。');return
+        from .bulk_editor import BulkPropertiesDialog
+        dialog=BulkPropertiesDialog(self,self.form,self.selection_names())
+        try:
+            if dialog.exec()==QDialog.Accepted and dialog.result_form!=self.form:
+                self.checkpoint();self.form=dialog.result_form;self.refresh()
+        finally:dialog.deleteLater()
 
     def open_design(self,path,*,confirmed=False,partial=False):
         if not confirmed and not self.confirm_discard():return False
