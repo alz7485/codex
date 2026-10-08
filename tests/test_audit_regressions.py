@@ -422,7 +422,7 @@ class AuditGuiRegressionTests(unittest.TestCase):
         for page,name,x,y in [('pageA','run',15,9),('pageB','other',16,10),('pageA','run',17,11)]:
             w.choose_row(next(i for i,g in enumerate(w.form.gadgets) if g.name==name))
             self.app.processEvents()
-            self.drag_object(name,x,y)
+            self.drag_object(name,x,y+w.appearance.tab_header_height()/SY)
             self.assertEqual((w.form.named('tabs').x,w.form.named('tabs').y),(10,3))
             self.assertEqual(w.form.geometry(w.form.named(page))[:2],(0,0))
             self.assertEqual((w.form.named(name).parent,w.form.named(name).x,w.form.named(name).y),(page,x-10,y-3))
@@ -457,7 +457,7 @@ class AuditGuiRegressionTests(unittest.TestCase):
         inner=w.form.named('inner')
         self.assertEqual((inner.parent,inner.x,inner.y),('pageA',5,6))
         self.assertEqual((w.form.named('run').parent,w.form.named('run').x,w.form.named('run').y),('inner',2,2))
-        self.drag_object('run',19,13)
+        self.drag_object('run',19,13+w.appearance.tab_header_height()/SY)
         self.assertEqual((w.form.named('tabs').x,w.form.named('tabs').y),(10,3))
         self.assertEqual((w.form.named('inner').x,w.form.named('inner').y),(5,6))
         self.assertEqual((w.form.named('run').x,w.form.named('run').y),(4,4))

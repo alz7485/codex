@@ -158,8 +158,16 @@ class PropertyPages:
         page=content.parentWidget();page.layout().activate();page.updateGeometry()
 
 
-def preview_offset(form, gadget):
-    try: return form.offset(gadget)
+def preview_offset(form, gadget,appearance=None):
+    try:
+        x,y=form.offset(gadget)
+        header=(appearance.tab_header_height() if appearance else LINE_HEIGHT)/SY
+        parent=form.parent_gadget(gadget);seen=set()
+        while parent and parent.name.lower() not in seen:
+            seen.add(parent.name.lower())
+            if form.is_tab_page(parent):y+=header
+            parent=form.parent_gadget(parent)
+        return x,y
     except ValueError: return 0, 0
 
 
@@ -192,7 +200,7 @@ class Item(QGraphicsObject):
         self.setFlags(QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
         parent = form.parent_gadget(gadget)
         if gadget.layout_mode == 'ABSOLUTE' and not (parent and parent.frame_style in ('TOOLBAR','TABSET')): self.setFlag(QGraphicsItem.ItemIsMovable)
-        ox, oy = preview_offset(form, gadget)
+        ox, oy = preview_offset(form, gadget,self.appearance)
         x, y, self._width, self._height = preview_geometry(form, gadget)
         self.refresh_appearance()
         self.setPos((x + ox) * SX, (y + oy) * SY)
@@ -200,7 +208,8 @@ class Item(QGraphicsObject):
 
     def boundingRect(self):
         if self.hidden_in_preview():return QRectF(0,0,8,max(8,self._height*SY))
-        if self._control_pixmap is not None:return QRectF(self._control_pixmap.rect())
+        if self._control_pixmap is not None:
+            return QRectF(self._control_pixmap.rect()).translated(self.appearance.control_bounds(self.gadget,self._width*SX,self._height*SY).topLeft())
         if self.gadget.kind=='line':
             if self.gadget.orientation=='HORIZ':return QRectF(0,-4,self._width*SX,8)
             return QRectF(-4,0,8,self._height*SY)
@@ -221,7 +230,7 @@ class Item(QGraphicsObject):
         path = QPainterPath(); rect = self.boundingRect()
         if self.hidden_in_preview() and not self.isSelected():return path
         parent = self.form.parent_gadget(self.gadget)
-        if self.gadget.kind == 'frame' and parent and parent.frame_style == 'TABSET': rect = rect.adjusted(0, 26, 0, 0)
+        if self.gadget.kind == 'frame' and parent and parent.frame_style == 'TABSET': rect = rect.adjusted(0, self.tab_header_height(), 0, 0)
         path.addRect(rect)
         clip=QPainterPath();clip.addRect(self.content_clip_rect())
         visible=path.intersected(clip)
@@ -242,7 +251,7 @@ class Item(QGraphicsObject):
         return path
 
     def tab_page_at(self, pos):
-        if self.gadget.kind == 'frame' and self.gadget.frame_style == 'TABSET' and 0 <= pos.y() < 26:
+        if self.gadget.kind == 'frame' and self.gadget.frame_style == 'TABSET' and 0 <= pos.y() < self.tab_header_height():
             pages = self.form.children(self.gadget.name)
             if pages:
                 index = min(len(pages)-1, max(0,int(pos.x() / (self._width * SX / len(pages)))))
@@ -371,6 +380,9 @@ class Item(QGraphicsObject):
     def hidden_in_preview(self):
         return self.gadget.hidden or (self._width==0 and supports_hidden(self.gadget))
 
+    def tab_header_height(self):
+        return self.appearance.tab_header_height() if self.appearance else SY
+
     def content_clip_rect(self):
         owner=self.scene().parent() if self.scene() else None
         clip=owner.form_item.client_rect() if owner and hasattr(owner,'form_item') else QRectF(0,0,self.form.width*SX,self.form.height*SY).adjusted(-FORM_PADDING,-FORM_PADDING,FORM_PADDING,FORM_PADDING)
@@ -383,9 +395,9 @@ class Item(QGraphicsObject):
             if item:
                 rect=item.mapRectToScene(QRectF(0,0,item._width*SX,item._height*SY))
             else:
-                x,y,w,h=preview_geometry(self.form,parent);ox,oy=preview_offset(self.form,parent)
+                x,y,w,h=preview_geometry(self.form,parent);ox,oy=preview_offset(self.form,parent,self.appearance)
                 rect=QRectF((x+ox)*SX,(y+oy)*SY,w*SX,h*SY)
-            if self.form.is_tab_page(parent):rect=rect.adjusted(0,26,0,0)
+            if self.form.is_tab_page(parent):rect=rect.adjusted(0,self.tab_header_height(),0,0)
             clip=clip.intersected(rect);parent=self.form.parent_gadget(parent)
         return self.mapRectFromScene(clip)
 
@@ -400,7 +412,7 @@ class Item(QGraphicsObject):
         painter.setClipRect(self.content_clip_rect(),Qt.IntersectClip)
         if self.appearance:painter.setFont(self.appearance.preview_font)
         if self._control_pixmap is not None:
-            painter.drawPixmap(0,0,self._control_pixmap)
+            painter.drawPixmap(r.topLeft(),self._control_pixmap)
             painter.restore();self.paint_selection(painter,r);return
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(QPen(QColor('#7f91a5'), 1))
@@ -417,7 +429,7 @@ class Item(QGraphicsObject):
             if g.frame_style == 'TABSET':
                 pages = self.form.children(g.name)
                 for i, page in enumerate(pages):
-                    tab = QRectF(i*r.width()/len(pages), 0, r.width()/len(pages), 25)
+                    tab = QRectF(i*r.width()/len(pages), 0, r.width()/len(pages), self.tab_header_height()-1)
                     painter.setBrush(QColor('#d8eaff' if page.name.lower() == getattr(self, 'active_page', '') else '#edf1f5'))
                     painter.drawRect(tab)
                     painter.drawText(tab.adjusted(6, 0, -6, 0), Qt.AlignVCenter, page.label)
@@ -489,7 +501,7 @@ class Item(QGraphicsObject):
                 painter.restore(); text = ''
             else: text = '\n'.join(g.items) or g.label
         alignment = Qt.AlignCenter if g.kind == 'button' else Qt.AlignLeft | (Qt.AlignTop if g.kind in ('frame','textpane','selector') else Qt.AlignVCenter)
-        painter.drawText(r.adjusted(7, 2, -7, -2), alignment, text)
+        painter.drawText(r.adjusted(7+(.8*SX if g.kind=='paragraph' and g.display_mode=='TEXT' else 0), 2, -7, -2), alignment, text)
         painter.restore()
 
         self.paint_selection(painter,r)
@@ -2158,11 +2170,11 @@ class Window(QMainWindow):
             self.reorder_objects(order,index);return
         draft=copy.deepcopy(self.form);moved=draft.gadgets[index]
         try:
-            x,y,width,height=draft.geometry(moved);source_x,source_y=x,y;ox,oy=draft.offset(moved);x+=ox;y+=oy
+            x,y,width,height=draft.geometry(moved);source_x,source_y=x,y;ox,oy=preview_offset(draft,moved,self.appearance);x+=ox;y+=oy
             saved_size=draft.restored_size(moved);hidden=draft.is_hidden(moved)
             moved.parent=parent_name;moved.layout_mode='ABSOLUTE';moved.xref=moved.yref=moved.width_ref=''
             moved.hidden=hidden;moved.width,moved.height=native_size(moved,*saved_size)
-            ox,oy=draft.offset(moved);pw,ph=draft.geometry(draft.parent_gadget(moved))[2:] if parent else (draft.width,draft.height)
+            ox,oy=preview_offset(draft,moved,self.appearance);pw,ph=draft.geometry(draft.parent_gadget(moved))[2:] if parent else (draft.width,draft.height)
             if (width>pw+.001 and not (source_x<0 and x-ox+width<=pw+.001)) or (height>ph+.001 and not (source_y<0 and y-oy+height<=ph+.001)):
                 self.statusBar().showMessage('移動先のフレームに部品全体が収まりません。');return
             moved.x=round(min(x-ox,pw-width),2);moved.y=round(min(y-oy,ph-height),2)
@@ -2213,7 +2225,7 @@ class Window(QMainWindow):
             self.form_item.update();self.form_resize_preview()
         for item in self.scene.items():
             if not isinstance(item,Item): continue
-            x,y,w,h = preview_geometry(self.form,item.gadget); ox,oy = preview_offset(self.form,item.gadget)
+            x,y,w,h = preview_geometry(self.form,item.gadget); ox,oy = preview_offset(self.form,item.gadget,self.appearance)
             item.prepareGeometryChange(); item._width,item._height = w,h
             item.refresh_appearance()
             item._sync_geometry = True
@@ -2379,7 +2391,9 @@ class Window(QMainWindow):
             targets=[]
             for frame in candidate.gadgets:
                 if frame.kind!='frame' or frame.frame_style!='FRAME' or frame.name.lower() in excluded or frame.name.lower() not in visible:continue
-                fx,fy,fw,fh=candidate.geometry(frame);ox,oy=candidate.offset(frame);fx+=ox;fy+=oy
+                fx,fy,fw,fh=candidate.geometry(frame);ox,oy=preview_offset(candidate,frame,self.appearance);fx+=ox;fy+=oy
+                if candidate.is_tab_page(frame):
+                    header=self.appearance.tab_header_height()/SY;fy+=header;fh=max(0,fh-header)
                 if x>=fx-.001 and y>=fy-.001 and x+width<=fx+fw+.001 and y+height<=fy+fh+.001:
                     depth=0;parent=candidate.parent_gadget(frame);seen={frame.name.lower()}
                     while parent and parent.name.lower() not in seen:
@@ -2388,7 +2402,7 @@ class Window(QMainWindow):
             parent=candidate.named(max(targets)[2]) if targets else None
             current_parent=candidate.parent_gadget(g)
             if current_parent:
-                ox,oy=candidate.offset(g);px,py=x-ox,y-oy
+                ox,oy=preview_offset(candidate,g,self.appearance);px,py=x-ox,y-oy
                 pw,ph=candidate.geometry(current_parent)[2:]
                 if (px<0 or py<0) and px+width<=pw+.001 and py+height<=ph+.001:
                     parent=current_parent
@@ -2400,7 +2414,7 @@ class Window(QMainWindow):
             if changed_parent:
                 g.hidden=hidden;g.width,g.height=native_size(g,*saved_size)
                 g.xref=g.yref=g.width_ref=''
-            ox,oy=candidate.offset(g);g.x=round(x-ox,2);g.y=round(y-oy,2)
+            ox,oy=preview_offset(candidate,g,self.appearance);g.x=round(x-ox,2);g.y=round(y-oy,2)
             if g.kind=='frame' and g.frame_style=='FRAME':g.frame_at=True
             candidate.validate()
         except ValueError as error:

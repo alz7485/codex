@@ -115,7 +115,7 @@ class MultiSelectionTests(unittest.TestCase):
         self.click('Child');self.key(Qt.Key_Up,Qt.AltModifier)
         self.assertEqual((w.form.named('Child').parent,w.form.named('Child').x,w.form.named('Child').y),('Page',2,1.9))
         self.assertEqual((w.form.named('Tabs').x,w.form.named('Tabs').y),(10,3))
-        self.assertAlmostEqual(self.item('Child').pos().y()/SY,4.9)
+        self.assertAlmostEqual(self.item('Child').pos().y()/SY,4.9+w.appearance.tab_header_height()/SY)
     def test_relative_layout_key_move_rejected_without_history(self):
         w=self.w;self.load(Form(gadgets=[Gadget(name='A',x=2,y=2,width=8),
             Gadget(name='Follower',layout_mode='RELATIVE',xref='A',yref='A',xedge='XMAX',yedge='YMIN',xoffset=2,width=8)]))

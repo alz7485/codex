@@ -68,7 +68,7 @@ class FormMarginAuditTests(unittest.TestCase):
         p = self.load(Form(width=20, height=8, gadgets=[
             Gadget(kind='frame', name='Group', x=2, y=2, width=12, height=4),
             Gadget(name='Run', parent='Group', x=-.5, y=1, width=4)]))
-        self.assertEqual(p.controls['Run'].pos().toTuple(), (-5, 26))
+        self.assertEqual(p.controls['Run'].pos().toTuple(), (-5, 26+round(.05*26)))
         self.assertEqual(p.controls['Run'].visibleRegion().boundingRect().left(), 5)
         self.assertFalse(self.item('Run').shape().contains(QPointF(1, 13)))
         self.assertTrue(self.item('Run').shape().contains(QPointF(6, 13)))

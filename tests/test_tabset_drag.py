@@ -25,6 +25,10 @@ class TabsetDragTests(unittest.TestCase):
     def assert_model_positions(self):
         for g in self.w.form.gadgets:
             x,y,_,_=self.w.form.geometry(g);ox,oy=self.w.form.offset(g)
+            parent=self.w.form.parent_gadget(g)
+            while parent:
+                if self.w.form.is_tab_page(parent):oy+=self.w.appearance.tab_header_height()/SY
+                parent=self.w.form.parent_gadget(parent)
             self.assertAlmostEqual(self.item(g.name).pos().x(),(x+ox)*SX,msg=g.name)
             self.assertAlmostEqual(self.item(g.name).pos().y(),(y+oy)*SY,msg=g.name)
     def start_drag(self,name,page=0,delta=QPoint(30,52),wait=True,modifiers=Qt.NoModifier):

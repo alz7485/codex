@@ -68,7 +68,7 @@ class RuntimePreviewTests(unittest.TestCase):
         self.assertIs(tabs.widget(1),controls['PageB'])
         self.assertIs(controls['Inside'].parent(),controls['Group'])
         self.assertIsInstance(controls['Group'],QGroupBox)
-        self.assertEqual(controls['Inside'].pos().toTuple(),(CHAR_WIDTH,LINE_HEIGHT))
+        self.assertEqual(controls['Inside'].pos().toTuple(),(CHAR_WIDTH,LINE_HEIGHT+round(.05*LINE_HEIGHT)))
         self.assertEqual(controls['Group'].pos().toTuple(),(2*CHAR_WIDTH,2*LINE_HEIGHT))
         self.assertEqual(tabs.pos().toTuple(),(3*CHAR_WIDTH+self.preview.layout_origin.x(),2*LINE_HEIGHT+self.preview.layout_origin.y()))
         tabs.setCurrentIndex(0)
@@ -177,7 +177,8 @@ class RuntimePreviewTests(unittest.TestCase):
             form=Form(gadgets=[Gadget(name='Button',x=3,y=2,width=12)]);code=form.pml()
             preview.set_form(form)
             control=preview.controls['Button']
-            self.assertEqual(control.pos().toTuple(),(24+preview.layout_origin.x(),40+preview.layout_origin.y()));self.assertEqual(control.height(),20)
+            self.assertEqual(control.pos().toTuple(),(24+preview.layout_origin.x(),40+preview.layout_origin.y()+round(.05*20)))
+            self.assertEqual(control.height(),round(.9*20))
             self.assertGreater(control.width(),96)
             self.assertEqual(preview.content_size.toTuple(),(560,440));self.assertEqual(form.pml(),code)
         finally:preview.close();preview.deleteLater()

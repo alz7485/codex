@@ -29,7 +29,7 @@ class TabPageOutlineTests(unittest.TestCase):
         try:page.paint(painter,QStyleOptionGraphicsItem())
         finally:painter.end()
         self.assertEqual(image.pixelColor(1,1).alpha(),0)
-        self.assertEqual(image.pixelColor(1,27).name(),'#2277cc')
+        self.assertEqual(image.pixelColor(1,self.w.appearance.tab_header_height()+1).name(),'#2277cc')
         self.assertTrue(page.shape().contains(page.mapFromScene(13*SX+20,5*SY+40)))
     def test_page_outline_follows_tabset_properties_and_undo(self):
         w=self.w;original=w.form.dumps()
@@ -49,5 +49,5 @@ class TabPageOutlineTests(unittest.TestCase):
         self.assertFalse(self.item('PageA').isVisible())
         self.assertEqual((page.pos().x()/SX,page.pos().y()/SY),(13,5))
         outline=page.mapRectToScene(page.shape().boundingRect())
-        self.assertEqual((outline.left(),outline.top()),(13*SX,5*SY+26))
+        self.assertEqual((outline.left(),outline.top()),(13*SX,5*SY+w.appearance.tab_header_height()))
         self.assertEqual(w.form.dumps(),original)

@@ -86,7 +86,7 @@ class SelectionHandleAuditTests(unittest.TestCase):
         original=w.form.dumps();self.resize(self.item('Tabs'),'both',escape=True)
         self.assertEqual(w.form.dumps(),original);self.assertEqual(w.history,[]);self.assertFalse(w.dirty)
         for name in ('Tabs','PageA','PageB'):self.assertEqual((self.item(name)._width,self.item(name)._height),(30,15))
-        self.assertEqual(self.item('Child').pos(),QPoint(4*SX,4*SY))
+        self.assertEqual(self.item('Child').pos(),QPoint(4*SX,4*SY+w.appearance.tab_header_height()))
 
     def test_form_all_resize_handles_are_reachable_under_full_size_frame(self):
         w=self.w

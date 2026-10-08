@@ -109,7 +109,7 @@ class CanvasZoomTests(unittest.TestCase):
         self.w.view.set_zoom(150);self.w.refresh();self.w.runtime_action.setChecked(True);self.app.processEvents()
         self.assertEqual(self.w.view.zoom_percent,150)
         self.assertEqual(self.w.runtime_dialog.controls['Run'].x(),28)
-        self.assertEqual(self.w.runtime_dialog.controls['Run'].height(),26)
+        self.assertEqual(self.w.runtime_dialog.controls['Run'].height(),round(.9*26))
         self.w.zoom_reset_button.click();self.assertEqual(self.w.zoom_text.text(),'100%')
 
     def test_processing_editors_use_height_and_can_be_resized(self):

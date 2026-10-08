@@ -91,9 +91,10 @@ class RuntimePreview(QDialog,NativeControls):
             width=self.control_width(g,widget,width,height)
             if g.kind=='line':
                 width=2 if g.orientation=='VERT' else width;height=2 if g.orientation=='HORIZ' else height
+            bounds=self.control_bounds(g,width,height)
             origin=self.layout_origin if parent is self.surface else QPoint()
-            widget.setGeometry(self.pixels(x*self.char_width+origin.x(),True),self.pixels(y*self.line_height+origin.y(),True),
-                max(1,self.pixels(width)),max(1,self.pixels(height)))
+            widget.setGeometry(self.pixels(x*self.char_width+origin.x()+bounds.x(),True),self.pixels(y*self.line_height+origin.y()+bounds.y(),True),
+                int(bounds.width()),int(bounds.height()))
             if g.kind=='frame':
                 if g.frame_style=='TABSET':
                     pages=self.form.children(g.name)

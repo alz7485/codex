@@ -1,7 +1,7 @@
 """Shared native control appearance for the editor and the reference window."""
 import math
 
-from PySide6.QtCore import Qt,QItemSelectionModel,QSize,QPoint
+from PySide6.QtCore import Qt,QItemSelectionModel,QSize,QPoint,QRectF
 from PySide6.QtGui import QColor,QPalette,QPixmap,QIcon,QFont,QImageReader,QFontDatabase,QPainter,QRegion
 from PySide6.QtWidgets import (QApplication,QHBoxLayout,QWidget,
     QLabel,QPushButton,QCheckBox,QRadioButton,QComboBox,QLineEdit,QGroupBox,QTabWidget,
@@ -59,6 +59,23 @@ class NativeControls:
         palette.setColor(QPalette.WindowText,QColor('#101010'));palette.setColor(QPalette.ButtonText,QColor('#101010'))
         widget.setPalette(palette)
         return widget
+
+    def tab_header_height(self):
+        key=self.preview_font.toString()
+        cached=getattr(self,'_tab_header_cache',None)
+        if cached and cached[0]==key:return cached[1]
+        tabs=self.style_widget(QTabWidget(self))
+        try:
+            tabs.addTab(QWidget(tabs),'Tab');tabs.ensurePolished()
+            height=max(1,tabs.tabBar().sizeHint().height())
+            self._tab_header_cache=(key,height)
+            return height
+        finally:tabs.deleteLater()
+
+    def control_bounds(self,g,width,height):
+        # Insets affect drawing only; PML dimensions and drag origins stay intact.
+        inset=.05*self.line_height if g.kind=='button' and g.display_mode=='TEXT' else 0
+        return QRectF(0,self.pixels(inset),max(1,self.pixels(width)),max(1,self.pixels(height-2*inset)))
 
     def image(self,g):
         filename=g.items[0] if g.kind=='option' and g.items else g.pixmap_path
@@ -141,6 +158,7 @@ class NativeControls:
             widget=QLabel(g.initial or g.label,parent);widget.setAlignment(Qt.AlignLeft|Qt.AlignVCenter)
             widget.setTextFormat(Qt.PlainText)
             if g.display_mode=='PIXMAP':widget.setPixmap(self.image(g));widget.setAlignment(Qt.AlignLeft|Qt.AlignTop)
+            else:widget.setContentsMargins(self.pixels(.8*self.char_width),0,0,0)
         elif g.kind=='button':
             widget=QPushButton(g.label,parent);widget.setAutoDefault(False)
             if g.display_mode=='PIXMAP':
@@ -197,7 +215,7 @@ class EditorAppearance(QWidget,NativeControls):
         try:
             widget.ensurePolished()
             width=self.control_width(g,widget,width,height)
-            widget.resize(max(1,self.pixels(width)),max(1,self.pixels(height)))
+            widget.resize(self.control_bounds(g,width,height).size().toSize())
             if widget.layout():widget.layout().activate()
             pixmap=QPixmap(widget.size());pixmap.fill(Qt.transparent)
             painter=QPainter(pixmap)

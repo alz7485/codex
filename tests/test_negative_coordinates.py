@@ -135,7 +135,7 @@ class NegativeCoordinatePreviewTests(unittest.TestCase):
         scene=QGraphicsScene();items=[Item(g,f) for g in f.gadgets]
         for item in items:scene.addItem(item)
         item=next(i for i in items if i.gadget.name=='Child');image=self.draw(item)
-        self.assertEqual(image.pixelColor(55,60).alpha(),0)
+        self.assertEqual(image.pixelColor(55,40).alpha(),0)
         self.assertGreater(image.pixelColor(55,80).alpha(),0)
 
 

@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt,QPoint
 from PySide6.QtGui import QFont,QFontDatabase
 from PySide6.QtWidgets import QApplication,QStyle
 from PySide6.QtTest import QTest
-from e3d_designer.app import Window,Item
+from e3d_designer.app import Window,Item,SY
 from e3d_designer.model import Form,Gadget
 from e3d_designer.appearance import FORM_MARGIN,FORM_PADDING,FORM_BORDER,FORM_BACKGROUND,default_form_font
 
@@ -31,7 +31,8 @@ class FormInsetTests(unittest.TestCase):
         self.assertEqual(inner.topLeft().toTuple(),(0,0));self.assertEqual(self.item('Run').pos().toTuple(),(0,0))
         self.assertEqual(outer.topLeft().toTuple(),(-FORM_MARGIN,-FORM_MARGIN))
         self.assertEqual(outer.size().toSize(),p.client.size());self.assertEqual(p.surface.pos().toTuple(),(FORM_BORDER,FORM_BORDER))
-        self.assertEqual(p.content_size.toTuple(),(300,260));self.assertEqual(p.surface.size().toTuple(),(316,276));self.assertEqual(p.controls['Run'].pos(),p.layout_origin)
+        self.assertEqual(p.content_size.toTuple(),(300,260));self.assertEqual(p.surface.size().toTuple(),(316,276))
+        self.assertEqual(p.controls['Run'].pos(),p.layout_origin+QPoint(0,round(.05*SY)))
         self.assertEqual(p.surface.palette().window().color().name(),FORM_BACKGROUND)
         self.assertEqual(self.w.form.dumps(),before);self.assertEqual(self.w.form.pml(),code);self.assertEqual(self.w.history,[])
     def test_measure_form_automatic_client_uses_same_extent_and_padding_in_both_views(self):
