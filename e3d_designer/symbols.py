@@ -2,12 +2,14 @@
 import re
 
 SYMBOL_NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_]*\Z')
+FORM_NAME_PATTERN = r'[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*'
+FORM_NAME = re.compile(FORM_NAME_PATTERN+r'\Z')
 
 
 def split_form_reference(token, default_prefix=''):
-    match = re.fullmatch(r'([!.]*)([A-Za-z_][A-Za-z0-9_]*)', token)
+    match = re.fullmatch(r'([!.]*)('+FORM_NAME_PATTERN+r')', token)
     if not match:
-        raise ValueError('フォーム名は !!名前 / !名前 / .名前 / _名前 / 名前 で指定してください。')
+        raise ValueError('フォーム名は !!名前 / !名前 / .名前 / _名前 / 名前（例: _CDR.HD）で指定してください。各部分は英字・_で始まる英数字・_とし、間を.で区切れます。')
     prefix, name = match.groups()
     return prefix or default_prefix, name
 

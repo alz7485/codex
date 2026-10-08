@@ -3,7 +3,7 @@ import copy
 import re
 from .model import IDENTIFIER,uses_pairs
 from .pml_syntax import reference_mask,own_reference_pattern,method_call_sites
-from .symbols import form_reference,SYMBOL_NAME,split_form_reference
+from .symbols import form_reference,SYMBOL_NAME,FORM_NAME,split_form_reference
 
 
 def code_slots(form):
@@ -146,12 +146,13 @@ def rename_many(form, changes, update_code=True):
             result.form_prefix=prefix
         elif kind=='local_variable' and new_name.startswith('!') and not new_name.startswith('!!'):new_name=new_name[1:]
         elif kind=='variable' and new_name.startswith('!!'):new_name=new_name[2:]
-        valid = SYMBOL_NAME.fullmatch(new_name) if kind in ('form','variable','local_variable') else re.fullmatch(r'_?[A-Za-z][A-Za-z0-9_]*',new_name) if kind == 'gadget' and form.gadgets[key].kind == 'option' else IDENTIFIER.fullmatch(new_name)
+        valid = FORM_NAME.fullmatch(new_name) if kind=='form' else SYMBOL_NAME.fullmatch(new_name) if kind in ('variable','local_variable') else re.fullmatch(r'_?[A-Za-z][A-Za-z0-9_]*',new_name) if kind == 'gadget' and form.gadgets[key].kind == 'option' else IDENTIFIER.fullmatch(new_name)
         if not valid: raise ValueError('名前は英字で始まる英数字・_ にしてください。')
         if kind == 'variable': globals_map[old.lower()] = new_name
         elif kind=='local_variable':locals_map[old.lower()]=new_name
         elif kind == 'form':
             result.name = new_name
+            methods[old.lower()] = new_name
         elif kind == 'menu':
             result.menus[key].name = new_name
             menus_map[old.lower()] = new_name
@@ -180,7 +181,8 @@ def rename_many(form, changes, update_code=True):
         g.macro_flag = globals_map.get(g.macro_flag.lower(),g.macro_flag)
     if update_code:
         # Consume qualified references and globals together so swaps cannot cascade.
-        pattern = re.compile(r'(?<![A-Za-z0-9_!.])(!this|'+re.escape(form.symbol)+r'(?![A-Za-z0-9_])|!![A-Za-z_][A-Za-z0-9_]*|![A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?',re.I)
+        constructor_member=re.escape(form.name)+r'(?=\s*\()|[A-Za-z_][A-Za-z0-9_]*'
+        pattern = re.compile(r'(?<![A-Za-z0-9_!.])(!this|'+re.escape(form.symbol)+r'(?![A-Za-z0-9_])|!![A-Za-z_][A-Za-z0-9_]*|![A-Za-z_][A-Za-z0-9_]*)(?:\.('+constructor_member+r'))?',re.I)
         for _,owner,attribute in code_slots(result):
             value = read_slot(owner,attribute)
             masked=reference_mask(value,form)

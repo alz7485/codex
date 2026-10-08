@@ -9,12 +9,12 @@ from .model import Form, Gadget, Menu, MenuItem, Method, display_size, normalize
 from .model import literal as pml_literal, image_path_literal as pml_image_path
 from .names import actual_name
 from .pml_syntax import mask_non_code, NON_CODE, has_code
-from .symbols import split_form_reference
+from .symbols import split_form_reference,FORM_NAME_PATTERN
 
 NUMBER = r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
 NAME = r'[A-Za-z_][A-Za-z0-9_]*'
 TOKEN = re.compile(r"""'[^']*'|"[^"]*"|\|[^|]*\||[^\s]+""")
-HEADER = re.compile(r'^\s*DEFINE\s+METHOD\s+\.('+NAME+r')\s*(\(.*\)(?:\s+IS\s+\S+)?)\s*$',re.I)
+HEADER = re.compile(r'^\s*DEFINE\s+METHOD\s+\.('+FORM_NAME_PATTERN+r')\s*(\(.*\)(?:\s+IS\s+\S+)?)\s*$',re.I)
 ARRAY_START = re.compile(r'^!('+NAME+r')\s*=\s*(?:OBJECT\s+)?ARRAY\s*\(\s*\)\s*$',re.I)
 CELL = re.compile(r'^!('+NAME+r')\s*((?:\[\d+\])+)\s*=\s*(.*)$',re.I)
 APPEND = re.compile(r'^!('+NAME+r')\.APPEND\s*\(\s*(.*?)\s*\)\s*$',re.I)

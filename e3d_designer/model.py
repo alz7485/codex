@@ -4,7 +4,7 @@ import math
 import re
 import unicodedata
 from .pml_syntax import has_code
-from .symbols import SYMBOL_NAME
+from .symbols import SYMBOL_NAME,FORM_NAME,FORM_NAME_PATTERN
 
 KINDS = ('button', 'paragraph', 'text', 'toggle', 'option', 'list', 'line', 'frame', 'slider', 'rtoggle', 'combo', 'view', 'commandline', 'container', 'textpane', 'selector')
 IDENTIFIER = re.compile(r'[A-Za-z][A-Za-z0-9_]*\Z')
@@ -560,8 +560,8 @@ class Form:
                 value = getattr(g,key)
                 if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value):
                     raise ValueError('座標とサイズには有限数を指定してください。')
-        if not SYMBOL_NAME.fullmatch(self.name) or not isinstance(self.form_prefix,str) or not re.fullmatch(r'[!.]*',self.form_prefix):
-            raise ValueError('フォーム名は !!名前 / !名前 / .名前 / _名前 / 名前 で指定してください。')
+        if not FORM_NAME.fullmatch(self.name) or not isinstance(self.form_prefix,str) or not re.fullmatch(r'[!.]*',self.form_prefix):
+            raise ValueError('フォーム名は !!名前 / !名前 / .名前 / _名前 / 名前（例: _CDR.HD）で指定してください。各部分は英字・_で始まる英数字・_とし、間を.で区切れます。')
         if self.form_type not in ('DIALOG','MAIN'): raise ValueError('フォーム形式は DIALOG / MAIN を指定してください。')
         for event in ('initcall','okcall','cancelcall'):
             literal(getattr(self,event),allow_expansion=True,field=f'{self.symbol}: {event}')
@@ -1148,7 +1148,7 @@ class Form:
             return has_code(body)
         blocks=[block for block in blocks[1:]+blocks[:1] if nonempty(block)]
         blocks = order_methods(blocks,self,protected)
-        emitted={re.match(r'define\s+method\s+\.([A-Za-z_][A-Za-z0-9_]*)',block[0],re.I).group(1).lower()
+        emitted={re.match(r'define\s+method\s+\.('+FORM_NAME_PATTERN+r')',block[0],re.I).group(1).lower()
                  for block in blocks}
         validate_omitted_references(self,(empty_methods|{self.name.lower()})-emitted,code_fragments)
         lines = lines[:method_start] + [line for block in blocks for line in block]

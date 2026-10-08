@@ -1,6 +1,6 @@
 """Shared PML vocabulary and comment/string recognition, independent of Qt."""
 import re
-from .symbols import form_reference
+from .symbols import form_reference,FORM_NAME_PATTERN
 
 
 NON_CODE_PATTERN = (
@@ -39,7 +39,7 @@ def reference_mask(text,form_name):
 
 
 def method_call_sites(text,form_name):
-    pattern=re.compile(own_reference_pattern(form_name)+r'\.([A-Za-z_][A-Za-z0-9_]*)(?=\s*\()',re.I)
+    pattern=re.compile(own_reference_pattern(form_name)+r'\.('+FORM_NAME_PATTERN+r')(?=\s*\()',re.I)
     return [(match.start(),match.end(),match.group(2))
             for match in pattern.finditer(reference_mask(text,form_name))]
 

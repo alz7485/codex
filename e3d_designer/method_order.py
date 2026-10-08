@@ -1,14 +1,15 @@
 """Emit a form's methods before the methods that call them."""
 import re
 from .pml_syntax import mask_non_code,own_reference_pattern
+from .symbols import FORM_NAME_PATTERN
 
 
 def order_methods(blocks, form_name, protected):
     by_name = {}
     for block in blocks:
-        name = re.match(r'define\s+method\s+\.([A-Za-z_][A-Za-z0-9_]*)',block[0],re.I).group(1)
+        name = re.match(r'define\s+method\s+\.('+FORM_NAME_PATTERN+r')',block[0],re.I).group(1)
         by_name[name.lower()] = (name,block)
-    calls = re.compile(own_reference_pattern(form_name)+r'\.([A-Za-z_][A-Za-z0-9_]*)\s*\(',re.I)
+    calls = re.compile(own_reference_pattern(form_name)+r'\.('+FORM_NAME_PATTERN+r')\s*\(',re.I)
     dependencies = {}
     for key,(_,block) in by_name.items():
         body = '\n'.join(block[1:])
