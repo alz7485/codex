@@ -4,13 +4,15 @@ from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLine
     QComboBox,QDoubleSpinBox,QPushButton,QDialogButtonBox,QTableWidget,QTableWidgetItem,QLabel,QCheckBox,QFileDialog)
 from .names import rename
 from .color_picker import ColorPicker
-from .model import dimension_editable,normalize_dimensions,uses_pairs,supports_hidden,fixed_dimensions,supports_auto_width,uses_auto_width
+from .model import Form,dimension_editable,normalize_dimensions,uses_pairs,supports_hidden,fixed_dimensions,supports_auto_width,uses_auto_width
 
 
 class ItemsDialog(QDialog):
-    def __init__(self,parent,gadget,initial_editable=True):
+    def __init__(self,parent,gadget,initial_editable=True,constructor_mode='GENERATED'):
         super().__init__(parent)
         self.gadget=copy.deepcopy(gadget)
+        self.constructor_mode=constructor_mode
+        self._values_explicit=bool(gadget.item_values)
         self.setWindowTitle('項目・値の編集');self.resize(570,390)
         layout=QVBoxLayout(self);self.mode=QComboBox()
         if gadget.kind=='list':
@@ -66,9 +68,9 @@ class ItemsDialog(QDialog):
         self.error.setText('Excelの表を読み込みました。内容を確認してOKで確定してください。')
 
     def apply_excel_data(self,data,table_mode=False,first_row_header=False):
-        from .model import literal,image_path_literal
         if not data or not data[0]:raise ValueError('読み込む表に値がありません。')
         columns=max(map(len,data))
+        values_explicit=columns>=2
         if table_mode and self.gadget.kind!='list':raise ValueError('複数列の表はLISTで指定してください。')
         if not table_mode and columns>2:raise ValueError('表示名／実値・コマンド形式はA・Bの2列までです。LISTでは「表（複数列）」を選んでください。')
         payload=[list(row)+['']*(columns-len(row)) for row in data]
@@ -78,15 +80,13 @@ class ItemsDialog(QDialog):
             if first_row_header:payload=payload[1:]
             payload=[row+['']*(2-len(row)) for row in payload];columns=2
         commands=uses_pairs(self.gadget) and self.mode.currentIndex()==0
-        for r,row in enumerate(data,1):
-            if first_row_header and not table_mode and r==1:continue
-            for c,value in enumerate(row):
-                field=f'Excel {chr(65+c) if c<26 else "列"+str(c+1)}{r}'
-                image=not table_mode and c==0 and self.gadget.display_mode=='PIXMAP'
-                if image:image_path_literal(value,field=field)
-                else:literal(value,allow_expansion=not table_mode and c==1 and commands,field=field)
+        self.validate_data(data[1:] if first_row_header and not table_mode else data,table_mode,
+                           field='Excel',first_row=2 if first_row_header and not table_mode else 1)
+        from .item_editing import validate_item_change
+        validate_item_change(self.gadget,self.gadget_from_data(payload,table_mode,values_explicit),self.constructor_mode)
         # All checks finish before replacing the editable draft.
         self.table.clearFocus();self._tables.clear()
+        self._values_explicit=values_explicit
         self.mode.blockSignals(True)
         try:
             if self.gadget.kind=='list':self.mode.setCurrentIndex(int(table_mode))
@@ -97,6 +97,33 @@ class ItemsDialog(QDialog):
         self.table.setVerticalHeaderLabels(['見出し',*[str(i+1) for i in range(len(payload)-1)]] if table_mode else [str(i+1) for i in range(len(payload))])
         for r,row in enumerate(payload):
             for c,value in enumerate(row):self.table.setItem(r,c,QTableWidgetItem(value))
+
+    def validate_data(self,data,table_mode,field='セル',first_row=1):
+        from .model import literal,image_path_literal
+        from openpyxl.utils import get_column_letter
+        commands=uses_pairs(self.gadget) and self.mode.currentIndex()==0
+        for r,row in enumerate(data,first_row):
+            for c,value in enumerate(row):
+                address=f'{field} {get_column_letter(c+1)}{r}'
+                image=not table_mode and c==0 and self.gadget.kind=='option' and self.gadget.display_mode=='PIXMAP'
+                if image:image_path_literal(value,field=address)
+                else:literal(value,allow_expansion=not table_mode and c==1 and commands,field=address)
+
+    def gadget_from_data(self,data,table_mode,values_explicit=None):
+        if values_explicit is None:values_explicit=self._values_explicit
+        g=copy.deepcopy(self.gadget);g.initial=self.initial.text()
+        if g.kind=='list':g.selection_mode=self.selection.currentText()
+        if table_mode:
+            g.list_mode='TABLE';g.headings=data[0] if data else ['列1'];g.rows=data[1:]
+            g.items=[];g.item_values=[];g.item_commands=[]
+        else:
+            if g.kind=='list':g.list_mode='SIMPLE';g.headings=[];g.rows=[]
+            g.items=[row[0] for row in data];values=[row[1] for row in data]
+            commands=uses_pairs(g) and self.mode.currentIndex()==0
+            g.item_commands=values if commands else []
+            # An explicitly chosen OPTION real-value mode may contain empty values.
+            g.item_values=values if not commands and (uses_pairs(g) or values_explicit or any(values)) else []
+        return g
 
     def load_table(self):
         g=self.gadget
@@ -143,16 +170,13 @@ class ItemsDialog(QDialog):
         # Commit an active cell editor before reading the spreadsheet.
         self.table.clearFocus()
         data=[[self.table.item(r,c).text() if self.table.item(r,c) else '' for c in range(self.table.columnCount())] for r in range(self.table.rowCount())]
-        g=copy.deepcopy(self.gadget);g.initial=self.initial.text()
-        if g.kind=='list':g.selection_mode=self.selection.currentText()
-        if self.is_table():
-            g.list_mode='TABLE';g.headings=data[0] if data else ['列1'];g.rows=data[1:];g.items=[];g.item_values=[]
-        else:
-            if g.kind=='list':g.list_mode='SIMPLE';g.headings=[];g.rows=[]
-            g.items=[row[0] for row in data];values=[row[1] for row in data]
-            commands=uses_pairs(g) and self.mode.currentIndex()==0
-            g.item_commands=values if commands else []
-            g.item_values=[] if commands or not any(values) else values
+        from .item_editing import validate_item_change
+        try:
+            self.validate_data(data,self.is_table())
+            g=self.gadget_from_data(data,self.is_table())
+            validate_item_change(self.gadget,g,self.constructor_mode)
+            if self.initial.isEnabled():Form(gadgets=[g]).initial_lines()
+        except ValueError as error:self.error.setText(str(error));return
         self.gadget=g;super().accept()
 
 
@@ -270,7 +294,7 @@ class MiniProperties(QDialog):
         if dialog.exec()==QDialog.Accepted:self.fields['background'].setText(dialog.value)
         dialog.deleteLater()
     def edit_items(self):
-        dialog=ItemsDialog(self,self.gadget,initial_editable=self.draft.default_mode=='GENERATED')
+        dialog=ItemsDialog(self,self.gadget,initial_editable=self.draft.default_mode=='GENERATED',constructor_mode=self.draft.constructor_mode)
         if dialog.exec()==QDialog.Accepted:
             self.gadget=dialog.gadget;self.draft.gadgets[self.index]=self.gadget
             if self.gadget.display_mode=='PIXMAP':self.preview_image_dimensions()

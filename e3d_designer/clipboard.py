@@ -15,6 +15,14 @@ def clone_subtree(target,source,index,restore_names=False,*,same_project=False):
     draft = copy.deepcopy(target)
     occupied = {actual_name(g).lower() for g in draft.gadgets}|{m.name.lower() for m in draft.menus}
     if restore_names and any(actual_name(g).lower() in occupied for _,g in originals): restore_names = False
+    restoring_source=(restore_names and source.constructor_mode=='SOURCE'
+                      and source.symbol.lower()==target.symbol.lower()
+                      and source.constructor_body==target.constructor_body)
+    if target.constructor_mode=='SOURCE' and not restoring_source:
+        from .item_editing import needs_constructor
+        ignored=[g.name for _,g in originals if needs_constructor(g)]
+        if ignored:
+            raise ValueError('元コード優先のため、複製した部品の初期化を自動追加できません: '+', '.join(ignored)+'。「取り込みコード」で元のコンストラクタと初期化の生成方式を確認してください。')
     reserved = occupied|{draft.name.lower(),'default'}|{g.name.lower() for g in draft.gadgets}
     reserved |= {g.callback.lower() for g in draft.gadgets if g.callback}
     reserved |= {('macro_'+g.name).lower() for g in draft.gadgets if g.action_mode == 'MACRO'}

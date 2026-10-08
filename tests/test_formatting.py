@@ -25,7 +25,9 @@ class FormattingTests(unittest.TestCase):
         f=Form(gadgets=[Gadget(kind='option',name='MyChoice',items=['First'],item_commands=['SaVeWoRk']),Gadget(kind='combo',name='ComboChoice',items=['Label'],item_values=['ActualValue']),Gadget(kind='view',name='MyView',view_code=raw)])
         code=f.pml()
         self.assertIn("'First' 'SaVeWoRk'",code);self.assertIn("'ActualValue'",code)
-        self.assertIn('\n'.join('  '+line for line in raw.split('\n')),code)
+        # VIEW content has the form's two spaces plus two for the VIEW body.
+        # Keep the user's own indentation in addition to that structural prefix.
+        self.assertIn('\n'.join('    '+line for line in raw.split('\n')),code)
     def test_branch_values_are_case_sensitive_and_match_macro_calls(self):
         f=Form(variables={'Flag':''},gadgets=[Gadget(name='a',action_mode='MACRO',macro_path='C:/MyFolder/Code.mac',macro_flag='Flag',macro_value='modeA'),Gadget(name='b',action_mode='MACRO',macro_path='C:/MyFolder/Code.mac',macro_flag='Flag',macro_value='ModeA')])
         code=f.pml();template=branch_template(f,'C:/MyFolder/Code.mac')

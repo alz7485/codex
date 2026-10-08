@@ -887,16 +887,16 @@ class Form:
         empty_methods=empty_method_names(self,initial_lines,default_code)
         protected = {}
         code_fragments = []
-        def protect(value):
-            if not normalize:return value
+        def protect(value,force=False):
+            if not normalize and not force:return value
             import uuid
             marker = '__user_code_'+uuid.uuid4().hex+'__'
             protected[marker]=value
             return marker
-        def user_code(value):
+        def user_code(value,force=False):
             value=prune_empty_calls(value,self,empty_methods)
             code_fragments.append(value)
-            return protect(value)
+            return protect(value,force)
         def command_code(value):
             value=prune_empty_calls(value,self,empty_methods)
             code_fragments.append(value)
@@ -1039,7 +1039,12 @@ class Form:
                 if view_type == 'ALPHA':
                     for channel in ('REQUESTS','COMMANDS'):
                         if g.channels in (channel,'BOTH'): line += '\n  CHANNEL '+channel
-                if g.view_code: line += '\n'+user_code('\n'.join('  '+row for row in g.view_code.split('\n')))
+                if g.view_code:
+                    from .pml_syntax import indent_code
+                    body=indent_code(g.view_code,'  '*(depth+1))
+                    # render() adds the first line's container prefix; the
+                    # protected fragment already holds every remaining prefix.
+                    line += '\n'+user_code(body[2*depth:],force=True)
                 line += '\nEXIT'
             elif g.kind == 'container':
                 line = f'CONTAINER .{g.name} {position} PMLNETCONTROL {width_clause} HEIGHT {n(g.height)}'

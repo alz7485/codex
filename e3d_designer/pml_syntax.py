@@ -24,6 +24,28 @@ def has_code(text):
     return bool(mask_non_code(text, strings=False).strip())
 
 
+def code_lines(text):
+    """Identify line starts inside quoted data, whose leading spaces are values."""
+    tokens=iter(match for match in NON_CODE.finditer(text) if match.group()[0] in "'\"|")
+    token=next(tokens,None);offset=0
+    for line in text.split('\n'):
+        while token is not None and token.end()<=offset:token=next(tokens,None)
+        yield line,token is not None and token.start()<offset<token.end()
+        offset+=len(line)+1
+
+
+def dedent_code(text,maximum=None):
+    lines=list(code_lines(text))
+    widths=[len(line)-len(line.lstrip(' \t')) for line,quoted in lines if not quoted and line.strip()]
+    width=min(widths,default=0)
+    if maximum is not None:width=min(width,maximum)
+    return '\n'.join(line if quoted else line[min(width,len(line)-len(line.lstrip(' \t'))):] for line,quoted in lines)
+
+
+def indent_code(text,prefix):
+    return '\n'.join(line if quoted else prefix+line for line,quoted in code_lines(text))
+
+
 def reference_mask(text,form_name):
     """Expose code and known callback assignments, keeping data literals masked."""
     masked=mask_non_code(text)

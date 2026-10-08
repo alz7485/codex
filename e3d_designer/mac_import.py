@@ -8,7 +8,7 @@ from pathlib import Path
 from .model import Form, Gadget, Menu, MenuItem, Method, display_size, normalize_dimensions, uses_pairs, macro_path_supported
 from .model import literal as pml_literal, image_path_literal as pml_image_path
 from .names import actual_name
-from .pml_syntax import mask_non_code, NON_CODE, has_code
+from .pml_syntax import mask_non_code, NON_CODE, has_code,dedent_code
 from .symbols import split_form_reference,FORM_NAME_PATTERN
 
 NUMBER = r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
@@ -301,7 +301,8 @@ class Importer:
             line=self.code[index].strip();row=index+1;index+=1
             if not line:
                 raw=self.raw[row-1].strip()
-                if raw.startswith(('--','$*')) and not raw.startswith(('-- Auto placement follows','-- Set Control handle')):
+                if raw.startswith(('-- Auto placement follows','-- Set Control handle')):continue
+                if raw.startswith(('--','$*')):
                     comments.append(raw[2:].lstrip())
                 elif raw:
                     # Preserve complete block-comment fragments as line comments.
@@ -431,14 +432,15 @@ class Importer:
                 gadget.assembly,gadget.namespace,gadget.control_type=members[(gadget.name+'Control').lower()]
             if gadget.kind=='view':
                 view_code=[];channels=[]
-                while index<len(self.raw) and self.code[index].strip().upper()!='EXIT':
-                    value=self.code[index].strip();view_row=index+1;raw=self.raw[index];index+=1
-                    if re.match(r'^(WIDTH(?:\.|\s)|HEIGHT\s|ASPECT\s)',value,re.I):
+                while index<len(self.raw) and self.structure[index].strip().upper()!='EXIT':
+                    value=self.code[index].strip();structure=self.structure[index].strip();view_row=index+1;raw=self.raw[index];index+=1
+                    if re.match(r'^(WIDTH(?:\.|\s)|HEIGHT\s|ASPECT\s)',structure,re.I):
                         self.attributes(Tokens(value,view_row),gadget,present)
-                    elif re.match(r'^CHANNEL\s+',value,re.I):channels.append(value.split()[1].upper())
+                    elif re.match(r'^CHANNEL\s+',structure,re.I):channels.append(value.split()[1].upper())
                     else:view_code.append(raw)
                 if index==len(self.raw):raise MacImportError(row,'VIEWにEXITがありません。')
-                index+=1;gadget.view_code='\n'.join(view_code).strip('\n')
+                structural_indent=len(self.raw[row-1])-len(self.raw[row-1].lstrip(' \t'))+2
+                index+=1;gadget.view_code=dedent_code('\n'.join(view_code),structural_indent).strip('\n')
                 if channels:gadget.channels='BOTH' if set(channels)=={'REQUESTS','COMMANDS'} else channels[0]
                 if gadget.view_type=='ALPHA':gadget.kind='commandline'
             inline=self.comments[row-1].strip()

@@ -1988,6 +1988,7 @@ class Window(QMainWindow):
 
     def update_gadget(self):
         if self.loading or self.selected is None: return
+        previous_gadget=copy.deepcopy(self.form.gadgets[self.selected])
         previous_history=list(self.history);previous_form=self.form
         previous_future=list(self.future);previous_dirty=self.dirty
         requested_name=self.fields['name'].text()
@@ -2064,6 +2065,9 @@ class Window(QMainWindow):
         g.fixed_font = self.fixed_font.isChecked()
         choices = self.choices.toPlainText()
         g.items = choices.split('\n') if choices else []
+        if g.kind in ('option','combo','list') and not values and previous_gadget.item_values and not any(previous_gadget.item_values):
+            g.item_values=['']*len(g.items)
+        if uses_pairs(g) and g.item_values:g.item_commands=[]
         from .callbacks import join_callback,set_callback_body
         if g.callback.lower()!=old_callback.lower():
             join_callback(self.form,g,old_callback)
@@ -2076,6 +2080,12 @@ class Window(QMainWindow):
         if g.kind == 'option' and old_display != g.display_mode:
             for _,owner,key in code_slots(self.form):
                 write_slot(owner,key,rewrite_code(read_slot(owner,key),self.form,self.form,{old_actual:actual_name(g)}))
+        from .item_editing import validate_item_change
+        try:validate_item_change(previous_gadget,g,self.form.constructor_mode)
+        except ValueError as error:
+            self.form=self.history[-1];self.history=previous_history
+            self.future=previous_future;self.dirty=previous_dirty
+            self.refresh();self.statusBar().showMessage(str(error));return
         name_changed=requested_name!=g.name
         if name_changed:
             from .names import rename
