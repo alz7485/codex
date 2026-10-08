@@ -71,7 +71,7 @@ class VisualInsetTests(unittest.TestCase):
             self.assertAlmostEqual(self.item('InnerZero').pos().y(),self.item('Tabs').pos().y()+2*header)
             for name in ('Zero','InnerZero'):
                 reference=p.controls[name].mapTo(p.surface,QPoint())-p.layout_origin
-                self.assertAlmostEqual(reference.y(),self.item(name).pos().y(),delta=.5)
+                self.assertAlmostEqual(reference.y(),self.item(name).sceneBoundingRect().top(),delta=.5)
         self.assertEqual(self.w.form.dumps(),before)
 
     def test_label_text_moves_right_but_background_origin_and_image_size_stay_fixed(self):
