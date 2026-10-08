@@ -714,6 +714,13 @@ class Window(QMainWindow):
         self.view.setToolTip('中ボタンドラッグ／Space＋左ドラッグでパン。Ctrl＋ホイールで拡大縮小。部品の座標は変わりません。')
         self.view.zoomChanged.connect(self.sync_zoom_text)
         for widget in (self.zoom_out_button,self.zoom_in_button,self.zoom_text,self.zoom_reset_button,self.pan_center_button):drag_row.addWidget(widget)
+        self.code_display_button=QPushButton('📝 コード')
+        self.code_display_button.setToolTip('生成コードを別ウィンドウに表示（Ctrl＋Shift＋C）')
+        self.code_display_button.clicked.connect(self.show_code)
+        self.runtime_preview_button=QPushButton('🖥️ プレビュー')
+        self.runtime_preview_button.setToolTip('実機仕様の参考表示を開きます。表示中も手前へ戻します（F6で表示切り替え）。')
+        self.runtime_preview_button.clicked.connect(self.show_runtime_preview)
+        drag_row.addWidget(self.code_display_button);drag_row.addWidget(self.runtime_preview_button)
         drag_row.addStretch()
         self.display_font_button=QPushButton('表示フォント…');self.display_font_button.clicked.connect(self.choose_display_font)
         self.display_font_button.setToolTip('編集画面と参考表示の表示フォントを設定します。')
@@ -1014,7 +1021,9 @@ class Window(QMainWindow):
 
     def show_code(self):
         self.sync_output_summary()
-        self.output_dialog.show();self.output_dialog.raise_();self.output_dialog.activateWindow()
+        if self.output_dialog.isMinimized():self.output_dialog.showNormal()
+        else:self.output_dialog.show()
+        self.output_dialog.raise_();self.output_dialog.activateWindow()
 
     def set_workflow(self,step):
         # Internal focus routing; the canvas and its panels always remain visible.
@@ -2568,6 +2577,10 @@ class Window(QMainWindow):
                 while draft.named(page_name):page_name=f'{base}_{number}';number+=1
                 draft.gadgets.append(Gadget(kind='frame',name=page_name,label=f'Tab {index}',parent=g.name,x=0,y=0,width=g.width,height=g.height))
         self.checkpoint();self.form=draft;self.selected=selected;self.refresh();self.set_workflow('layout')
+
+    def show_runtime_preview(self):
+        if self.runtime_action.isChecked():self.toggle_runtime_preview(True)
+        else:self.runtime_action.setChecked(True)
 
     def toggle_runtime_preview(self,enabled):
         self._runtime_restore_on_trigger=False
