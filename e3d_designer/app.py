@@ -20,7 +20,7 @@ from .canvas_view import CanvasView
 from .highlighting import PmlHighlighter,COLORS
 from .colors import preview_color,foreground_color
 from .appearance import FORM_BACKGROUND,FORM_PADDING,slider_fraction
-from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size, fixed_dimensions, dimension_editable, normalize_dimensions, uses_pairs, supports_hidden
+from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size, fixed_dimensions, dimension_editable, normalize_dimensions, uses_pairs, supports_hidden, supports_auto_width, uses_auto_width
 from .images import resolve_image_path, sync_image_size
 from .symbols import parse_variables,variable_text
 
@@ -786,11 +786,11 @@ class Window(QMainWindow):
         self.form_fields.addRow('表示形式', self.docking)
         rl.addLayout(self.form_fields)
         rl.addWidget(QLabel('追加の変数（グローバル／ローカル・任意）'))
-        self.variables = QPlainTextEdit(); self.variables.setMaximumHeight(90)
+        self.variables = QPlainTextEdit(); self.variables.setMinimumHeight(180)
         self.variables.setPlaceholderText('projectName=Project A  ← グローバル\n!localName=初期値  ← ローカル')
         self.variables.setToolTip('名前=値 / !!名前=値 はグローバル、!名前=値 はローカルです。\nローカルはフォーム定義前にVAR !名前を出力します。メソッド内では別のスコープになるため、そのメソッドで宣言してください。')
         self.variables.textChanged.connect(self.update_variables)
-        rl.addWidget(self.variables)
+        rl.addWidget(self.variables,1)
         self.after_show = QPlainTextEdit(); self.after_show.setMinimumHeight(96)
         self.after_show.setPlaceholderText('SHOW の後に出力する任意の PML プログラム')
         self.after_show.textChanged.connect(self.update_after_show)
@@ -871,6 +871,9 @@ class Window(QMainWindow):
         self.option_width_check=QCheckBox('OPTIONの幅をコードへ出力')
         self.option_width_check.setToolTip('PAIRS形式でもWIDTHを指定します。元MACに明示されている場合は自動でオンになります。')
         self.option_width_check.toggled.connect(self.update_gadget);self.prop_layout.addRow(self.option_width_check)
+        self.auto_width_check=QCheckBox('文字に合わせた自動幅（WIDTH省略）')
+        self.auto_width_check.setToolTip('文字・初期値・選択肢に合わせて横幅を決めます。外すとWIDTHを指定できます。')
+        self.auto_width_check.toggled.connect(self.update_gadget);self.prop_layout.addRow(self.auto_width_check)
         self.path_rows=QCheckBox('縦移動：1行ずつ（FRAME後は下端）')
         self.path_rows.setToolTip('外すとVDISTを出力し、部品の端から縦間隔を空けて配置します。PATHの移動固定は維持します。')
         self.path_rows.toggled.connect(self.change_path_rows)
@@ -1622,6 +1625,7 @@ class Window(QMainWindow):
             self.fields['width'].setToolTip('幅参照元が非表示のため、幅0で表示・出力されます。参照元を表示すると元の幅に戻ります。')
         if gadget.kind=='toggle' and gadget.display_mode=='TEXT':self.fields['width'].setToolTip(PREVIEW_WIDTH_HINT)
         if uses_pairs(gadget) and not gadget.option_width_explicit:self.fields['width'].setToolTip('自動幅です。「OPTIONの幅をコードへ出力」をオンにすると幅を指定できます。')
+        if uses_auto_width(gadget):self.fields['width'].setToolTip('文字に合わせた自動幅です。WIDTHを指定するには自動幅をオフにしてください。')
         for key,value in fixed_dimensions(gadget).items():
             self.fields[key].setToolTip('高さは1行固定です。' if gadget.kind not in ('line','slider') else f'太さは{value:.1f}固定です。長さだけ変更できます。')
         parent = self.form.parent_gadget(gadget)
@@ -1638,6 +1642,12 @@ class Window(QMainWindow):
         self.hidden.setChecked(gadget.hidden)
         self.option_width_check.setChecked(gadget.option_width_explicit)
         self.prop_layout.setRowVisible(self.option_width_check,uses_pairs(gadget))
+        self.auto_width_check.setChecked(not gadget.width_explicit)
+        preview_only=gadget.kind in ('toggle','rtoggle')
+        self.auto_width_check.setText('文字に合わせた自動幅（表示のみ）' if preview_only else '文字に合わせた自動幅（WIDTH省略）')
+        self.auto_width_check.setToolTip('WIDTHは出力しません。表示の横幅を文字に合わせます。' if preview_only else '文字・初期値・選択肢に合わせて横幅を決めます。外すとWIDTHを指定できます。')
+        self.auto_width_check.setEnabled(not gadget.hidden and not gadget.width_ref)
+        self.prop_layout.setRowVisible(self.auto_width_check,supports_auto_width(gadget) and not uses_pairs(gadget))
         self.hidden.setEnabled(supports_hidden(gadget))
         self.prop_layout.setRowVisible(self.hidden,supports_hidden(gadget))
         self.fields['selection_mode'].setEnabled(gadget.kind in ('list','selector'))
@@ -1707,7 +1717,7 @@ class Window(QMainWindow):
         self.choices.setPlaceholderText('画像のファイルパスを1行1件で指定' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢の表示文字を1行1件で指定')
         self.prop_layout.setCaption(self.choices,'画像ファイル (1行1画像)' if gadget.kind == 'option' and gadget.display_mode == 'PIXMAP' else '選択肢 (1行1項目)')
         self.prop_layout.setCaption(self.item_values,'RTEXT 実値 (1行1項目)')
-        width_caption = '幅 (px)' if gadget.display_mode == 'PIXMAP' else '幅（自動）' if uses_pairs(gadget) and not gadget.option_width_explicit else '幅（プレビューのみ）' if gadget.kind=='toggle' else '幅'
+        width_caption = '幅 (px)' if gadget.display_mode == 'PIXMAP' else '幅（自動）' if uses_auto_width(gadget) or (uses_pairs(gadget) and not gadget.option_width_explicit) else '幅（プレビューのみ）' if gadget.kind=='toggle' else '幅'
         self.prop_layout.setCaption(self.fields['width'],width_caption)
         self.prop_layout.setCaption(self.fields['height'],'高さ (px)' if gadget.display_mode == 'PIXMAP' else '高さ / 行数')
         basis='フレーム基準' if gadget.parent else 'フォーム基準'
@@ -1956,6 +1966,7 @@ class Window(QMainWindow):
         old_name = g.name
         old_role = g.button_role
         old_display = g.display_mode
+        previous_auto=uses_auto_width(g);previous_width=self.form.display_width(g)
         old_fixed = fixed_dimensions(g)
         direction_key = 'orientation' if g.kind == 'line' else 'slider_orientation' if g.kind == 'slider' else None
         old_direction = getattr(g,direction_key) if direction_key else None
@@ -1965,6 +1976,7 @@ class Window(QMainWindow):
         for key, w in self.fields.items():
             if key=='name':continue
             if key=='width' and g.hidden:continue
+            if key=='width' and uses_auto_width(g):continue
             if (old_display == 'PIXMAP' and key in ('width','height','width_ref')) or key in old_fixed:continue
             value = w.currentData() if key in ('parent','xref','yref','width_ref','popup_menu','action_mode') else self.edited_number(w,getattr(g,key)) if isinstance(w, QDoubleSpinBox) else w.currentText() if isinstance(w, QComboBox) else w.text()
             setattr(g, key, value)
@@ -1972,6 +1984,8 @@ class Window(QMainWindow):
         if g.kind=='frame' and g.frame_style=='FRAME' and g.layout_mode=='ABSOLUTE' and (g.x,g.y,g.parent)!=old_position and not self.form.is_tab_page(g):g.frame_at=True
         g.hidden=self.hidden.isChecked() if supports_hidden(g) else False
         if uses_pairs(g):g.option_width_explicit=self.option_width_check.isChecked()
+        elif supports_auto_width(g):g.width_explicit=not self.auto_width_check.isChecked()
+        if previous_auto and not uses_auto_width(g) and not g.hidden and not g.width_ref:g.width=previous_width
         if direction_key and getattr(g,direction_key) != old_direction:
             new_direction = getattr(g,direction_key);setattr(g,direction_key,old_direction)
             self.form.rotate_gadget(g,new_direction)

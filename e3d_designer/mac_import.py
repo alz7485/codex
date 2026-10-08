@@ -431,6 +431,7 @@ class Importer:
                 self.warn('WIDTH 0のフレームは自動幅として読み込み、部品と親タブの寸法から補います。')
             if gadget.kind=='frame':gadget.frame_size_axes=('W' if 'width' in present or 'auto_width' in present else '')+('H' if 'height' in present else '')
             if uses_pairs(gadget):gadget.option_width_explicit='width' in present
+            gadget.width_explicit='width' in present
             normalize_dimensions(gadget);self.form.gadgets.append(gadget);self.explicit[gadget.name]=present
             if len(self.form.gadgets)>500:raise MacImportError(row,'部品数は500個までです。')
             if gadget.kind=='frame':stack.append(gadget.name)

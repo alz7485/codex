@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QApplication,QHBoxLayout,QWidget,
     QFrame,QSlider,QListWidget,QTableWidget,QTableWidgetItem,QPlainTextEdit,
     QAbstractItemView,QStyleFactory,QStyle,QStyleOptionButton,QStyleOptionComboBox,QStyleOptionFrame,QProxyStyle)
 
-from .model import CHAR_WIDTH,LINE_HEIGHT,uses_pairs
+from .model import CHAR_WIDTH,LINE_HEIGHT,uses_pairs,uses_auto_width
 from .images import resolve_image_path
 from .colors import preview_color,foreground_color
 
@@ -94,8 +94,12 @@ class NativeControls:
     def control_width(self,g,widget,width,height):
         """Reference padding uses Qt metrics; the original PML WIDTH is intact."""
         if g.display_mode=='PIXMAP':return width
+        automatic=uses_auto_width(g)
+        if automatic and g.kind=='paragraph':return max(1,widget.sizeHint().width())
+        if automatic and g.kind in ('toggle','rtoggle') and not (g.kind=='rtoggle' and g.combo_tagwid):return max(1,widget.sizeHint().width())
         size=QSize(self.pixels(width),self.pixels(height))
         if g.kind=='button':
+            if automatic:size.setWidth(widget.fontMetrics().horizontalAdvance(g.label))
             option=QStyleOptionButton();option.initFrom(widget)
             return widget.style().sizeFromContents(QStyle.CT_PushButton,option,size,widget).width()
         if g.kind=='rtoggle' and g.combo_tagwid:
@@ -105,6 +109,9 @@ class NativeControls:
         if g.kind in ('option','combo','text'):
             if uses_pairs(g) and not g.option_width_explicit:return widget.sizeHint().width()
             entry=widget.entry
+            if automatic:
+                if g.kind in ('option','combo'):return widget.sizeHint().width()
+                size.setWidth(max(entry.fontMetrics().horizontalAdvance(g.initial),entry.fontMetrics().horizontalAdvance('000')))
             if g.kind=='text':
                 option=QStyleOptionFrame();option.initFrom(entry)
                 option.lineWidth=entry.style().pixelMetric(QStyle.PM_DefaultFrameWidth,option,entry)

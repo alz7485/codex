@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLine
     QComboBox,QDoubleSpinBox,QPushButton,QDialogButtonBox,QTableWidget,QTableWidgetItem,QLabel,QCheckBox)
 from .names import rename
 from .color_picker import ColorPicker
-from .model import dimension_editable,normalize_dimensions,uses_pairs,supports_hidden,fixed_dimensions
+from .model import dimension_editable,normalize_dimensions,uses_pairs,supports_hidden,fixed_dimensions,supports_auto_width,uses_auto_width
 
 
 class ItemsDialog(QDialog):
@@ -157,6 +157,13 @@ class MiniProperties(QDialog):
             self.fields['width'].setEnabled(g.option_width_explicit)
             self.fields['width'].setToolTip('「OPTIONの幅をコードへ出力」がオフなら自動幅、オンなら幅を指定できます。')
             self.option_width.toggled.connect(self.fields['width'].setEnabled)
+        self.auto_width=None
+        if supports_auto_width(g) and not uses_pairs(g) and 'width' in self.fields:
+            self.auto_width=QCheckBox('文字に合わせた自動幅（表示のみ）' if g.kind in ('toggle','rtoggle') else '文字に合わせた自動幅（WIDTH省略）')
+            self.auto_width.setChecked(not g.width_explicit)
+            self.auto_width.setEnabled(not g.hidden and not g.width_ref)
+            fields.addRow('',self.auto_width)
+            if 'width' in self.fields:self.auto_width.toggled.connect(lambda checked:self.fields['width'].setEnabled(not checked and not self.gadget.hidden and not self.gadget.width_ref))
         if g.kind in ('line','slider','list','view','alpha','container','textpane','selector') or g.display_mode=='PIXMAP' or (g.kind=='frame' and g.frame_style=='TOOLBAR'):number('height','HEIGHT')
         self.hidden=QCheckBox('非表示（WIDTH 0）',self);self.hidden.setChecked(g.hidden)
         if supports_hidden(g):
@@ -211,6 +218,9 @@ class MiniProperties(QDialog):
         dialog.deleteLater()
     def accept(self):
         candidate=copy.deepcopy(self.draft);g=candidate.gadgets[self.index]
+        previous_auto=uses_auto_width(g);previous_width=candidate.display_width(g)
+        if self.auto_width is not None:g.width_explicit=not self.auto_width.isChecked()
+        if previous_auto and not uses_auto_width(g):g.width=previous_width
         if self.option_width is not None:g.option_width_explicit=self.option_width.isChecked()
         previous_callback=g.callback
         for key,widget in self.fields.items():

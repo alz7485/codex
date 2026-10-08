@@ -2,6 +2,7 @@ from dataclasses import dataclass, field, asdict
 import json
 import math
 import re
+import unicodedata
 from .pml_syntax import has_code
 from .symbols import SYMBOL_NAME
 
@@ -20,6 +21,38 @@ def uses_pairs(gadget):
     return gadget.kind == 'option' and gadget.display_mode == 'TEXT' and gadget.option_style == 'PAIRS'
 
 
+def supports_auto_width(gadget):
+    return gadget.display_mode=='TEXT' and gadget.kind in ('button','paragraph','text','toggle','rtoggle','option','combo')
+
+
+def uses_auto_width(gadget):
+    return (supports_auto_width(gadget) and not gadget.width_explicit and not gadget.width_ref and not gadget.hidden
+            and not (uses_pairs(gadget) and gadget.option_width_explicit))
+
+
+def text_width_hint(text):
+    # A deterministic PML layout estimate for imports without a GUI. Actual
+    # drawing uses the chosen font's Qt metrics, including control decoration.
+    return sum(0 if unicodedata.combining(char) or unicodedata.category(char)=='Cf' else
+               1.3 if unicodedata.east_asian_width(char) in ('W','F') else
+               .35 if char in " il.,:;!'|" else .95 if char in 'MWmw@' else .7 for char in text)
+
+
+def auto_width_hint(gadget):
+    label=text_width_hint((gadget.initial or gadget.label) if gadget.kind=='paragraph' else gadget.label)
+    tag=label
+    if gadget.kind in ('combo','rtoggle') and gadget.combo_tagwid:
+        try:
+            value=float(gadget.combo_tagwid)
+            if math.isfinite(value) and value>=0:tag=value
+        except ValueError:pass
+    if gadget.kind in ('button','paragraph'):return max(1,round(label+.8,2))
+    if gadget.kind in ('toggle','rtoggle'):return max(1,round(tag+2,2))
+    values=[gadget.initial] if gadget.kind=='text' else gadget.items
+    entry=max([2.1,*(text_width_hint(value) for value in values)])
+    return round(entry+(tag+.6 if gadget.label else 0)+(2.4 if gadget.kind in ('option','combo') else .8),2)
+
+
 def supports_hidden(gadget):
     # These declarations emit WIDTH; FRAME zero width means automatic sizing.
     return gadget.kind not in ('frame','line','rtoggle') and not uses_pairs(gadget) and not (gadget.kind=='toggle' and gadget.display_mode=='TEXT')
@@ -36,7 +69,7 @@ def fixed_dimensions(gadget):
 
 
 def dimension_editable(gadget, dimension):
-    return gadget.display_mode != 'PIXMAP' and dimension not in fixed_dimensions(gadget) and not (dimension == 'width' and (gadget.width_ref or gadget.hidden or (uses_pairs(gadget) and not gadget.option_width_explicit)))
+    return gadget.display_mode != 'PIXMAP' and dimension not in fixed_dimensions(gadget) and not (dimension == 'width' and (uses_auto_width(gadget) or gadget.width_ref or gadget.hidden or (uses_pairs(gadget) and not gadget.option_width_explicit)))
 
 
 def normalize_dimensions(gadget):
@@ -69,7 +102,7 @@ def display_size(gadget,*,reveal=False):
     if gadget.display_mode == 'PIXMAP':
         return (0 if hidden else gadget.width/CHAR_WIDTH),gadget.height/LINE_HEIGHT
     fixed = fixed_dimensions(gadget)
-    return (0 if hidden else fixed.get('width',gadget.width)),fixed.get('height',gadget.height)
+    return (0 if hidden else fixed.get('width',auto_width_hint(gadget) if uses_auto_width(gadget) else gadget.width)),fixed.get('height',gadget.height)
 
 
 def native_size(gadget,width,height):
@@ -183,6 +216,7 @@ class Gadget:
     tabs: list['Gadget'] = field(default_factory=list, repr=False)
     callback_expression: str = ''
     hidden: bool = False
+    width_explicit: bool = True
 
     def __post_init__(self):
         if self.selection_mode == 'MULTI': self.selection_mode = 'MULTIPLE'
@@ -411,6 +445,7 @@ class Form:
 
     def display_width(self,gadget):
         if self.is_hidden(gadget):return 0
+        if uses_auto_width(gadget):return self.geometry(gadget)[2]
         if gadget.width_ref:
             try:return native_size(gadget,*self.geometry(gadget)[2:])[0]
             except ValueError:pass
@@ -497,6 +532,7 @@ class Form:
             raise ValueError('部品は配列で指定してください。')
         for g in self.gadgets:
             if not isinstance(g.option_width_explicit,bool):raise ValueError('OPTIONの幅指定設定は真偽値にしてください。')
+            if not isinstance(g.width_explicit,bool):raise ValueError('幅指定設定は真偽値にしてください。')
             if g.frame_size_axes not in ('','W','H','WH'):raise ValueError('FRAMEの寸法指定が不正です。')
             if g.path_axes not in ('','X','Y','XY') or not isinstance(g.path_row_step,bool) or not isinstance(g.frame_at,bool):raise ValueError('PATHの座標軸・縦移動の設定が不正です。')
             if not isinstance(g.hidden,bool):raise ValueError('非表示は真偽値で指定してください。')
@@ -921,6 +957,7 @@ class Form:
             width,height = (g.width,g.height) if g.display_mode == 'PIXMAP' else display_size(g)
             if g.hidden:width=0
             width_clause = f'WIDTH.{member_name(g.width_ref)}' if g.width_ref and not g.hidden else f'WIDTH {n(width)}'
+            if uses_auto_width(g):width_clause=''
             at = (f'at x{n(g.x)} y{n(g.y)}' if g.layout_mode == 'ABSOLUTE' else position) + ' ' + width_clause
             callback = ' callback '+literal(callback_expression(g),allow_expansion=True) if active_callback(g) else ''
             label = literal(g.label)
@@ -1018,6 +1055,7 @@ class Form:
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
             else:
                 line = f'{g.kind} .{g.name} {label} {at}' + callback
+            if uses_auto_width(g):line=line.rstrip()
             lines.extend('  ' * depth + part for part in line.split('\n'))
             if g.kind == 'frame':
                 for child in self.ordered_children(g.name): render(child, depth + 1)
