@@ -230,7 +230,9 @@ class Item(QGraphicsObject):
         path = QPainterPath(); rect = self.boundingRect()
         if self.hidden_in_preview() and not self.isSelected():return path
         parent = self.form.parent_gadget(self.gadget)
-        if self.gadget.kind == 'frame' and parent and parent.frame_style == 'TABSET': rect = rect.adjusted(0, self.tab_header_height(), 0, 0)
+        if self.gadget.kind == 'frame' and parent and parent.frame_style == 'TABSET':
+            if rect.height()<=self.tab_header_height():return path
+            rect = rect.adjusted(0, self.tab_header_height(), 0, 0)
         path.addRect(rect)
         clip=QPainterPath();clip.addRect(self.content_clip_rect())
         visible=path.intersected(clip)
@@ -512,7 +514,7 @@ class Item(QGraphicsObject):
             painter.setPen(QPen(QColor('#2277cc'), 2, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
             selection_rect=self.shape().boundingRect() if self.form.is_tab_page(g) else r
-            painter.drawRect(selection_rect.adjusted(1, 1, -1, -1))
+            if not selection_rect.isEmpty():painter.drawRect(selection_rect.adjusted(1, 1, -1, -1))
             painter.setPen(QPen(QColor('#2277cc'),1)); painter.setBrush(QColor('#ffffff'))
             for handle in self.handles().values(): painter.drawRect(handle)
 
@@ -2404,7 +2406,10 @@ class Window(QMainWindow):
             if current_parent:
                 ox,oy=preview_offset(candidate,g,self.appearance);px,py=x-ox,y-oy
                 pw,ph=candidate.geometry(current_parent)[2:]
-                if (px<0 or py<0) and px+width<=pw+.001 and py+height<=ph+.001:
+                # Header clipping must not detach a valid last-row control.
+                # A deeper frame remains a possible new owner.
+                keep_page=candidate.is_tab_page(current_parent) and (parent is None or parent.name not in candidate.descendants(current_parent.name))
+                if (px<0 or py<0 or keep_page) and px+width<=pw+.001 and py+height<=ph+.001:
                     parent=current_parent
             if g.kind=='rtoggle' and parent is None:
                 message='ラジオボタンはFRAMEに所属する位置へ配置してください。'

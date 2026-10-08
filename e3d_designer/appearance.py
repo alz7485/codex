@@ -74,7 +74,7 @@ class NativeControls:
 
     def control_bounds(self,g,width,height):
         # Insets affect drawing only; PML dimensions and drag origins stay intact.
-        inset=.05*self.line_height if g.kind=='button' and g.display_mode=='TEXT' else 0
+        inset=min(.05*self.line_height,max(0,(height-1)/2)) if g.kind=='button' and g.display_mode=='TEXT' else 0
         return QRectF(0,self.pixels(inset),max(1,self.pixels(width)),max(1,self.pixels(height-2*inset)))
 
     def image(self,g):
