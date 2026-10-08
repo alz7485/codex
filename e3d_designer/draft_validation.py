@@ -12,7 +12,7 @@ def schema(record_type):return get_type_hints(record_type)
 
 def validate_draft(form):
     from .model import Form,IDENTIFIER,KINDS,uses_pairs
-    from .symbols import FORM_NAME
+    from .symbols import validate_form_reference
     import re
     seen=set()
     def check(value,annotation):
@@ -37,7 +37,7 @@ def validate_draft(form):
             for field in fields(value):check(getattr(value,field.name),schema(annotation)[field.name])
         elif type(value) is not annotation:raise ValueError('設計の項目の型が不正です。')
     check(form,Form)
-    if not FORM_NAME.fullmatch(form.name) or not re.fullmatch(r'[!.]*',form.form_prefix):raise ValueError('フォーム名が不正です。')
+    validate_form_reference(form.name,form.form_prefix)
     if not 1<=form.width<=300 or not 1<=form.height<=300:raise ValueError('フォームサイズは1〜300にしてください。')
     if len(form.gadgets)>500:raise ValueError('部品数は500個までです。')
     if form.form_type not in ('DIALOG','MAIN') or form.dock_side not in ('','NONE','LEFT','RIGHT','TOP','BOTTOM'):raise ValueError('フォーム形式が不正です。')

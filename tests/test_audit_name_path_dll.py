@@ -95,7 +95,7 @@ class AuditFixTests(unittest.TestCase):
         original=w.form.dumps()
         history=[form.dumps() for form in w.history]
         future=[form.dumps() for form in w.future]
-        for name in ('','bad name'):
+        for name in ('','  '):
             w.fname.setText(name);w.update_form()
             self.assertEqual(w.form.dumps(),original)
         for name in ('','bad name','second'):

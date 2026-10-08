@@ -22,7 +22,7 @@ from .colors import preview_color,foreground_color
 from .appearance import FORM_BACKGROUND,FORM_PADDING,slider_fraction
 from .model import IDENTIFIER, Form, Gadget, Menu, MenuItem, KINDS, CHAR_WIDTH, LINE_HEIGHT, display_size, native_size, fixed_dimensions, dimension_editable, normalize_dimensions, uses_pairs, supports_hidden, supports_auto_width, uses_auto_width
 from .images import resolve_image_path, sync_image_size
-from .symbols import parse_variables,variable_text
+from .symbols import parse_variables,variable_text,form_file_stem
 
 LABELS = {'textpane':'複数行テキスト (TEXTPANE)','selector':'DB セレクタ (SELECTOR)','button': 'ボタン', 'paragraph': 'ラベル', 'text': 'テキスト入力',
           'toggle': 'チェックボックス', 'option': 'ドロップダウン', 'list': 'リスト', 'line': '線 (LINE)', 'frame': '枠 (FRAME)', 'slider':'スライダー', 'rtoggle':'ラジオボタン', 'combo':'コンボボックス', 'view':'ビュー', 'commandline':'コマンド欄 (ALPHA)', 'container':'外部部品 (CONTAINER)'}
@@ -742,6 +742,9 @@ class Window(QMainWindow):
         tab_layout.addWidget(self.page_tabs,1)
         self.add_page_button=QPushButton('＋ タブ');self.add_page_button.clicked.connect(self.add_page)
         tab_layout.addWidget(self.add_page_button)
+        self.duplicate_page_button=QPushButton('📋 タブ複製');self.duplicate_page_button.clicked.connect(self.duplicate_page)
+        self.duplicate_page_button.setToolTip('表示中のタブと中の部品をまとめて複製し、新しいタブを表示します。')
+        tab_layout.addWidget(self.duplicate_page_button)
         self.edit_page_button=QPushButton('タブ設定');self.edit_page_button.clicked.connect(self.edit_page)
         tab_layout.addWidget(self.edit_page_button)
         self.delete_page_button=QPushButton('− タブ');self.delete_page_button.clicked.connect(self.delete_page)
@@ -1895,6 +1898,7 @@ class Window(QMainWindow):
         self.tabset_picker.blockSignals(False);self.page_tabs.blockSignals(False)
         self.tab_editor.setVisible(bool(tabsets))
         self.add_page_button.setEnabled(tabset is not None)
+        self.duplicate_page_button.setEnabled(self.page_tabs.count()>0)
         self.edit_page_button.setEnabled(self.page_tabs.count()>0)
         self.delete_page_button.setEnabled(self.page_tabs.count()>0)
 
@@ -1926,6 +1930,22 @@ class Window(QMainWindow):
         buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject);layout.addRow(buttons)
         if dialog.exec()==QDialog.Accepted:
             self.update_page(name,name_edit.text(),label_edit.text())
+
+    def duplicate_page(self):
+        name=self.page_tabs.tabData(self.page_tabs.currentIndex()) if self.page_tabs.currentIndex()>=0 else None
+        index=next((i for i,g in enumerate(self.form.gadgets) if g.name==name and self.form.is_tab_page(g)),None)
+        if index is None:return
+        from .clipboard import clone_subtree
+        try:
+            draft,selected=clone_subtree(self.form,self.form,index,same_project=True)
+            page=draft.gadgets[selected]
+            base=(self.form.gadgets[index].label or name)+' (コピー)';label=base;number=2
+            labels={g.label for g in self.form.children(page.parent)}
+            while label in labels:label=f'{base} {number}';number+=1
+            page.label=label;draft.validate()
+        except ValueError as error:self.statusBar().showMessage(f'タブを複製できません: {error}');return
+        self.checkpoint();self.form=draft;self.selected=selected;self._multi_selection.clear();self.refresh()
+        self.statusBar().showMessage('タブと中の部品を複製しました。')
 
     def update_page(self,old_name,new_name,label):
         from .names import rename
@@ -2786,7 +2806,7 @@ class Window(QMainWindow):
             QMessageBox.warning(self, '保存エラー', str(e)); return False
         path = self.path
         if path is None or force_dialog:
-            initial = str(path) if path else str(Path(self.form.source_mac_path).with_suffix('.json')) if self.form.source_mac_path else str(self.settings.app_directory/(self.form.name+'.json'))
+            initial = str(path) if path else str(Path(self.form.source_mac_path).with_suffix('.json')) if self.form.source_mac_path else str(self.settings.app_directory/(form_file_stem(self.form.name)+'.json'))
             name, _ = QFileDialog.getSaveFileName(self, '名前を付けて保存' if force_dialog else '設計を保存', initial, '設計 (*.json)')
             if not name: return False
             path = Path(name)
@@ -2834,7 +2854,7 @@ class Window(QMainWindow):
         if not folder.is_absolute():folder=self.settings.app_directory/folder
         if not folder.is_dir():
             QMessageBox.warning(self,'出力エラー','出力先には存在するフォルダを指定してください。');return
-        name, _ = QFileDialog.getSaveFileName(self, 'MAC テキストを出力', str(folder/(self.form.name+'.mac')), 'マクロ (*.mac)')
+        name, _ = QFileDialog.getSaveFileName(self, 'MAC テキストを出力', str(folder/(form_file_stem(self.form.name)+'.mac')), 'マクロ (*.mac)')
         if not name: return
         path=self.mac_output_path(name)
         if path is None:return

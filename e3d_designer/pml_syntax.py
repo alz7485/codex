@@ -39,13 +39,25 @@ def reference_mask(text,form_name):
 
 
 def method_call_sites(text,form_name):
-    pattern=re.compile(own_reference_pattern(form_name)+r'\.('+FORM_NAME_PATTERN+r')(?=\s*\()',re.I)
+    pattern=re.compile(own_reference_pattern(form_name)+r'\.('+method_name_pattern(form_name)+r')(?=\s*\()',re.I)
     return [(match.start(),match.end(),match.group(2))
             for match in pattern.finditer(reference_mask(text,form_name))]
 
 
+def method_name_pattern(form):
+    name=getattr(form,'name',None)
+    return '(?:'+re.escape(name)+'|'+FORM_NAME_PATTERN+')' if name is not None else FORM_NAME_PATTERN
+
+
+def method_declaration_name(header,form,protected):
+    for marker,value in protected.items():header=header.replace(marker,value)
+    match=re.match(r'define\s+method\s+\.('+method_name_pattern(form)+r')(?=\s*\()',header,re.I)
+    if match is None:raise ValueError('メソッドの宣言を解釈できません: '+header)
+    return match.group(1)
+
+
 def own_reference_pattern(form):
-    return r'(?<![A-Za-z0-9_!.])(!this|'+re.escape(form_reference(form))+r')(?![A-Za-z0-9_])'
+    return r'(?<![\w!.])(!this|'+re.escape(form_reference(form))+r')(?!\w)'
 
 
 KEYWORDS=set('''VAR LIST PAIRS EXIT KILL SETUP FORM LAYOUT DIALOG MAIN DOCUMENT BLOCKING

@@ -125,8 +125,8 @@ class DottedFormNameTests(unittest.TestCase):
         self.assertNotIn('_CDR.HD.',copied.gadgets[index].command)
         self.assertIn('Define Method .Next_copy',copied.pml())
 
-    def test_invalid_names_show_mismatch_and_other_identifiers_remain_rejected(self):
-        for symbol in ('_CDR.','_CDR..HD','_CDR.9HD','_CDR.H-D',"'_CDR.HD'",'_CDR.HD()'):
+    def test_empty_names_show_mismatch_and_other_identifiers_remain_rejected(self):
+        for symbol in ('','  ','Bad\nName','Bad\x00Name'):
             with self.subTest(symbol=symbol),self.assertRaises(ValueError):split_form_reference(symbol)
         with self.assertRaises(MacImportError):import_mac('Setup Form _CDR.HD\nShow _CDR.OTHER')
         with self.assertRaises(ValueError):parse_variables('!CDR.HD=value')

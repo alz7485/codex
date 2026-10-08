@@ -3,15 +3,27 @@ import re
 
 SYMBOL_NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_]*\Z')
 FORM_NAME_PATTERN = r'[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*'
-FORM_NAME = re.compile(FORM_NAME_PATTERN+r'\Z')
+
+def validate_form_reference(name, prefix=''):
+    # A form reference is imported as data, not an identifier to normalize.
+    if (not isinstance(name,str) or not isinstance(prefix,str) or not name.strip()
+        or any(c in name+prefix for c in ('\x00','\r','\n'))):
+        raise ValueError('フォーム名を空欄にせず、1行で指定してください。')
 
 
 def split_form_reference(token, default_prefix=''):
-    match = re.fullmatch(r'([!.]*)('+FORM_NAME_PATTERN+r')', token)
-    if not match:
-        raise ValueError('フォーム名は !!名前 / !名前 / .名前 / _名前 / 名前（例: _CDR.HD）で指定してください。各部分は英字・_で始まる英数字・_とし、間を.で区切れます。')
-    prefix, name = match.groups()
+    validate_form_reference(token)
+    prefix=re.match(r'[!.]*',token).group()
+    name=token[len(prefix):]
+    if not name:return '',token
     return prefix or default_prefix, name
+
+
+def form_file_stem(name):
+    """Use a filename suggestion without changing the imported form reference."""
+    stem=re.sub(r'[<>:"/\\|?*\x00-\x1f]','_',name).strip(' .') or 'Form'
+    if re.fullmatch(r'CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]',stem.split('.')[0],re.I):stem='Form_'+stem
+    return stem
 
 
 def form_reference(value):

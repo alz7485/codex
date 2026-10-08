@@ -94,16 +94,18 @@ def comment_lines(body):
     return ''.join(retained).splitlines()
 
 
-def split_methods(text):
+def split_methods(text,constructor_name=None):
     """Return top-level source and complete method bodies, ignoring comments/strings."""
     raw=text.splitlines();masked=mask_non_code(text).splitlines()
     plain=mask_non_code(text,strings=False).splitlines()
     comments=comment_lines(text)
+    header=HEADER if constructor_name is None else re.compile(
+        r'^\s*DEFINE\s+METHOD\s+\.('+re.escape(constructor_name)+'|'+FORM_NAME_PATTERN+r')\s*(\(.*\)(?:\s+IS\s+\S+)?)\s*$',re.I)
     methods=[];remaining=[];rows={};index=0;names=set()
     while index<len(raw):
         if not re.match(r'^\s*DEFINE\s+METHOD\b',masked[index],re.I):
             remaining.append(raw[index]);index+=1;continue
-        match=HEADER.fullmatch(plain[index])
+        match=header.fullmatch(plain[index])
         if not match:raise MacImportError(index+1,'メソッドの宣言を解釈できません。')
         name,signature=match.groups();key=name.lower()
         if key in names:raise MacImportError(index+1,'メソッド名が重複しています: '+name)
@@ -261,7 +263,8 @@ class Importer:
         tokens.word('SETUP');tokens.word('FORM');name=tokens.pop()
         try:self.form.form_prefix,self.form.name=split_form_reference(name)
         except ValueError as error:raise MacImportError(start+1,str(error)) from error
-        self.form.title=self.form.name
+        if editable_string(self.form.name):self.form.title=self.form.name
+        else:self.warn('フォーム名をそのまま保持しました。TITLE省略時の表示名は「User Form」として補いました。')
         while tokens.more():
             key=tokens.pop().upper()
             if key=='SIZE':self.form.width=tokens.number();self.form.height=tokens.number();self.setup_size=True
@@ -474,7 +477,7 @@ class Importer:
                 target=self.gadget_named(getattr(gadget,field))
                 if target:setattr(gadget,field,target.name)
         after,index=self.program_slice(index,explicit_exit)
-        try:program,methods,method_rows=split_methods(after)
+        try:program,methods,method_rows=split_methods(after,self.form.name)
         except MacImportError as error:
             raise MacImportError(index+error.line,str(error).split(': ',1)[-1]) from error
         source_methods={method.name.lower():method for method in methods}

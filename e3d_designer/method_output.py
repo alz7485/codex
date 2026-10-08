@@ -1,7 +1,6 @@
 """Omit empty method definitions and standalone calls to known empty methods."""
 import re
-from .pml_syntax import has_code,mask_non_code,own_reference_pattern,method_call_sites
-from .symbols import FORM_NAME_PATTERN
+from .pml_syntax import has_code,mask_non_code,own_reference_pattern,method_call_sites,method_name_pattern
 
 
 class OmittedMethodReferenceError(ValueError):
@@ -16,7 +15,7 @@ def check_editable_code(form):
 
 def prune_empty_calls(text,form,names):
     if not names:return text
-    pattern=re.compile(own_reference_pattern(form)+r'\.('+FORM_NAME_PATTERN+r')\s*\(\s*\)',re.I)
+    pattern=re.compile(own_reference_pattern(form)+r'\.('+method_name_pattern(form)+r')\s*\(\s*\)',re.I)
     raw=list(text);masked=mask_non_code(text);offset=0
     for line in masked.splitlines(keepends=True):
         match=pattern.fullmatch(line.strip())
@@ -32,6 +31,7 @@ def empty_method_names(form,initial_lines,default_code):
     bodies={method.name.lower():method.body for method in form.extra_methods}
     bodies.update((g.callback.lower(),g.body) for g in form.gadgets if g.callback and g.callback.lower()!='default')
     bodies['default']='\n'.join([*initial_lines,default_code])
+    if form.name.lower()=='default':bodies.pop('default',None)
     empty=set()
     while True:
         updated={name for name,body in bodies.items()

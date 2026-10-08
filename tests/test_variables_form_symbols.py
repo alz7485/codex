@@ -112,13 +112,13 @@ class VariableAndSymbolTests(unittest.TestCase):
         self.assertEqual(form.pml().count('SHOW .Demo'),1)
         self.assertNotIn('!!Demo',form.pml())
 
-    def test_mismatched_show_or_malformed_form_reference_is_rejected(self):
+    def test_mismatched_show_is_rejected(self):
         for token in ('!DemoMore','!!Demo',".Other"):
             with self.subTest(token=token),self.assertRaises(MacImportError):
                 import_mac(f"Setup Form !Demo Dialog\nShow {token}")
         for token in ("'Demo'",'!!','9Demo','!Demo()'):
-            with self.subTest(token=token),self.assertRaises(MacImportError):
-                import_mac(f"Setup Form {token} Dialog\nExit")
+            with self.subTest(token=token):
+                self.assertEqual(import_mac(f"Setup Form {token} Dialog\nExit").form.symbol,token)
 
     def test_form_and_gadget_rename_follow_preserved_symbol_and_boundaries(self):
         for symbol in SYMBOLS:

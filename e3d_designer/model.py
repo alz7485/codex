@@ -4,7 +4,7 @@ import math
 import re
 import unicodedata
 from .pml_syntax import has_code
-from .symbols import SYMBOL_NAME,FORM_NAME,FORM_NAME_PATTERN
+from .symbols import SYMBOL_NAME,validate_form_reference
 
 KINDS = ('button', 'paragraph', 'text', 'toggle', 'option', 'list', 'line', 'frame', 'slider', 'rtoggle', 'combo', 'view', 'commandline', 'container', 'textpane', 'selector')
 IDENTIFIER = re.compile(r'[A-Za-z][A-Za-z0-9_]*\Z')
@@ -560,8 +560,7 @@ class Form:
                 value = getattr(g,key)
                 if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value):
                     raise ValueError('座標とサイズには有限数を指定してください。')
-        if not FORM_NAME.fullmatch(self.name) or not isinstance(self.form_prefix,str) or not re.fullmatch(r'[!.]*',self.form_prefix):
-            raise ValueError('フォーム名は !!名前 / !名前 / .名前 / _名前 / 名前（例: _CDR.HD）で指定してください。各部分は英字・_で始まる英数字・_とし、間を.で区切れます。')
+        validate_form_reference(self.name,self.form_prefix)
         if self.form_type not in ('DIALOG','MAIN'): raise ValueError('フォーム形式は DIALOG / MAIN を指定してください。')
         for event in ('initcall','okcall','cancelcall'):
             literal(getattr(self,event),allow_expansion=True,field=f'{self.symbol}: {event}')
@@ -571,7 +570,6 @@ class Form:
             raise ValueError('ドッキング方向は NONE / LEFT / RIGHT / TOP / BOTTOM を指定してください。')
         if not isinstance(self.dock_right, bool): raise ValueError('ドッキング設定が不正です。')
         if not isinstance(self.default_body,str): raise ValueError('DEFAULT 処理は文字列で指定してください。')
-        if self.name.lower() == 'default': raise ValueError('フォーム名 DEFAULT は DEFAULT メソッドと重複します。')
         literal(self.title,field=f'{self.symbol}: フォームの表示名')
         variable_names = set()
         for name, value in self.variables.items():
@@ -889,14 +887,16 @@ class Form:
         empty_methods=empty_method_names(self,initial_lines,default_code)
         protected = {}
         code_fragments = []
-        def user_code(value):
-            value=prune_empty_calls(value,self,empty_methods)
-            code_fragments.append(value)
+        def protect(value):
             if not normalize:return value
             import uuid
             marker = '__user_code_'+uuid.uuid4().hex+'__'
             protected[marker]=value
             return marker
+        def user_code(value):
+            value=prune_empty_calls(value,self,empty_methods)
+            code_fragments.append(value)
+            return protect(value)
         def command_code(value):
             value=prune_empty_calls(value,self,empty_methods)
             code_fragments.append(value)
@@ -908,7 +908,7 @@ class Form:
             if g.callback_expression and re.fullmatch(r'\s*!this\.'+re.escape(g.callback)+r'\s*\(\s*\)\s*',g.callback_expression,re.I):
                 return g.callback_expression
             return f'!this.{g.callback}()'
-        form_symbol=user_code(self.symbol)
+        form_symbol=protect(self.symbol)
         n = pml_number
         lines = [f'VAR !!{name} {literal(value)}' for name, value in self.variables.items()]
         lines.extend(f'VAR !{name} {literal(value)}' for name,value in self.local_variables.items())
@@ -1107,7 +1107,10 @@ class Form:
             del lines[constructor_start:]
             del code_fragments[constructor_fragments_start:]
         if self.constructor_body:lines.append(user_code(self.constructor_body))
-        if initial_lines and self.auto_default and self.constructor_mode == 'GENERATED': lines.append('  !this.DEFAULT()')
+        if self.name.lower()=='default':
+            lines.extend(initial_lines)
+            if has_code(default_code):lines.append(user_code(default_code))
+        elif initial_lines and self.auto_default and self.constructor_mode == 'GENERATED': lines.append('  !this.DEFAULT()')
         lines.extend(['endmethod', ''])
         for g in self.gadgets:
             if g.kind != 'list' or g.list_mode != 'TABLE': continue
@@ -1119,7 +1122,7 @@ class Form:
                 lines.append(f'  !ROWS[{row}] = ARRAY()')
                 for column, cell in enumerate(cells,1): lines.append(f'  !ROWS[{row}][{column}] = {literal(cell)}')
             lines += [f'  !THIS.{g.name}.setrows(!ROWS)', 'endmethod', '']
-        if 'default' in active_methods:
+        if 'default' in active_methods and self.name.lower()!='default':
             method_offsets.append(len(lines))
             lines += ['DEFINE METHOD .DEFAULT()', *initial_lines, *([user_code(default_code)] if has_code(default_code) else []), 'ENDMETHOD', '']
         for g in self.gadgets:
@@ -1148,10 +1151,14 @@ class Form:
             return has_code(body)
         blocks=[block for block in blocks[1:]+blocks[:1] if nonempty(block)]
         blocks = order_methods(blocks,self,protected)
-        emitted={re.match(r'define\s+method\s+\.('+FORM_NAME_PATTERN+r')',block[0],re.I).group(1).lower()
+        from .pml_syntax import method_declaration_name
+        emitted={method_declaration_name(block[0],self,protected).lower()
                  for block in blocks}
         validate_omitted_references(self,(empty_methods|{self.name.lower()})-emitted,code_fragments)
         lines = lines[:method_start] + [line for block in blocks for line in block]
+        if normalize:
+            header=f'define method .{self.name}()'
+            lines=[f'define method .{protect(self.name)}()' if line==header else line for line in lines]
         from .formatting import canonical_pml
         text='\n'.join(lines)
         if normalize:text=canonical_pml(text,external_types={g.control_type for g in self.gadgets if g.kind=='container' and g.assembly})

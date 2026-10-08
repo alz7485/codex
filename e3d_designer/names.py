@@ -3,7 +3,7 @@ import copy
 import re
 from .model import IDENTIFIER,uses_pairs
 from .pml_syntax import reference_mask,own_reference_pattern,method_call_sites
-from .symbols import form_reference,SYMBOL_NAME,FORM_NAME,split_form_reference
+from .symbols import form_reference,SYMBOL_NAME,split_form_reference
 
 
 def code_slots(form):
@@ -97,7 +97,7 @@ def rewrite_code(value, source_form, target_form, members, methods=None, *, pres
 def reference_pattern(form, kind, name):
     if kind in ('variable','local_variable','form'):
         token=form.symbol if kind=='form' else ('!' if kind=='local_variable' else '!!')+name
-        return re.compile(r'(?<![A-Za-z0-9_!.])'+re.escape(token)+r'(?![A-Za-z0-9_])',re.I)
+        return re.compile(r'(?<![\w!.])'+re.escape(token)+r'(?!\w)',re.I)
     return re.compile(own_reference_pattern(form)+r'\.'+re.escape(name)+r'(?![A-Za-z0-9_]|\s*\()',re.I)
 
 
@@ -146,7 +146,7 @@ def rename_many(form, changes, update_code=True):
             result.form_prefix=prefix
         elif kind=='local_variable' and new_name.startswith('!') and not new_name.startswith('!!'):new_name=new_name[1:]
         elif kind=='variable' and new_name.startswith('!!'):new_name=new_name[2:]
-        valid = FORM_NAME.fullmatch(new_name) if kind=='form' else SYMBOL_NAME.fullmatch(new_name) if kind in ('variable','local_variable') else re.fullmatch(r'_?[A-Za-z][A-Za-z0-9_]*',new_name) if kind == 'gadget' and form.gadgets[key].kind == 'option' else IDENTIFIER.fullmatch(new_name)
+        valid = True if kind=='form' else SYMBOL_NAME.fullmatch(new_name) if kind in ('variable','local_variable') else re.fullmatch(r'_?[A-Za-z][A-Za-z0-9_]*',new_name) if kind == 'gadget' and form.gadgets[key].kind == 'option' else IDENTIFIER.fullmatch(new_name)
         if not valid: raise ValueError('名前は英字で始まる英数字・_ にしてください。')
         if kind == 'variable': globals_map[old.lower()] = new_name
         elif kind=='local_variable':locals_map[old.lower()]=new_name
@@ -182,7 +182,7 @@ def rename_many(form, changes, update_code=True):
     if update_code:
         # Consume qualified references and globals together so swaps cannot cascade.
         constructor_member=re.escape(form.name)+r'(?=\s*\()|[A-Za-z_][A-Za-z0-9_]*'
-        pattern = re.compile(r'(?<![A-Za-z0-9_!.])(!this|'+re.escape(form.symbol)+r'(?![A-Za-z0-9_])|!![A-Za-z_][A-Za-z0-9_]*|![A-Za-z_][A-Za-z0-9_]*)(?:\.('+constructor_member+r'))?',re.I)
+        pattern = re.compile(r'(?<![\w!.])(!this|'+re.escape(form.symbol)+r'(?!\w)|!![A-Za-z_][A-Za-z0-9_]*|![A-Za-z_][A-Za-z0-9_]*)(?:\.('+constructor_member+r'))?',re.I)
         for _,owner,attribute in code_slots(result):
             value = read_slot(owner,attribute)
             masked=reference_mask(value,form)
