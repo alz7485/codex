@@ -594,6 +594,7 @@ class Window(QMainWindow):
         self.current_workflow='form'
         self.validation_error=''
         self.resize(1380, 880)
+        self.setAcceptDrops(True)
         self.setWindowTitle('FormDesigner — E3D 4.0 想定')
         toolbar = self.addToolBar('ファイル')
         self.runtime_dialog=None
@@ -835,13 +836,16 @@ class Window(QMainWindow):
                 ('view_type','VIEW 形式'), ('view_aspect','ASPECT (VIEW)'), ('channels','ALPHA チャンネル'),
                 ('assembly','CONTAINER アセンブリ'), ('namespace','名前空間'), ('control_type','コントロール型'),
                 ('display_mode','文字 / 画像'),('pixmap_path','画像ファイル (E3D 側のパス)'),('popup_menu','ポップアップメニュー'),
-                ('database','DATABASE'),('button_role','ボタン属性'),('action_mode','ボタンの処理方式'),('macro_path','外部マクロのファイル'),('macro_flag','分岐用の変数名'),('macro_value','このボタンの分岐値')]:
+                ('database','DATABASE'),('button_role','ボタン属性'),('button_call','コマンド後のフォーム処理'),('action_mode','ボタンの処理方式'),('macro_path','外部マクロのファイル'),('macro_flag','分岐用の変数名'),('macro_value','このボタンの分岐値')]:
             if key in ('slider_min','slider_max','slider_step','slider_value'):
                 w = self.number(-1e9, 1e9)
             elif key in ('x','y','width','height','hgap','vgap','xoffset','yoffset'):
                 w = self.number(-300 if key in ('x','y','xoffset','yoffset') else 0 if key in ('width','height','hgap','vgap') else 1, 300)
             elif key in ('parent','xref','yref','width_ref','popup_menu'):
                 w = QComboBox(); w.addItem('(フォーム直下)', '')
+            elif key=='button_call':
+                w=QComboBox();w.addItems(['','OKCALL','CANCELCALL'])
+                w.setToolTip('空欄なら省略。CALLコマンドの後にOKCALL / CANCELCALLを出力します。')
             elif key in ('value_type','orientation','frame_style','layout_mode','path','halign','valign','xedge','yedge','xanchor','selection_mode','combo_keyword','slider_orientation','view_type','channels','list_mode','display_mode','database','button_role','action_mode'):
                 w = QComboBox()
                 w.addItems({'action_mode':['CODE','MACRO'],'display_mode':['TEXT','PIXMAP'],'database':['OWNERS','MEMBERS','AUTO'],'button_role':['NORMAL','OK','APPLY','CANCEL','RESET','HELP'],'value_type': ['STRING', 'REAL'], 'orientation': ['HORIZ', 'VERT'], 'frame_style': ['FRAME','TABSET','TOOLBAR'], 'layout_mode': ['ABSOLUTE','AUTO','RELATIVE'], 'path': ['DOWN','RIGHT','UP','LEFT'], 'halign': ['LEFT','CENTRE','RIGHT'], 'valign': ['TOP','CENTRE','BOTTOM'], 'xedge': ['XMIN','XMAX'], 'yedge': ['YMIN','YMAX'], 'xanchor': ['LEFT','RIGHT'], 'list_mode':['SIMPLE','TABLE'], 'selection_mode':['SINGLE','MULTIPLE'], 'combo_keyword':['COMBO','COMBOBOX'], 'slider_orientation':['HORIZONTAL','VERTICAL'], 'view_type':['ALPHA','AREA','PLOT','VOLUME'], 'channels':['NONE','REQUESTS','COMMANDS','BOTH']}[key])
@@ -851,7 +855,7 @@ class Window(QMainWindow):
                 w.setMinimumContentsLength(8)
             layout_keys={'parent','layout_mode','path','halign','valign','hgap','vgap','xref','xedge','xanchor','xoffset','yref','yedge','yoffset','width_ref'}
             content_keys={'selection_mode','list_mode','table_method','combo_keyword','combo_scroll','combo_tagwid','slider_orientation','slider_min','slider_max','slider_step','slider_value','off_value','on_value','view_type','view_aspect','channels','assembly','namespace','control_type','pixmap_path','database'}
-            action_keys={'callback','command','popup_menu','action_mode','macro_path','macro_flag','macro_value'}
+            action_keys={'callback','command','button_call','popup_menu','action_mode','macro_path','macro_flag','macro_value'}
             self.prop_layout.current='配置' if key in layout_keys else '内容' if key in content_keys else '動作' if key in action_keys else '基本'
             if key in ('name','callback'):label+='（任意変更）'
             self.fields[key] = w; self.prop_layout.addRow(label, w,pairs.get(key))
@@ -1004,6 +1008,9 @@ class Window(QMainWindow):
         self.set_workflow('form')
         if self.settings.error:self.statusBar().showMessage('設定JSONを読み込めません: '+self.settings.error)
         self.backup_timer.start()
+        # Catch external file drops before an editor inserts its file URL or
+        # the explorer interprets it as an internal object move.
+        for widget in self.findChildren(QWidget):widget.installEventFilter(self)
 
     def show_code(self):
         self.sync_output_summary()
@@ -1686,7 +1693,7 @@ class Window(QMainWindow):
             'display_mode':gadget.kind in ('paragraph','button','toggle','option'),
             'pixmap_path':gadget.kind in ('paragraph','button','toggle') and gadget.display_mode == 'PIXMAP',
             'popup_menu':gadget.kind in ('view','commandline','list','button','toggle','text','combo','slider'),
-            'database':gadget.kind == 'selector', 'button_role':gadget.kind == 'button',
+            'database':gadget.kind == 'selector', 'button_role':gadget.kind == 'button', 'button_call':gadget.kind == 'button',
             'action_mode':gadget.kind == 'button' and gadget.button_role not in ('OK','CANCEL','HELP'),
             'macro_path':macro,'macro_flag':macro,'macro_value':macro,
             'width_ref':not gadget.hidden and gadget.display_mode != 'PIXMAP' and 'width' not in fixed_dimensions(gadget) and gadget.kind not in ('toggle','option','rtoggle'),
@@ -2333,6 +2340,8 @@ class Window(QMainWindow):
         QTimer.singleShot(0,lambda:self.move_selection(dx,dy,names,old))
 
     def eventFilter(self,watched,event):
+        if event.type() in (QEvent.DragEnter,QEvent.DragMove,QEvent.Drop) and event.mimeData().hasUrls():
+            self.handle_file_drop(event);return True
         if event.type()==QEvent.MouseButtonDblClick and event.button()==Qt.LeftButton:
             if watched in (self.preview_menu_bar,self.preview_menu_frame):
                 for menu in self.preview_menus:menu.close()
@@ -2352,6 +2361,27 @@ class Window(QMainWindow):
                     x,y=directions[event.key()];self.move_selection(x*step,y*step)
                 event.accept();return True
         return super().eventFilter(watched,event)
+
+    @staticmethod
+    def dropped_design_path(mime):
+        urls=mime.urls()
+        if len(urls)!=1 or not urls[0].isLocalFile():return None
+        path=Path(urls[0].toLocalFile())
+        return path if path.suffix.lower() in ('.mac','.json') else None
+
+    def handle_file_drop(self,event):
+        path=self.dropped_design_path(event.mimeData())
+        if path is None or self._closing or not event.possibleActions() & Qt.CopyAction:event.ignore();return
+        event.setDropAction(Qt.CopyAction);event.accept()
+        if event.type()==QEvent.Drop:
+            # Qt must finish the drop before a read rebuilds the scene/tree.
+            QTimer.singleShot(0,lambda:self.open_design(path) if not self._closing else None)
+
+    def dragEnterEvent(self,event):self.handle_file_drop(event)
+
+    def dragMoveEvent(self,event):self.handle_file_drop(event)
+
+    def dropEvent(self,event):self.handle_file_drop(event)
 
     def selection_changed(self):
         if self._closing or not isValid(self) or not isValid(self.scene) or self.loading:return

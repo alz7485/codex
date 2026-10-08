@@ -32,6 +32,7 @@ ATTRIBUTE_KINDS = {
     'DATABASE':{'selector'},'FIXCHARS':{'textpane'},'FIXED':{'textpane'},
     'PIXMAP':{'button','paragraph','toggle','option'},'PMLNETCONTROL':{'container'},
     **{key:{'button'} for key in ('OK','APPLY','CANCEL','RESET','HELP','NORMAL')},
+    'OKCALL':{'button'},'CANCELCALL':{'button'},
 }
 
 
@@ -236,6 +237,9 @@ class Importer:
                 if gadget.kind in ('paragraph','button','toggle') and tokens.peek()[:1] in ("'",'"','|'):
                     gadget.pixmap_path=tokens.quoted()
             elif key in ('OK','APPLY','CANCEL','RESET','HELP','NORMAL'):gadget.button_role=key
+            elif key in ('OKCALL','CANCELCALL'):
+                if 'button_call' in present:raise MacImportError(tokens.line,'BUTTONのOKCALL / CANCELCALLはどちらか1つを指定してください。')
+                gadget.button_call=key;present.add('button_call')
             elif key=='PMLNETCONTROL':pass
             else:raise MacImportError(tokens.line,'未対応の部品指定です: '+token)
 

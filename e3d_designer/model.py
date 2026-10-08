@@ -217,6 +217,7 @@ class Gadget:
     callback_expression: str = ''
     hidden: bool = False
     width_explicit: bool = True
+    button_call: str = ''
 
     def __post_init__(self):
         if self.selection_mode == 'MULTI': self.selection_mode = 'MULTIPLE'
@@ -662,6 +663,8 @@ class Form:
             for index,value in enumerate(g.pane_lines,1):literal(value,field=f'{g.name}: 複数行テキスト{index}行')
             if g.database not in ('OWNERS','MEMBERS','AUTO'): raise ValueError('DATABASE は OWNERS / MEMBERS / AUTO を指定してください。')
             if g.button_role not in ('NORMAL','OK','APPLY','CANCEL','RESET','HELP'): raise ValueError('ボタン属性が不正です。')
+            if g.button_call not in ('','OKCALL','CANCELCALL'):raise ValueError('コマンド後のフォーム処理は空欄 / OKCALL / CANCELCALLを指定してください。')
+            if g.button_call and g.kind!='button':raise ValueError('コマンド後のフォーム処理はBUTTON用です。')
             if g.button_role != 'NORMAL' and g.kind != 'button': raise ValueError('ボタン属性は BUTTON 用です。')
             if g.button_role in ('OK','CANCEL','HELP') and (g.callback or g.command): raise ValueError('OK / CANCEL / HELP ボタンの処理はフォームのコールバックに設定してください。')
             if g.popup_menu:
@@ -1047,6 +1050,7 @@ class Form:
                 if g.button_role != 'NORMAL': line += ' '+g.button_role
                 command = f'!this.macro_{g.name}()' if g.action_mode == 'MACRO' else command_code(g.command) or (callback_expression(g) if active_callback(g) else '')
                 if command: line += ' CALL ' + literal(command, allow_expansion=True)
+                if g.button_call:line += ' '+g.button_call
                 line += f' {width_clause}'
                 if g.display_mode == 'PIXMAP': line += f' HEIGHT {n(g.height)}'
             elif g.kind == 'toggle':

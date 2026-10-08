@@ -147,6 +147,10 @@ class MiniProperties(QDialog):
             self.call_mode.setCurrentIndex(int(bool(g.command)));fields.addRow('処理方式',self.call_mode)
             widget=QLineEdit(g.command or g.callback);self.fields['action']=widget;fields.addRow('処理',widget)
         elif g.callback or g.kind in ('list','combo','slider','selector') or (g.kind=='option' and g.display_mode=='PIXMAP'):text('callback','メソッド名')
+        if g.kind=='button':
+            widget=QComboBox();widget.addItems(['','OKCALL','CANCELCALL']);widget.setCurrentText(g.button_call)
+            widget.setToolTip('空欄なら省略。CALLコマンドの後に付けるフォーム処理です。')
+            self.fields['button_call']=widget;fields.addRow('コマンド後のフォーム処理',widget)
         if g.kind in ('button','paragraph','list'):
             row=QHBoxLayout();widget=QLineEdit(g.background);self.fields['background']=widget;row.addWidget(widget)
             button=QPushButton('色を選ぶ');button.clicked.connect(self.choose_color);row.addWidget(button);fields.addRow('色番号',row)
