@@ -171,14 +171,26 @@ class Importer:
         return program,start
 
     def position(self,tokens,gadget):
-        axes=set()
+        axes=set();seen=set()
         while tokens.more():
             axis=tokens.peek()[:1].upper()
             if axis not in ('X','Y') or not re.match(r'^[XY](?:$|[+\-\d.]|MIN\.|MAX\.)',tokens.peek(),re.I):break
-            if axis in axes:raise MacImportError(tokens.line,'ATで同じ軸を複数回指定できません。')
-            axes.add(axis)
+            if axis in seen:raise MacImportError(tokens.line,'ATで同じ軸を複数回指定できません。')
+            seen.add(axis)
             value=tokens.pop();upper=value.upper()
-            if upper==axis:setattr(gadget,axis.lower(),tokens.number());continue
+            if upper==axis:
+                next_token=tokens.peek();next_key=next_token.upper()
+                # An omitted axis value must not consume the label, another
+                # axis or the next attribute. Leave it to PATH/current-point
+                # placement, exactly as when this axis was absent altogether.
+                if (not next_token or next_token[:1] in ("'",'"','|')
+                    or re.match(r'^[XY](?:$|[+\-\d.]|MIN\.|MAX\.)',next_token,re.I)
+                    or next_key in ATTRIBUTE_KINDS
+                    or next_key in ('AT','WIDTH','HEIGHT','CALL','CALLBACK','TEXT','TAG')
+                    or next_key.startswith('WIDTH.')):
+                    continue
+                setattr(gadget,axis.lower(),tokens.number());axes.add(axis);continue
+            axes.add(axis)
             compact=re.fullmatch(axis+'('+NUMBER+')',value,re.I)
             if compact:setattr(gadget,axis.lower(),float(compact.group(1)));continue
             relative=re.fullmatch('('+axis+r'(?:MIN|MAX))\.('+NAME+r')(-SIZE)?('+NUMBER+r')?',value,re.I)
@@ -190,7 +202,6 @@ class Importer:
             if axis=='X':gadget.xanchor='RIGHT' if anchor else 'LEFT'
         if gadget.layout_mode=='RELATIVE' and (not gadget.xref or not gadget.yref):
             raise MacImportError(tokens.line,'絶対座標と相対座標の混在は未対応です。')
-        if not axes:raise MacImportError(tokens.line,'ATにはXまたはYを指定してください。')
         return {axis.lower() for axis in axes}
 
     def attributes(self,tokens,gadget,present):

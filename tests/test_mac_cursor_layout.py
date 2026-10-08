@@ -161,7 +161,7 @@ class MacCursorLayoutTests(unittest.TestCase):
         self.assertEqual(form.named('Tools').width,33)
 
     def test_invalid_at_and_layout_values_are_not_silently_accepted(self):
-        for declaration in ("Button .A At 'A'","Button .A At X 2 X 3 'A'",
+        for declaration in ("Button .A At X (2+3) 'A'","Button .A At X 2 X 3 'A'",
                             "Button .A At X 2 At Y 3 'A'","Path Sideways","Hdist -1",
                             "Vdist -1","Halign Invalid","Valign Invalid"):
             with self.subTest(declaration=declaration),self.assertRaises(MacImportError):
