@@ -707,8 +707,12 @@ class Window(QMainWindow):
         self.zoom_reset_button.clicked.connect(lambda:self.view.set_zoom(100))
         for button in (self.zoom_out_button,self.zoom_in_button):button.setFixedWidth(28)
         self.zoom_reset_button.setFixedWidth(50)
+        self.pan_center_button=QPushButton('中央へ')
+        self.pan_center_button.setToolTip('フォームを画面中央へ移します。中ボタンドラッグ、またはSpace＋左ドラッグでパンできます。部品の座標は変わりません。')
+        self.pan_center_button.clicked.connect(lambda:self.view.center_content(self.form_item.frame_rect().center()))
+        self.view.setToolTip('中ボタンドラッグ／Space＋左ドラッグでパン。Ctrl＋ホイールで拡大縮小。部品の座標は変わりません。')
         self.view.zoomChanged.connect(self.sync_zoom_text)
-        for widget in (self.zoom_out_button,self.zoom_in_button,self.zoom_text,self.zoom_reset_button):drag_row.addWidget(widget)
+        for widget in (self.zoom_out_button,self.zoom_in_button,self.zoom_text,self.zoom_reset_button,self.pan_center_button):drag_row.addWidget(widget)
         drag_row.addStretch()
         self.display_font_button=QPushButton('表示フォント…');self.display_font_button.clicked.connect(self.choose_display_font)
         self.display_font_button.setToolTip('編集画面と参考表示の表示フォントを設定します。')
@@ -1641,7 +1645,7 @@ class Window(QMainWindow):
         self.fields['table_method'].setEnabled(gadget.kind == 'list' and gadget.list_mode == 'TABLE')
         self.fields['combo_keyword'].setEnabled(gadget.kind == 'combo')
         self.fields['combo_scroll'].setEnabled(gadget.kind == 'combo')
-        self.fields['combo_tagwid'].setEnabled(gadget.kind == 'combo')
+        self.fields['combo_tagwid'].setEnabled(gadget.kind in ('combo','rtoggle'))
         self.fields['combo_tagwid'].setPlaceholderText('0以上 / 空欄なら指定しない')
         self.fields['combo_scroll'].setPlaceholderText('正の整数 / 空欄なら指定しない')
         for key in ('slider_orientation','slider_min','slider_max','slider_step','slider_value'):
@@ -2201,6 +2205,7 @@ class Window(QMainWindow):
         for item in self.scene.selectedItems():
             if isinstance(item,Item) and item.isVisible():rect=rect.united(item.sceneBoundingRect().adjusted(-12,-12,12,12))
         self.scene.setSceneRect(rect)
+        self.view.set_content_rect(rect)
 
     def form_resize_preview(self):
         self.sync_visual_form_size()
@@ -2319,6 +2324,9 @@ class Window(QMainWindow):
                 for menu in self.preview_menus:menu.close()
                 QTimer.singleShot(0,self.add_palette_menu);event.accept();return True
         if event.type()==QEvent.KeyPress and watched in (self.view,self.view.viewport()):
+            if self.view.panning:
+                if event.key()==Qt.Key_Escape:self.view.cancel_pan()
+                event.accept();return True
             item=self.scene.mouseGrabberItem()
             if event.key()==Qt.Key_Escape:
                 if isinstance(item,(Item,FormItem)) and item.cancel_interaction():

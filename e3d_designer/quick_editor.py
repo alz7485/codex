@@ -126,7 +126,7 @@ class MiniProperties(QDialog):
             for title,value in (('横','HORIZ' if g.kind=='line' else 'HORIZONTAL'),('縦','VERT' if g.kind=='line' else 'VERTICAL')):widget.addItem(title,value)
             widget.setCurrentIndex(widget.findData(getattr(g,direction_key)))
             self.fields[direction_key]=widget;fields.addRow('向き',widget)
-        if g.kind=='combo':text('combo_tagwid','TAGWID（表示名の幅）')
+        if g.kind in ('combo','rtoggle'):text('combo_tagwid','TAGWID（表示名の幅）')
         self.option_width=None
         if uses_pairs(g):
             self.option_width=QCheckBox('OPTIONの幅をコードへ出力');self.option_width.setChecked(g.option_width_explicit)

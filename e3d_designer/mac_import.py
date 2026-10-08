@@ -21,7 +21,7 @@ APPEND = re.compile(r'^!('+NAME+r')\.APPEND\s*\(\s*(.*?)\s*\)\s*$',re.I)
 PROPERTY = re.compile(r'^!this\.('+NAME+r')\.(DTEXT|RTEXT|VAL)\s*=\s*(.*)$',re.I)
 CALL = re.compile(r'^!this\.('+NAME+r')\s*\(\s*\)$',re.I)
 ATTRIBUTE_KINDS = {
-    'TAGWID':{'combo'},'TAGWIDTH':{'combo'},'SCROLL':{'combo'},
+    'TAGWID':{'combo','rtoggle'},'TAGWIDTH':{'combo','rtoggle'},'SCROLL':{'combo'},
     'ASPECT':{'view'},'BACKGROUND':{'button','paragraph','list'},
     'IS':{'text'},'TABSET':{'frame'},'TOOLBAR':{'frame'},
     'HORIZ':{'line'},'VERT':{'line'},

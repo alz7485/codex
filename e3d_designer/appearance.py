@@ -98,6 +98,10 @@ class NativeControls:
         if g.kind=='button':
             option=QStyleOptionButton();option.initFrom(widget)
             return widget.style().sizeFromContents(QStyle.CT_PushButton,option,size,widget).width()
+        if g.kind=='rtoggle' and g.combo_tagwid:
+            option=QStyleOptionButton();widget.initStyleOption(option)
+            size.setWidth(self.pixels(float(g.combo_tagwid)*self.char_width))
+            return widget.style().sizeFromContents(QStyle.CT_RadioButton,option,size,widget).width()
         if g.kind in ('option','combo','text'):
             if uses_pairs(g) and not g.option_width_explicit:return widget.sizeHint().width()
             entry=widget.entry
@@ -165,6 +169,7 @@ class NativeControls:
                 pixmap=self.image(g);widget.setText('');widget.setIcon(QIcon(pixmap));widget.setIconSize(pixmap.size())
         elif g.kind in ('toggle','rtoggle'):
             widget=QCheckBox(g.label,parent) if g.kind=='toggle' else QRadioButton(g.label,parent)
+            if g.kind=='rtoggle' and g.combo_tagwid and float(g.combo_tagwid)==0:widget.setText('')
             widget.setChecked(g.initial.upper()=='TRUE')
             if g.display_mode=='PIXMAP':
                 pixmap=self.image(g);widget.setText('');widget.setIcon(QIcon(pixmap));widget.setIconSize(pixmap.size())

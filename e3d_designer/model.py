@@ -641,8 +641,8 @@ class Form:
                         raise ValueError(f'{g.name}: REAL の初期値は有限数にしてください。') from None
                 else:
                     literal(g.initial,field=f'{g.name}: 初期値')
-            if g.kind == 'combo' and g.combo_tagwid and (not re.fullmatch(r'[0-9]+(?:\.[0-9]+)?',g.combo_tagwid) or not math.isfinite(float(g.combo_tagwid))):
-                raise ValueError('COMBO の TAGWID は0以上の数値、または空欄にしてください。')
+            if g.kind in ('combo','rtoggle') and g.combo_tagwid and (not re.fullmatch(r'[0-9]+(?:\.[0-9]+)?',g.combo_tagwid) or not math.isfinite(float(g.combo_tagwid))):
+                raise ValueError(f'{g.kind.upper()} の TAGWID は0以上の数値、または空欄にしてください。')
             if g.kind == 'combo' and g.combo_scroll and (not re.fullmatch(r'[0-9]+',g.combo_scroll) or int(g.combo_scroll)<1):
                 raise ValueError('COMBO の SCROLL は正の整数、または空欄にしてください。')
             if g.selection_mode not in ('SINGLE','MULTIPLE','MULTI') or g.combo_keyword not in ('COMBO','COMBOBOX'):
@@ -989,7 +989,8 @@ class Form:
                         f'STEP {n(g.slider_step)} VAL {n(g.slider_value)} {width_clause}')
                 if g.slider_orientation == 'VERTICAL': line += f' HEIGHT {n(height)}'
             elif g.kind == 'rtoggle':
-                line = f'RTOGGLE .{g.name} {label} {position} STATES {literal(g.off_value)} {literal(g.on_value)}'
+                tagwid = f'TAGWID {g.combo_tagwid} ' if g.combo_tagwid else ''
+                line = f'RTOGGLE .{g.name} {tagwid}{label} {position} STATES {literal(g.off_value)} {literal(g.on_value)}'
             elif g.kind in ('view','commandline'):
                 view_type = 'ALPHA' if g.kind == 'commandline' else g.view_type
                 line = f'VIEW .{g.name} {position} {view_type}\n  {width_clause} HEIGHT {n(g.height)}'
