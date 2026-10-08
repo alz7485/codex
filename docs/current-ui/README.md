@@ -130,3 +130,7 @@ examples/measure-layout.jsonの画面です。E3D実機のスクリーンショ�
 最新のフォーム枠・ハンドル・共通プロパティ: [form-canvas.png](form-canvas.png)。フォームタブは廃止し、選択に合わせてプロパティを表示します。
 
 左側のツリーと上部の追加ボタン: [tree-explorer.png](tree-explorer.png)。FRAMEとタブのフレームをフォルダとして展開できます。
+
+Excelのシートと見出しの選択: [excel-sheet.png](excel-sheet.png)。LISTは複数列と表示名／実値を選べます。
+
+A1から取り込んだ編集可能な表: [excel-items.png](excel-items.png)。[サンプルExcel](../../examples/excel-items.xlsx)を同梱しています。

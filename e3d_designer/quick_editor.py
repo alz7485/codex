@@ -1,7 +1,7 @@
 """Transactional compact gadget editor and spreadsheet item editor."""
 import copy
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLineEdit,
-    QComboBox,QDoubleSpinBox,QPushButton,QDialogButtonBox,QTableWidget,QTableWidgetItem,QLabel,QCheckBox)
+    QComboBox,QDoubleSpinBox,QPushButton,QDialogButtonBox,QTableWidget,QTableWidgetItem,QLabel,QCheckBox,QFileDialog)
 from .names import rename
 from .color_picker import ColorPicker
 from .model import dimension_editable,normalize_dimensions,uses_pairs,supports_hidden,fixed_dimensions,supports_auto_width,uses_auto_width
@@ -30,6 +30,9 @@ class ItemsDialog(QDialog):
             button=QPushButton(title);button.clicked.connect(handler);tools.addWidget(button)
             if '列' in title:button.setVisible(gadget.kind=='list')
         layout.addLayout(tools)
+        self.excel_button=QPushButton('📊 Excelから読み込む…');self.excel_button.clicked.connect(self.import_excel)
+        self.excel_button.setToolTip('.xlsxのA1から読み込み、確定前にこの表で編集できます。')
+        layout.addWidget(self.excel_button)
         form=QFormLayout();self.initial=QLineEdit(gadget.initial)
         self.initial.setPlaceholderText('空欄、または行番号（1から）');form.addRow('初期選択',self.initial)
         self.initial.setEnabled(initial_editable)
@@ -42,6 +45,58 @@ class ItemsDialog(QDialog):
         buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);layout.addWidget(buttons)
 
     def is_table(self):return self.gadget.kind=='list' and self.mode.currentIndex()==1
+
+    def import_excel(self):
+        filename,_=QFileDialog.getOpenFileName(self,'Excelの表を読み込む','','Excel (*.xlsx)')
+        if not filename:return
+        self.load_excel(filename)
+
+    def load_excel(self,filename):
+        from .excel_import import ExcelBook
+        from .excel_dialog import ExcelSheetDialog
+        try:
+            with ExcelBook(filename) as book:
+                dialog=ExcelSheetDialog(self,book.sheets,self.gadget.kind=='list')
+                try:
+                    if dialog.exec()!=QDialog.Accepted:return
+                    data=book.read(dialog.sheet.currentText())
+                    self.apply_excel_data(data,dialog.table_mode(),dialog.header.isChecked())
+                finally:dialog.deleteLater()
+        except ValueError as error:self.error.setText(str(error));return
+        self.error.setText('Excelの表を読み込みました。内容を確認してOKで確定してください。')
+
+    def apply_excel_data(self,data,table_mode=False,first_row_header=False):
+        from .model import literal,image_path_literal
+        if not data or not data[0]:raise ValueError('読み込む表に値がありません。')
+        columns=max(map(len,data))
+        if table_mode and self.gadget.kind!='list':raise ValueError('複数列の表はLISTで指定してください。')
+        if not table_mode and columns>2:raise ValueError('表示名／実値・コマンド形式はA・Bの2列までです。LISTでは「表（複数列）」を選んでください。')
+        payload=[list(row)+['']*(columns-len(row)) for row in data]
+        if table_mode:
+            if not first_row_header:payload.insert(0,[f'列{i+1}' for i in range(columns)])
+        else:
+            if first_row_header:payload=payload[1:]
+            payload=[row+['']*(2-len(row)) for row in payload];columns=2
+        commands=uses_pairs(self.gadget) and self.mode.currentIndex()==0
+        for r,row in enumerate(data,1):
+            if first_row_header and not table_mode and r==1:continue
+            for c,value in enumerate(row):
+                field=f'Excel {chr(65+c) if c<26 else "列"+str(c+1)}{r}'
+                image=not table_mode and c==0 and self.gadget.display_mode=='PIXMAP'
+                if image:image_path_literal(value,field=field)
+                else:literal(value,allow_expansion=not table_mode and c==1 and commands,field=field)
+        # All checks finish before replacing the editable draft.
+        self.table.clearFocus();self._tables.clear()
+        self.mode.blockSignals(True)
+        try:
+            if self.gadget.kind=='list':self.mode.setCurrentIndex(int(table_mode))
+        finally:self.mode.blockSignals(False)
+        self._loaded_mode=self.mode.currentIndex()
+        self.table.clear();self.table.setColumnCount(columns);self.table.setRowCount(len(payload))
+        self.table.setHorizontalHeaderLabels([f'列{i+1}' for i in range(columns)] if table_mode else ['表示名','コマンド' if commands else '実値'])
+        self.table.setVerticalHeaderLabels(['見出し',*[str(i+1) for i in range(len(payload)-1)]] if table_mode else [str(i+1) for i in range(len(payload))])
+        for r,row in enumerate(payload):
+            for c,value in enumerate(row):self.table.setItem(r,c,QTableWidgetItem(value))
 
     def load_table(self):
         g=self.gadget
