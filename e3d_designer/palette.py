@@ -114,7 +114,7 @@ class GadgetPalette(QWidget):
         if group in ('image','line','slider'):
             button.setText({'image':'画像','line':'線','slider':'スライダー'}[group])
         if group in ('selector','container','toolbar'):
-            button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            button.setStyleSheet(BUTTON_STYLE+'QToolButton { padding: 1px 0px; } QToolButton::menu-button { width: 13px; }')
         operation='↓ / Alt＋↓ / F4で種類を選択、ボタン本体で同じ種類を追加' if has_menu else 'メニューバーを編集' if action.data()=='menubar' else 'この部品を追加'
         hint=label+'：'+operation
         button.setAccessibleName(label);button.setAccessibleDescription(operation);button.setToolTip(hint)

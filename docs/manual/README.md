@@ -1,5 +1,8 @@
 # 詳細マニュアルの読み方
 
+FormDesigner上部の「新規・開く」などがある操作列の右端の❔、またはF1でブラウザー版を開けます。インターネット接続は不要です。
+HTMLが見つからない場合はPDFを開きます。Python版・EXE版とも、アプリと同じフォルダーの `docs/manual` を参照します。
+
 - [ブラウザー版](index.html): ZIPを展開し、index.htmlをブラウザーで開きます。目次・目次検索・Ctrl+F・印刷を使用できます。
 - [PDF版](FormDesigner-Manual.pdf): PDFビューアーで開くか印刷します。
 - [Markdownの原本](../../MANUAL.md): GitHubまたはMarkdown対応エディターで読めます。

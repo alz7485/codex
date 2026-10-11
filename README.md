@@ -4,10 +4,11 @@ AVEVA E3D の PML ユーザーフォームを視覚的に設計する、日本�
 
 ## UI
 
-![現在のフォームエディタ](docs/current-ui/ordered-18-editor.png)
+![現在のフォームエディタ](docs/current-ui/manual-help-editor.png)
 
 基本操作は同梱の [USER_GUIDE.txt](USER_GUIDE.txt) にまとめています。
 詳しい操作・23種類の部品・DBセレクタ・コンテナ・ツールバーの設定は、[詳細マニュアル](MANUAL.md) を参照してください。[PDF版](docs/manual/FormDesigner-Manual.pdf) と [オフラインのブラウザー版](docs/manual/index.html) も同梱しています。
+アプリ上部の「新規・開く」などがある操作列の右端の❔、またはF1で同梱マニュアルを開けます。❔はウィンドウ幅を変えても右端に表示します。
 背景透過のシルバー・シアンのアイコンはZIP直下に [app-icon.png](app-icon.png) / [app-icon.ico](app-icon.ico) を同梱し、ウィンドウ用にも `e3d_designer/assets` に収録しています。`build_onedir.ps1` でアイコン付きのEXEをビルドできます。
 
 ## 起動 (Windows)
@@ -34,7 +35,7 @@ Windowsで `onedir` 形式のEXEを作成するコマンドは、同梱の [EXE_
 
 ツールバーには新規・開く・保存・MAC出力・Undo/Redo・コード表示・最近の設計を配置し、別名保存・作業の復元は「ファイル」、複製・削除・名前管理は「編集」メニューへまとめています。既存のショートカットは維持します。
 
-「ファイル／編集／表示」は通常のメニューバーに表示します。その下の操作ボタンは、部品追加ボタンと同じ白地・淡い青の枠・青い線画アイコンで統一しています。キャンバス上部の操作列も同じトーンで、高さ28pxに揃え、上側の余白を詰めています。操作列の「コード」「プレビュー」は取り除き、上部ツールバーとショートカットから開きます。[編集画面](docs/current-ui/ordered-18-editor.png)
+「ファイル／編集／表示」は通常のメニューバーに表示します。その下の操作ボタンは、部品追加ボタンと同じ白地・淡い青の枠・青い線画アイコンで統一しています。キャンバス上部の操作列も同じトーンで、高さ28pxに揃え、上側の余白を詰めています。操作列の「コード」「プレビュー」は取り除き、上部ツールバーとショートカットから開きます。[編集画面](docs/current-ui/manual-help-editor.png)
 
 [編集画面](docs/current-ui/form-canvas.png) / [別ウィンドウのコード表示](docs/current-ui/separate-code.png)
 

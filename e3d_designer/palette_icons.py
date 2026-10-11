@@ -1,6 +1,6 @@
 """Consistent blue outline icons for editor actions and gadget variants."""
 from PySide6.QtCore import Qt,QPointF,QRectF
-from PySide6.QtGui import QPixmap,QPainter,QPen,QColor,QIcon,QPolygonF
+from PySide6.QtGui import QPixmap,QPainter,QPen,QColor,QIcon,QPolygonF,QPainterPath
 
 
 def palette_icon(kind):
@@ -42,6 +42,11 @@ def palette_icon(kind):
         p.drawLine(3,14,10,14);p.drawLine(18,14,25,14)
     elif kind=='recent':
         p.drawEllipse(QRectF(4,4,20,20));p.drawLine(14,7,14,14);p.drawLine(14,14,19,17)
+    elif kind=='help':
+        p.drawEllipse(QRectF(3,3,22,22))
+        question=QPainterPath(QPointF(10,10));question.cubicTo(10,5,19,5,19,11)
+        question.cubicTo(19,14,14,14,14,17);p.drawPath(question)
+        p.setBrush(QColor('#3566a8'));p.drawEllipse(QRectF(13.2,20,1.6,1.6))
     elif kind in ('image','image_option'):
         p.drawRect(QRectF(3,4,22,20));p.drawEllipse(QRectF(17,7,4,4))
         p.drawPolyline(QPolygonF([QPointF(5,21),QPointF(11,13),QPointF(16,18),QPointF(20,15),QPointF(24,21)]))

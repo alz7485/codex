@@ -35,6 +35,8 @@ class GroupedPaletteTests(unittest.TestCase):
             if group not in groups:self.assertIsNone(button.menu())
             self.assertEqual(button.height(),30)
             self.assertEqual(button.width(),92)
+            self.assertEqual(button.toolButtonStyle(),Qt.ToolButtonTextBesideIcon)
+            self.assertFalse(button.icon().isNull())
         self.assertEqual(w.palette_panel.grid.rowCount(),2)
         self.assertEqual(w.palette_panel._columns,9)
         for index,group in enumerate(order):

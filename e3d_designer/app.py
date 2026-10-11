@@ -5,14 +5,14 @@ import sys
 from shiboken6 import isValid
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QRectF, Signal, QMimeData, QTimer, QEvent
-from PySide6.QtGui import QAction, QColor, QPainter, QPen, QKeySequence, QPainterPath, QPainterPathStroker, QPixmap, QFont, QIcon
+from PySide6.QtCore import Qt, QRectF, Signal, QMimeData, QTimer, QEvent, QSize, QUrl
+from PySide6.QtGui import QAction, QColor, QPainter, QPen, QKeySequence, QPainterPath, QPainterPathStroker, QPixmap, QFont, QIcon, QDesktopServices
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QFormLayout, QLineEdit, QDoubleSpinBox, QComboBox, QPushButton,
     QPlainTextEdit, QLabel, QSplitter, QGraphicsScene, QGraphicsView,
     QGraphicsObject, QGraphicsItem, QListWidget, QFileDialog, QMessageBox,
     QCheckBox, QMenuBar, QMenu, QGroupBox, QTableWidget, QHeaderView, QAbstractItemView,
-    QGridLayout, QTabBar, QDialog, QFrame, QDialogButtonBox, QTabWidget, QInputDialog, QToolButton, QStackedWidget,QFontDialog)
+    QGridLayout, QTabBar, QDialog, QFrame, QDialogButtonBox, QTabWidget, QInputDialog, QToolButton, QStackedWidget,QFontDialog,QSizePolicy)
 from .palette import GadgetPalette
 from .explorer import ObjectExplorer
 from .form_item import FormItem
@@ -651,6 +651,18 @@ class Window(QMainWindow):
         recent_button=QToolButton();recent_button.setText('最近の設計')
         recent_button.setMenu(self.recent_menu);recent_button.setPopupMode(QToolButton.InstantPopup)
         toolbar.addWidget(recent_button)
+        spacer=QWidget();spacer.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Preferred)
+        toolbar.addWidget(spacer)
+        from .palette_icons import palette_icon
+        self.manual_action=QAction(palette_icon('help'),'❔',self)
+        self.manual_action.setShortcut(QKeySequence('F1'))
+        self.manual_action.setToolTip('詳細マニュアルを開く（F1）')
+        self.manual_action.triggered.connect(self.show_manual)
+        self.manual_button=QToolButton();self.manual_button.setDefaultAction(self.manual_action)
+        self.manual_button.setToolButtonStyle(Qt.ToolButtonIconOnly);self.manual_button.setIconSize(QSize(20,20))
+        self.manual_button.setStyleSheet('QToolButton { padding: 0px 4px; }')
+        self.manual_button.setAccessibleName('詳細マニュアルを開く');self.manual_button.setFixedWidth(36)
+        toolbar.addWidget(self.manual_button)
         from .editor_chrome import style_header
         style_header(toolbar, self.menuBar(), recent_button)
         file_menu.addMenu(self.recent_menu)
@@ -2560,6 +2572,17 @@ class Window(QMainWindow):
             if self.insert_net_component(dialog.result_gadget):break
             dialog.error.setText(self.statusBar().currentMessage())
         dialog.deleteLater()
+
+    def show_manual(self):
+        directory=self.settings.app_directory/'docs'/'manual'
+        manual=next((directory/name for name in ('index.html','FormDesigner-Manual.pdf') if (directory/name).is_file()),None)
+        if manual is None:
+            QMessageBox.warning(self,'マニュアルが見つかりません',
+                '配布フォルダーの docs/manual をアプリと同じフォルダーへ配置してください。')
+            return
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(manual.resolve()))):
+            QMessageBox.warning(self,'マニュアルを開けません',
+                '既定のブラウザーまたはPDFビューアーを確認してください。\n'+str(manual))
 
     def create_toolbar(self):
         from .toolbar_dialog import ToolbarDialog
