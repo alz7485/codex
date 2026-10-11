@@ -1,0 +1,24 @@
+Kill !!netSaveDemo
+
+Setup Form !!netSaveDemo Size 70 22 Dialog
+  Title 'Choose Save Path'
+  Button .chooseSave1 At X 2 Y 1 'Choose save path' Call '!this.chooseSave1Click()' Width 18
+Exit
+
+Show !!netSaveDemo
+
+Define Method .chooseSave1Click()
+import 'PMLFileBrowser'
+handle (1000,0)
+  -- Assembly already loaded
+endhandle
+using namespace 'Aveva.Core.Presentation'
+!browser = object PMLFileBrowser('SAVE')
+!browser.show('', '', 'Choose save path', FALSE, 'All files (*.*)|*.*', 1)
+!selectedFile = !browser.file()
+if (!selectedFile eq '') then
+  return
+endif
+$p Selected file: $!selectedFile
+-- Add processing for !selectedFile here
+Endmethod

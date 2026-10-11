@@ -1,0 +1,24 @@
+Kill !!netFileDemo
+
+Setup Form !!netFileDemo Size 70 22 Dialog
+  Title 'Choose File'
+  Button .chooseFile1 At X 2 Y 1 'Choose file' Call '!this.chooseFile1Click()' Width 18
+Exit
+
+Show !!netFileDemo
+
+Define Method .chooseFile1Click()
+import 'PMLFileBrowser'
+handle (1000,0)
+  -- Assembly already loaded
+endhandle
+using namespace 'Aveva.Core.Presentation'
+!browser = object PMLFileBrowser('OPEN')
+!browser.show('', '', 'Choose file', TRUE, 'All files (*.*)|*.*', 1)
+!selectedFile = !browser.file()
+if (!selectedFile eq '') then
+  return
+endif
+$p Selected file: $!selectedFile
+-- Add processing for !selectedFile here
+Endmethod

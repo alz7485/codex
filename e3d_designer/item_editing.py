@@ -4,7 +4,7 @@ from .pml_syntax import has_code
 
 
 def validate_item_change(before,after,constructor_mode):
-    keys=('items','item_values','item_commands','headings','rows','list_mode','table_method')
+    keys=('items','item_values','item_commands','headings','rows','list_mode','table_method','net_setup')
     if constructor_mode!='SOURCE' or all(getattr(before,key)==getattr(after,key) for key in keys):return
     # These definitions are emitted independently of the source constructor.
     if before.kind==after.kind=='list' and before.list_mode==after.list_mode=='TABLE' and before.table_method.lower()==after.table_method.lower():return

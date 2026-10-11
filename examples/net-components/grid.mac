@@ -1,0 +1,31 @@
+Kill !!netGridDemo
+
+Setup Form !!netGridDemo Size 70 22 Dialog
+  Title 'Grid Demo'
+  Import 'GridControl'
+  Handle (1000,0)
+    -- Assembly already loaded
+  Endhandle
+  Using Namespace 'Aveva.Core.Presentation'
+  Member .netGrid1Control Is NetGridControl
+  Container .netGrid1 At X 2 Y 1 Pmlnetcontrol Width 36 Height 9
+Exit
+
+Show !!netGridDemo
+
+Define Method .netGridDemo()
+  Using Namespace 'Aveva.Core.Presentation'
+  !this.netGrid1Control = Object NetGridControl()
+  !this.netGrid1.Control = !this.netGrid1Control.handle()
+!netHeadings = object ARRAY()
+!netHeadings[1] = 'Name'
+!netHeadings[2] = 'Type'
+!netRows = object ARRAY()
+!netRows[1] = object ARRAY()
+!netRows[1][1] = 'Sample-1'
+!netRows[1][2] = 'EQUI'
+!netSource = object NetDataSource('netGrid1', !netHeadings, !netRows)
+!this.netGrid1Control.BindToDataSource(!netSource)
+!this.netGrid1Control.EditableGrid(FALSE)
+!this.netGrid1Control.SingleRowSelection(FALSE)
+Endmethod

@@ -52,6 +52,7 @@ class PaletteButton(QToolButton):
 class GadgetPalette(QWidget):
     addRequested=Signal(str,object)
     menuRequested=Signal()
+    netRequested=Signal()
     def __init__(self,parent=None):
         super().__init__(parent)
         self.setObjectName('gadgetPalette')
@@ -84,6 +85,9 @@ class GadgetPalette(QWidget):
             if menu:self.actions[variants[0][0]].setChecked(True)
             self.describe_choice(button,button.defaultAction(),menu is not None)
             self.buttons[group]=button
+        net_action=self.buttons['other'].menu().addAction('.NET部品を簡単作成…')
+        net_action.setData('net_components')
+        net_action.triggered.connect(self.netRequested.emit)
         self.reflow(COLUMNS)
     def activate(self,button,action,kind,direction):
         button.setDefaultAction(action)
@@ -101,7 +105,7 @@ class GadgetPalette(QWidget):
             button.setText({'image':'画像','line':'線','slider':'スライダー','other':'その他'}[group])
         if group=='other':
             button.setIcon(palette_icon('more'));button.setAccessibleName('その他')
-            operation='DBセレクタ・コンテナ・ツールバーをメニューから選んで追加'
+            operation='DBセレクタ・コンテナ・ツールバー・.NET部品をメニューから選んで追加'
             button.setAccessibleDescription(operation);button.setToolTip('その他：'+operation);return
         operation='↓ / Alt＋↓ / F4で種類を選択、ボタン本体で同じ種類を追加' if has_menu else 'メニューバーを編集' if action.data()=='menubar' else 'この部品を追加'
         hint=label+'：'+operation

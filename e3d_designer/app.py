@@ -632,6 +632,8 @@ class Window(QMainWindow):
         source_action.triggered.connect(self.edit_imported_code)
         methods_action=edit_menu.addAction('補助メソッド管理…')
         methods_action.triggered.connect(self.manage_methods)
+        self.net_component_action=edit_menu.addAction('.NET部品を簡単作成…')
+        self.net_component_action.triggered.connect(self.create_net_component)
         self.bulk_edit_action=QAction('📋 部品の一覧・一括編集…',self)
         self.bulk_edit_action.setShortcut(QKeySequence('Ctrl+Shift+B'))
         self.bulk_edit_action.triggered.connect(self.edit_bulk_properties)
@@ -658,6 +660,7 @@ class Window(QMainWindow):
         self.palette_panel=GadgetPalette()
         self.palette_panel.addRequested.connect(self.add)
         self.palette_panel.menuRequested.connect(self.add_palette_menu)
+        self.palette_panel.netRequested.connect(self.create_net_component)
         self.palette_buttons=self.palette_panel.buttons
         self.palette_actions=self.palette_panel.actions
         self.placement_hint=QLabel();self.placement_hint.setWordWrap(True)
@@ -962,6 +965,9 @@ class Window(QMainWindow):
         self.view_code.textChanged.connect(self.update_gadget)
         self.container_hint = QLabel('外部 DLL が必要です。未設定時は DEFAULT で Control を接続してください。')
         self.container_hint.setWordWrap(True); self.prop_layout.addRow(self.container_hint)
+        self.net_setup_button=QPushButton('NET初期化コードを編集…')
+        self.net_setup_button.clicked.connect(self.edit_net_setup)
+        self.prop_layout.addRow(self.net_setup_button)
         self.body = QPlainTextEdit(); self.body.setPlaceholderText('メソッド内の PML コード。自動実行はしません。')
         self.body.setMinimumHeight(96)
         self.body.textChanged.connect(self.update_gadget)
@@ -1738,6 +1744,7 @@ class Window(QMainWindow):
                                (self.item_values,gadget.kind == 'combo' or (gadget.kind == 'option' and not uses_pairs(gadget)) or (gadget.kind == 'list' and gadget.list_mode == 'SIMPLE')),
                                (self.view_code,gadget.kind in ('view','commandline')),
                                (self.container_hint,gadget.kind == 'container'),
+                               (self.net_setup_button,gadget.kind == 'container' and bool(gadget.assembly)),
                                (self.browse_image,relevant['pixmap_path'] or (gadget.kind == 'option' and gadget.display_mode == 'PIXMAP')),(self.fixed_font,gadget.kind == 'textpane'),(self.pane_lines,gadget.kind == 'textpane')):
             self.prop_layout.setRowVisible(editor,visible)
         self.fields['pixmap_path'].setEnabled(relevant['pixmap_path'])
@@ -2535,6 +2542,71 @@ class Window(QMainWindow):
     def current_tab_page(self,tabset):
         active=self.active_pages.get(tabset.name.lower())
         return next((page for page in self.form.children(tabset.name) if page.name.lower()==active),None)
+
+    def create_net_component(self):
+        from .net_component_dialog import NetComponentWizard
+        dialog=NetComponentWizard(self,self.form)
+        while dialog.exec()==QDialog.Accepted:
+            if self.insert_net_component(dialog.result_gadget):break
+            dialog.error.setText(self.statusBar().currentMessage())
+        dialog.deleteLater()
+
+    def insert_net_component(self,gadget):
+        """Insert the complete recipe as one undoable operation."""
+        if gadget is None:return False
+        draft=copy.deepcopy(self.form);g=copy.deepcopy(gadget)
+        try:
+            if draft.program_mode=='SOURCE' or (g.kind=='container' and draft.constructor_mode=='SOURCE'):
+                raise ValueError('「取り込みコード」で表示プログラムとコンストラクタを自動生成に変更してから追加してください。')
+            used=self.reserved_names(draft)
+            if any(name.lower() in used for name in (g.name,g.name+('Control' if g.kind=='container' else 'Click'))):
+                raise ValueError('部品名または生成するメンバー／メソッド名が使用済みです。')
+            parent=draft.gadgets[self.selected] if self.selected is not None else None
+            if parent and parent.kind!='frame':parent=draft.parent_gadget(parent)
+            if parent and parent.frame_style=='TABSET':
+                parent=self.current_tab_page(parent)
+                if parent is None:raise ValueError('タブを追加してから部品を配置してください。')
+            if (parent and parent.frame_style=='TOOLBAR') or draft.form_type=='MAIN':
+                raise ValueError('.NET部品はDIALOGフォームの通常フレーム／タブ／フォームへ追加してください。')
+            width,height=draft.geometry(parent)[2:] if parent else ((draft.width,draft.height) if draft.size_explicit else (299,299))
+            g.parent=parent.name if parent else ''
+            position=free_position([preview_geometry(draft,child) for child in draft.children(g.parent)],
+                                   g.width,g.height,width,height,minimum_y=1 if parent else 0)
+            if position is None:raise ValueError('追加先に空きがありません。部品または追加先のサイズを変更してください。')
+            g.x,g.y=position;draft.gadgets.append(g)
+            from .method_output import check_editable_code
+            draft.validate();check_editable_code(draft);draft.pml()
+        except ValueError as error:
+            self.statusBar().showMessage('.NET部品を追加できません: '+str(error));return False
+        self.checkpoint();self.form=draft;self.selected=len(draft.gadgets)-1
+        self.selected_menu=None;self._multi_selection.clear();self.refresh();self.set_workflow('layout')
+        self.statusBar().showMessage('.NET部品とPMLコードを追加しました。E3D側でDLLの接続を確認してください。')
+        return True
+
+    def edit_net_setup(self):
+        if self.selected is None:return
+        g=self.form.gadgets[self.selected]
+        if g.kind!='container' or not g.assembly:return
+        dialog=QDialog(self);dialog.setWindowTitle('NET初期化コード');dialog.resize(760,500)
+        layout=QVBoxLayout(dialog)
+        note=QLabel(f'コンテナ接続後に実行します。部品への参照: !this.{g.name}Control\n'
+                    'DLL・名前空間・型は部品のプロパティで変更できます。')
+        note.setWordWrap(True);layout.addWidget(note)
+        editor=QPlainTextEdit(g.net_setup);highlighter=PmlHighlighter(editor.document());layout.addWidget(editor)
+        error_label=QLabel();error_label.setWordWrap(True);layout.addWidget(error_label)
+        buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel);layout.addWidget(buttons)
+        result=[]
+        def apply():
+            draft=copy.deepcopy(self.form);draft.gadgets[self.selected].net_setup=editor.toPlainText()
+            try:
+                from .method_output import check_editable_code
+                draft.validate();check_editable_code(draft);draft.pml()
+            except ValueError as error:error_label.setText(str(error));return
+            result.append(draft);dialog.accept()
+        buttons.accepted.connect(apply);buttons.rejected.connect(dialog.reject)
+        if dialog.exec()==QDialog.Accepted and result and result[0].dumps()!=self.form.dumps():
+            self.checkpoint();self.form=result[0];self.refresh()
+        dialog.deleteLater()
 
     def add(self, kind, direction=None):
         root_width,root_height=(self.form.width,self.form.height) if self.form.size_explicit else (299,299)

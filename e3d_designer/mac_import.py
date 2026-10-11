@@ -364,6 +364,14 @@ class Importer:
                 assembly=tokens.quoted();imports.append((row,'assembly',assembly))
                 if tokens.more():raise MacImportError(row,'IMPORTの後に未対応の指定があります。')
                 continue
+            if key=='HANDLE' and re.fullmatch(r'HANDLE\s*\(\s*1000\s*,\s*0\s*\)',line,re.I):
+                if not re.match(r'^\s*IMPORT\b',self.code[index-2],re.I):
+                    raise MacImportError(row,'IMPORT直後以外のHANDLEは元コードを確認してください。')
+                while index<len(self.raw) and not self.code[index].strip():index+=1
+                if index>=len(self.raw) or not re.fullmatch(r'\s*ENDHANDLE\s*',self.code[index],re.I):
+                    raise MacImportError(row,'IMPORTのHANDLEには空のENDHANDLEだけを指定してください。')
+                index+=1
+                continue
             if key=='USING':
                 tokens.word('NAMESPACE');namespace=tokens.quoted();imports.append((row,'namespace',namespace))
                 if tokens.more():raise MacImportError(row,'USINGの後に未対応の指定があります。')

@@ -1,0 +1,24 @@
+Kill !!netMyDataDemo
+
+Setup Form !!netMyDataDemo Size 70 22 Dialog
+  Title 'My Data'
+  Button .addMyData1 At X 2 Y 1 'Add to My Data' Call '!this.addMyData1Click()' Width 18
+Exit
+
+Show !!netMyDataDemo
+
+Define Method .addMyData1Click()
+import 'MyDataAddin'
+handle (1000,0)
+  -- Assembly already loaded
+endhandle
+using namespace 'Aveva.Core.Presentation.MyDataAddin'
+if (BADREF(!!CE)) then
+  $p Select a database element first.
+  return
+endif
+!myData = object PMLMyData()
+!elementName = !!CE.name
+!myData.AddElement(!elementName)
+$p Added to My Data: $!elementName
+Endmethod

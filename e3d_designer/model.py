@@ -198,6 +198,7 @@ class Gadget:
     assembly: str = ''
     namespace: str = ''
     control_type: str = ''
+    net_setup: str = ''
     list_mode: str = 'SIMPLE'
     table_method: str = ''
     headings: list[str] = field(default_factory=list)
@@ -538,7 +539,7 @@ class Form:
             if g.path_axes not in ('','X','Y','XY') or not isinstance(g.path_row_step,bool) or not isinstance(g.frame_at,bool):raise ValueError('PATHの座標軸・縦移動の設定が不正です。')
             if not isinstance(g.hidden,bool):raise ValueError('非表示は真偽値で指定してください。')
             if g.hidden and not supports_hidden(g):raise ValueError(f'{g.name}: この部品はWIDTH 0による非表示に対応していません。')
-            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','combo_scroll','combo_tagwid','option_style','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','list_mode','table_method','display_mode','pixmap_path','popup_menu','database','button_role','action_mode','macro_path','macro_flag','macro_value','comment'):
+            for key in ('kind','name','label','value_type','initial','callback','command','background','orientation','frame_style','parent','body','layout_mode','path','halign','valign','xref','yref','xedge','yedge','xanchor','width_ref','selection_mode','combo_keyword','combo_scroll','combo_tagwid','option_style','slider_orientation','off_value','on_value','view_type','channels','view_code','assembly','namespace','control_type','net_setup','list_mode','table_method','display_mode','pixmap_path','popup_menu','database','button_role','action_mode','macro_path','macro_flag','macro_value','comment'):
                 if not isinstance(getattr(g,key),str): raise ValueError(f'部品の {key} は文字列で指定してください。')
             for key in ('items','item_commands','item_values','headings','pane_lines'):
                 value = getattr(g,key)
@@ -715,6 +716,13 @@ class Form:
                     member = (g.name+'Control').lower()
                     if member in {other.name.lower() for other in self.gadgets} or member in {other.callback.lower() for other in self.gadgets} or member in {menu.name.lower() for menu in self.menus}:
                         raise ValueError('CONTAINER の生成メンバー名が部品名・メソッド名と重複します。')
+            if g.net_setup:
+                if g.kind != 'container' or not g.assembly:
+                    raise ValueError('NET初期化コードには接続設定済みのCONTAINERが必要です。')
+                if '\x00' in g.net_setup:
+                    raise ValueError('NET初期化コードにNULを使用できません。')
+                if self.constructor_mode == 'SOURCE':
+                    raise ValueError('NET初期化コードを出力するにはコンストラクタを自動生成に変更してください。')
             for index,item in enumerate(g.items,1):
                 image=g.kind=='option' and g.display_mode=='PIXMAP'
                 (image_path_literal if image else literal)(item,field=f'{g.name}: 選択肢{index}'+('の画像パス' if image else 'の表示名'))
@@ -930,8 +938,9 @@ class Form:
             lines.append('  exit')
         for g in self.gadgets:
             if g.kind == 'container' and g.assembly:
-                lines += [f'  import {literal(g.assembly)}', f"  using namespace '{g.namespace}'",
-                          f'  member .{g.name}Control is {g.control_type}']
+                from .net_components import import_code
+                lines.extend('  '+line for line in import_code(g.assembly).splitlines())
+                lines += [f"  using namespace '{g.namespace}'", f'  member .{g.name}Control is {g.control_type}']
         def member_name(name):
             target=self.named(name)
             return '_'+name.lstrip('_') if uses_pairs(target) else name
@@ -1095,8 +1104,9 @@ class Form:
             if g.kind in ('slider','combo') and active_callback(g):
                 lines.append(f"  !this.{g.name}.callback = '!this.{g.callback}('")
             if g.kind == 'container' and g.assembly:
-                lines += [f'  !this.{g.name}Control = object {g.control_type}()',
+                lines += [f"  using namespace '{g.namespace}'", f'  !this.{g.name}Control = object {g.control_type}()',
                           f'  !this.{g.name}.Control = !this.{g.name}Control.handle()']
+                if g.net_setup:lines.append(user_code(g.net_setup))
             if (g.kind in ('list','combo') or (g.kind == 'option' and (not uses_pairs(g) or g.item_values))) and g.items and not (g.kind == 'list' and g.list_mode == 'TABLE'):
                 lines.append('  !choices = object ARRAY()')
                 for i, item in enumerate(g.items, 1):
