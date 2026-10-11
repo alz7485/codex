@@ -5,7 +5,7 @@ from PySide6.QtGui import QAction,QActionGroup
 from PySide6.QtWidgets import QWidget,QToolButton,QMenu,QGridLayout,QLayout,QSizePolicy
 from .palette_icons import palette_icon
 
-BUTTON_HEIGHT,BUTTON_WIDTH,SPACING,PADDING,MENU_WIDTH,COLUMNS=30,92,2,3,18,8
+BUTTON_HEIGHT,BUTTON_WIDTH,SPACING,PADDING,MENU_WIDTH,COLUMNS=30,92,2,3,18,9
 BUTTON_BASE_STYLE=f'''
 QToolButton {{ background: white; color: #273b52; border: 1px solid #d3dce7;
     border-radius: 4px; padding: 1px 2px; font-size: 11px; }}
@@ -22,22 +22,24 @@ QToolButton::menu-arrow {{ width: 7px; height: 7px; }}
 '''
 
 GROUPS = (
-    ('button',(('button','button',None,'🖱️','ボタン'),)),
-    ('text',(('text','text',None,'✏️','入力'),)),
     ('paragraph',(('paragraph','paragraph',None,'🏷️','ラベル'),)),
-    ('image',(('image','paragraph','PIXMAP','🖼️','画像'),('image_option','option','PIXMAP','🖼️','画像選択'))),
+    ('button',(('button','button',None,'🖱️','ボタン'),)),
     ('toggle',(('toggle','toggle',None,'☑️','チェック'),)),
-    ('rtoggle',(('rtoggle','rtoggle',None,'🔘','ラジオ'),)),
-    ('line',(('line_horiz','line','HORIZ','📏','横線'),('line_vert','line','VERT','↕️','縦線'))),
-    ('option',(('option','option',None,'🔽','プルダウン'),('combo','combo',None,'📝','コンボ'))),
     ('list',(('list','list',None,'📋','リスト'),)),
-    ('textpane',(('textpane','textpane',None,'📄','複数行'),)),
-    ('frame',(('frame','frame',None,'📁','フレーム'),('tabset','frame','TABSET','🗂️','タブ'))),
     ('slider',(('slider_horiz','slider','HORIZONTAL','🎚️','横スライダー'),('slider_vert','slider','VERTICAL','🎚️','縦スライダー'))),
+    ('frame',(('frame','frame',None,'📁','フレーム'),('tabset','frame','TABSET','🗂️','タブ'))),
     ('commandline',(('commandline','commandline',None,'⌨️','コマンド'),)),
-    ('view',(('view','view',None,'👁️','ビュー'),)),
+    ('selector',(('selector','selector',None,'🗃️','DBセレクタ'),)),
     ('menubar',(('menubar',None,None,'📑','メニューバー'),)),
-    ('other',(('selector','selector',None,'🗃️','DBセレクタ'),('container','container',None,'🧩','コンテナ'),('toolbar','frame','TOOLBAR','🛠️','ツールバー'))),
+    ('text',(('text','text',None,'✏️','入力'),)),
+    ('option',(('option','option',None,'🔽','プルダウン'),('combo','combo',None,'📝','コンボ'))),
+    ('rtoggle',(('rtoggle','rtoggle',None,'🔘','ラジオ'),)),
+    ('textpane',(('textpane','textpane',None,'📄','複数行'),)),
+    ('line',(('line_horiz','line','HORIZ','📏','横線'),('line_vert','line','VERT','↕️','縦線'))),
+    ('image',(('image','paragraph','PIXMAP','🖼️','画像'),('image_option','option','PIXMAP','🖼️','画像選択'))),
+    ('view',(('view','view',None,'👁️','ビュー'),)),
+    ('container',(('container','container',None,'🧩','コンテナ'),)),
+    ('toolbar',(('toolbar','frame','TOOLBAR','🛠️','ツールバー'),)),
 )
 
 
@@ -72,9 +74,9 @@ class GadgetPalette(QWidget):
             title=' / '.join(entry[4] for entry in variants)
             button.setAccessibleName(title)
             button.setToolTip(title+'：矢印で種類を選択、ボタン本体で同じ種類を追加' if len(variants)>1 else title+'を編集' if group=='menubar' else title+'を追加')
-            menu=QMenu(button) if len(variants)>1 else None
+            menu=QMenu(button) if len(variants)>1 or group in ('selector','container','toolbar') else None
             if menu:
-                button.setMenu(menu);button.setPopupMode(QToolButton.InstantPopup if group=='other' else QToolButton.MenuButtonPopup)
+                button.setMenu(menu);button.setPopupMode(QToolButton.MenuButtonPopup)
                 choices=QActionGroup(button);choices.setExclusive(True);self.action_groups.append(choices)
             for key,kind,direction,icon,label in variants:
                 action=QAction(palette_icon(key),label,button);action.setData(key)
@@ -87,13 +89,13 @@ class GadgetPalette(QWidget):
             if menu:self.actions[variants[0][0]].setChecked(True)
             self.describe_choice(button,button.defaultAction(),menu is not None)
             self.buttons[group]=button
-        net_action=self.buttons['other'].menu().addAction('.NET部品を簡単作成…')
+        net_action=self.buttons['container'].menu().addAction('.NET部品を簡単作成…')
         net_action.setData('net_components')
         net_action.triggered.connect(self.netRequested.emit)
-        selector_action=self.buttons['other'].menu().addAction('DBセレクタのメソッドを簡単作成…')
+        selector_action=self.buttons['selector'].menu().addAction('DBセレクタのメソッドを簡単作成…')
         selector_action.setData('db_selector_methods')
         selector_action.triggered.connect(self.selectorMethodRequested.emit)
-        toolbar_action=self.buttons['other'].menu().addAction('ツールバーを簡単作成…')
+        toolbar_action=self.buttons['toolbar'].menu().addAction('ツールバーを簡単作成…')
         toolbar_action.setData('toolbar_builder')
         toolbar_action.triggered.connect(self.toolbarRequested.emit)
         self.reflow(COLUMNS)
@@ -109,12 +111,10 @@ class GadgetPalette(QWidget):
         button.setCheckable(False)
         label=action.text()
         group=button.property('paletteGroup')
-        if group in ('image','line','slider','other'):
-            button.setText({'image':'画像','line':'線','slider':'スライダー','other':'その他'}[group])
-        if group=='other':
-            button.setIcon(palette_icon('more'));button.setAccessibleName('その他')
-            operation='DBセレクタ・コンテナ・ツールバー・.NET部品をメニューから選んで追加'
-            button.setAccessibleDescription(operation);button.setToolTip('その他：'+operation);return
+        if group in ('image','line','slider'):
+            button.setText({'image':'画像','line':'線','slider':'スライダー'}[group])
+        if group in ('selector','container','toolbar'):
+            button.setToolButtonStyle(Qt.ToolButtonTextOnly)
         operation='↓ / Alt＋↓ / F4で種類を選択、ボタン本体で同じ種類を追加' if has_menu else 'メニューバーを編集' if action.data()=='menubar' else 'この部品を追加'
         hint=label+'：'+operation
         button.setAccessibleName(label);button.setAccessibleDescription(operation);button.setToolTip(hint)

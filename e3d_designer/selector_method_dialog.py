@@ -92,7 +92,7 @@ class SelectorMethodDialog(QDialog):
             self.selection_mode.setCurrentIndex(self.selection_mode.findData('MULTIPLE' if gadget.selection_mode=='MULTI' else gadget.selection_mode))
             self.target_info.setText('表示範囲: '+gadget.database+' ／ '+
                 ('単一選択（SINGLE）' if gadget.selection_mode == 'SINGLE' else '複数選択（MULTIPLE）'))
-        else: self.target_info.setText('先に「その他 → DBセレクタ」で部品を追加してください。')
+        else: self.target_info.setText('先に「DBセレクタ」ボタンで部品を追加してください。')
         self.loading = previous
         if not self.loading: self.select_database()
 

@@ -34,6 +34,7 @@ Copy-Item -Path .\app-icon.png -Destination .\dist\FormDesigner\app-icon.png -Fo
 New-Item -ItemType Directory -Path .\dist\FormDesigner\e3d_designer -Force | Out-Null
 Copy-Item -Path .\e3d_designer\assets -Destination .\dist\FormDesigner\e3d_designer\assets -Recurse -Force
 Copy-Item -Path .\USER_GUIDE.txt -Destination .\dist\FormDesigner\USER_GUIDE.txt -Force
+Copy-Item -Path .\MANUAL.md -Destination .\dist\FormDesigner\MANUAL.md -Force
 Copy-Item -Path .\README.md -Destination .\dist\FormDesigner\README.md -Force
 Copy-Item -Path .\docs -Destination .\dist\FormDesigner\docs -Recurse -Force
 

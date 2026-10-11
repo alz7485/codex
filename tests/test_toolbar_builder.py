@@ -148,10 +148,10 @@ class ToolbarWizardTests(unittest.TestCase):
         with patch('e3d_designer.toolbar_dialog.ToolbarDialog') as dialog:
             dialog.return_value.exec.return_value=QDialog.Rejected
             w.toolbar_builder_action.trigger()
-            next(a for a in w.palette_buttons['other'].menu().actions() if a.data()=='toolbar_builder').trigger()
+            next(a for a in w.palette_buttons['toolbar'].menu().actions() if a.data()=='toolbar_builder').trigger()
             self.assertEqual(dialog.call_count,2)
         self.assertEqual(w.form.dumps(),before);self.assertEqual(w.history,[])
-        self.assertEqual((len(w.palette_buttons),len(w.palette_actions)),(16,23))
+        self.assertEqual((len(w.palette_buttons),len(w.palette_actions)),(18,23))
 
     def test_real_guided_workflow_preview_add_and_undo_redo(self):
         w=self.w;before=w.form.dumps();seen=[]

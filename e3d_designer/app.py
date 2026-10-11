@@ -593,7 +593,7 @@ class Window(QMainWindow):
         self._closing = False
         self.current_workflow='form'
         self.validation_error=''
-        self.resize(1380, 880)
+        self.resize(1480, 880)
         self.setAcceptDrops(True)
         self.setWindowTitle('FormDesigner — E3D 4.0 想定')
         toolbar = self.addToolBar('ファイル')
@@ -969,7 +969,7 @@ class Window(QMainWindow):
         self.view_code.setPlaceholderText('LIMITS AUTO など。VIEW の外枠・EXIT は不要')
         self.prop_layout.addRow('VIEW 内の追加 PML', self.view_code)
         self.view_code.textChanged.connect(self.update_gadget)
-        self.container_hint = QLabel('簡単な作成は「その他 → .NET部品を簡単作成」から用途を選んでください。接続先のDLLはE3D側に必要です。')
+        self.container_hint = QLabel('簡単な作成は「コンテナの▼ → .NET部品を簡単作成」から用途を選んでください。接続先のDLLはE3D側に必要です。')
         self.container_hint.setWordWrap(True); self.prop_layout.addRow(self.container_hint)
         self.net_setup_button=QPushButton('NET初期化コードを編集…')
         self.net_setup_button.clicked.connect(self.edit_net_setup)
@@ -1034,7 +1034,7 @@ class Window(QMainWindow):
             layout.addWidget(editor,1);self.method_splitter.addWidget(panel)
         self.method_splitter.setSizes([200,200,260]);rl.addWidget(self.method_splitter,1)
         right.setMinimumWidth(360)
-        columns.addWidget(right); columns.setSizes([220, 780, 380])
+        columns.addWidget(right); columns.setSizes([220, 870, 380])
         outer.addWidget(columns, 1); self.setCentralWidget(root)
         self.pml_highlighters=[]
         for editor in (self.code,self.after_show,self.default_body,self.body,self.view_code,self.choice_commands):
@@ -2572,7 +2572,7 @@ class Window(QMainWindow):
 
     def create_selector_methods(self):
         if not any(g.kind=='selector' for g in self.form.gadgets):
-            self.statusBar().showMessage('先に「その他 → DBセレクタ」で部品を追加してください。');return
+            self.statusBar().showMessage('先に「DBセレクタ」ボタンで部品を追加してください。');return
         from .selector_method_dialog import SelectorMethodDialog
         dialog=SelectorMethodDialog(self,self.form,self.selected)
         if dialog.exec()==QDialog.Accepted and dialog.result_form is not None:
@@ -2644,7 +2644,7 @@ class Window(QMainWindow):
         if container and container.kind != 'frame': container = self.form.parent_gadget(container)
         if direction == 'TOOLBAR':
             if self.form.form_type != 'MAIN':
-                self.statusBar().showMessage('標準ツールバーは MAIN 専用です。「その他 → ツールバーを簡単作成」で形式とボタンを案内付きで設定できます。');return
+                self.statusBar().showMessage('標準ツールバーは MAIN 専用です。「ツールバーの▼ → ツールバーを簡単作成」で形式とボタンを案内付きで設定できます。');return
             container = None
         if container and container.frame_style == 'TOOLBAR' and kind not in ('button','toggle','option','text','combo','slider'):
             self.statusBar().showMessage('ツールバーにはボタン・チェック・OPTION・入力・COMBO・SLIDER を追加できます。');return

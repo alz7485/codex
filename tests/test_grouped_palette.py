@@ -23,8 +23,12 @@ class GroupedPaletteTests(unittest.TestCase):
         w=self.w
         groups={'image':['image','image_option'],'option':['option','combo'],'frame':['frame','tabset'],
             'line':['line_horiz','line_vert'],'slider':['slider_horiz','slider_vert'],
-            'other':['selector','container','toolbar','net_components','db_selector_methods','toolbar_builder']}
-        self.assertEqual(len(w.palette_buttons),16)
+            'selector':['selector','db_selector_methods'],'container':['container','net_components'],
+            'toolbar':['toolbar','toolbar_builder']}
+        order=['paragraph','button','toggle','list','slider','frame','commandline','selector','menubar',
+               'text','option','rtoggle','textpane','line','image','view','container','toolbar']
+        self.assertEqual(list(w.palette_buttons),order)
+        self.assertEqual(len(w.palette_buttons),18)
         self.assertEqual(len(w.palette_actions),23)
         for group,keys in groups.items():self.assertEqual([a.data() for a in w.palette_buttons[group].menu().actions()],keys)
         for group,button in w.palette_buttons.items():
@@ -32,6 +36,9 @@ class GroupedPaletteTests(unittest.TestCase):
             self.assertEqual(button.height(),30)
             self.assertEqual(button.width(),92)
         self.assertEqual(w.palette_panel.grid.rowCount(),2)
+        self.assertEqual(w.palette_panel._columns,9)
+        for index,group in enumerate(order):
+            self.assertIs(w.palette_panel.grid.itemAtPosition(index//9,index%9).widget(),w.palette_buttons[group])
         self.assertTrue(w.canvas_panel.isAncestorOf(w.palette_panel))
         self.assertEqual(w.palette_panel.width(),w.view.width())
         self.assertLess(w.library_panel.mapTo(w,w.library_panel.rect().topLeft()).y(),w.view.mapTo(w,w.view.rect().topLeft()).y())

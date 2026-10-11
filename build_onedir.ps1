@@ -15,7 +15,7 @@ try {
     foreach ($folder in @('examples', 'docs')) {
         Copy-Item $folder -Destination $destination -Recurse -Force
     }
-    foreach ($file in @('app-icon.ico', 'app-icon.png', 'USER_GUIDE.txt', 'README.md', 'EXE_BUILD_ONEDIR.txt')) {
+    foreach ($file in @('app-icon.ico', 'app-icon.png', 'USER_GUIDE.txt', 'MANUAL.md', 'README.md', 'EXE_BUILD_ONEDIR.txt')) {
         Copy-Item $file -Destination $destination -Force
     }
     New-Item -ItemType Directory -Path (Join-Path $destination 'e3d_designer') -Force | Out-Null

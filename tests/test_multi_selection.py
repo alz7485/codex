@@ -39,11 +39,10 @@ class MultiSelectionTests(unittest.TestCase):
         QTest.mouseClick(popup,Qt.LeftButton,Qt.NoModifier,popup.actionGeometry(action).center())
         self.app.processEvents()
     def test_button_order_in_two_rows(self):
-        expected=['button','text','paragraph','image','toggle','rtoggle','line',
-            'option','list','textpane','frame','slider',
-            'commandline','view','menubar','other']
+        expected=['paragraph','button','toggle','list','slider','frame','commandline','selector','menubar',
+            'text','option','rtoggle','textpane','line','image','view','container','toolbar']
         self.assertEqual(list(self.w.palette_buttons),expected)
-        self.assertEqual(self.w.palette_panel._columns,8)
+        self.assertEqual(self.w.palette_panel._columns,9)
     def test_canvas_ctrl_selection_tree_sync_and_disabled_inspector(self):
         w=self.w;original=w.form.dumps();self.click('A');self.click('B',Qt.ControlModifier)
         self.assertEqual(w.selection_names(),{'A','B'});self.assertEqual(self.selected_tree(),{0,1})

@@ -189,10 +189,10 @@ class SelectorWizardTests(unittest.TestCase):
         with patch('e3d_designer.selector_method_dialog.SelectorMethodDialog') as dialog:
             dialog.return_value.exec.return_value=QDialog.Rejected
             w.selector_method_button.click();w.selector_method_action.trigger()
-            next(a for a in w.palette_buttons['other'].menu().actions() if a.data()=='db_selector_methods').trigger()
+            next(a for a in w.palette_buttons['selector'].menu().actions() if a.data()=='db_selector_methods').trigger()
             self.assertEqual(dialog.call_count,3)
         self.assertEqual(w.form.dumps(),before);self.assertEqual(w.history,[])
-        self.assertEqual(len(w.palette_buttons),16)
+        self.assertEqual(len(w.palette_buttons),18)
 
     def test_real_dialog_addition_is_one_undo_step(self):
         w=self.w;before=w.form.dumps()

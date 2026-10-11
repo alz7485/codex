@@ -1,0 +1,26 @@
+Kill !!equipmentInput
+
+Setup Form !!equipmentInput Size 50 10 Dialog
+  Title 'ê›îıì¸óÕ'
+  Text .equipmentName At X 2 Y 1 'ê›îıñº' Width 22 Is String
+  Button .run At X 2 Y 3 'é¿çs' Call '!this.on_run()' Width 12
+Exit
+
+Show !!equipmentInput
+
+Define Method .DEFAULT()
+  !this.equipmentName.val = 'P-101'
+Endmethod
+
+Define Method .on_run()
+!name = !this.equipmentName.val
+if (!name eq '') then
+  $p Enter an equipment name.
+  return
+endif
+$p Equipment: $!name
+Endmethod
+
+Define Method .equipmentInput()
+  !this.DEFAULT()
+Endmethod
