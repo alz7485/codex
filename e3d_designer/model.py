@@ -685,6 +685,8 @@ class Form:
                 raise ValueError('COMBO の SCROLL は正の整数、または空欄にしてください。')
             if g.selection_mode not in ('SINGLE','MULTIPLE','MULTI') or g.combo_keyword not in ('COMBO','COMBOBOX'):
                 raise ValueError('選択方式・コンボ定義キーワードが不正です。')
+            if g.kind=='selector' and g.database=='AUTO' and g.selection_mode in ('MULTIPLE','MULTI'):
+                raise ValueError('DBセレクタのAUTOとMULTIPLEは併用できません。単一選択にするか、DATABASEをOWNERS／MEMBERSへ変更してください。')
             if g.slider_orientation not in ('HORIZONTAL','VERTICAL'):
                 raise ValueError('SLIDER の向きが不正です。')
             if g.kind == 'slider' and (g.slider_min >= g.slider_max or g.slider_step <= 0 or not g.slider_min <= g.slider_value <= g.slider_max):

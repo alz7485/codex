@@ -634,6 +634,10 @@ class Window(QMainWindow):
         methods_action.triggered.connect(self.manage_methods)
         self.net_component_action=edit_menu.addAction('.NET部品を簡単作成…')
         self.net_component_action.triggered.connect(self.create_net_component)
+        self.selector_method_action=edit_menu.addAction('DBセレクタのメソッドを簡単作成…')
+        self.selector_method_action.triggered.connect(self.create_selector_methods)
+        self.toolbar_builder_action=edit_menu.addAction('ツールバーを簡単作成…')
+        self.toolbar_builder_action.triggered.connect(self.create_toolbar)
         self.bulk_edit_action=QAction('📋 部品の一覧・一括編集…',self)
         self.bulk_edit_action.setShortcut(QKeySequence('Ctrl+Shift+B'))
         self.bulk_edit_action.triggered.connect(self.edit_bulk_properties)
@@ -661,6 +665,8 @@ class Window(QMainWindow):
         self.palette_panel.addRequested.connect(self.add)
         self.palette_panel.menuRequested.connect(self.add_palette_menu)
         self.palette_panel.netRequested.connect(self.create_net_component)
+        self.palette_panel.selectorMethodRequested.connect(self.create_selector_methods)
+        self.palette_panel.toolbarRequested.connect(self.create_toolbar)
         self.palette_buttons=self.palette_panel.buttons
         self.palette_actions=self.palette_panel.actions
         self.placement_hint=QLabel();self.placement_hint.setWordWrap(True)
@@ -974,6 +980,9 @@ class Window(QMainWindow):
         self.edit_method_button=QPushButton('処理コードを編集 →')
         self.edit_method_button.clicked.connect(self.show_method_editor)
         self.prop_layout.current='動作';self.prop_layout.addRow(self.edit_method_button)
+        self.selector_method_button=QPushButton('DBセレクタのメソッドを簡単作成…')
+        self.selector_method_button.clicked.connect(self.create_selector_methods)
+        self.prop_layout.addRow(self.selector_method_button)
         rl.addWidget(self.props)
         self.menu_group = QGroupBox('メニューバー'); menu_layout = QVBoxLayout(self.menu_group)
         menu_buttons = QHBoxLayout()
@@ -1749,6 +1758,7 @@ class Window(QMainWindow):
             self.prop_layout.setRowVisible(editor,visible)
         self.fields['pixmap_path'].setEnabled(relevant['pixmap_path'])
         self.prop_layout.setRowVisible(self.edit_method_button,self.fields['callback'].isEnabled() and not gadget.command)
+        self.prop_layout.setRowVisible(self.selector_method_button,gadget.kind == 'selector')
         self.fields['display_mode'].setEnabled(relevant['display_mode'])
         self.fields['database'].setEnabled(relevant['database']);self.fields['button_role'].setEnabled(relevant['button_role'])
         self.fields['command'].setEnabled(relevant['command'])
@@ -2551,6 +2561,26 @@ class Window(QMainWindow):
             dialog.error.setText(self.statusBar().currentMessage())
         dialog.deleteLater()
 
+    def create_toolbar(self):
+        from .toolbar_dialog import ToolbarDialog
+        dialog=ToolbarDialog(self,self.form)
+        if dialog.exec()==QDialog.Accepted and dialog.result_form is not None:
+            self.checkpoint();self.form=dialog.result_form;self.selected=dialog.result_frame
+            self.selected_menu=None;self._multi_selection.clear();self.refresh();self.set_workflow('layout')
+            self.statusBar().showMessage('操作ボタン列を追加しました。各ボタンを選んで「動作」で処理を編集できます。')
+        dialog.deleteLater()
+
+    def create_selector_methods(self):
+        if not any(g.kind=='selector' for g in self.form.gadgets):
+            self.statusBar().showMessage('先に「その他 → DBセレクタ」で部品を追加してください。');return
+        from .selector_method_dialog import SelectorMethodDialog
+        dialog=SelectorMethodDialog(self,self.form,self.selected)
+        if dialog.exec()==QDialog.Accepted and dialog.result_form is not None:
+            self.checkpoint();self.form=dialog.result_form;self.selected=dialog.result_selector
+            self.selected_menu=None;self._multi_selection.clear();self.refresh();self.set_workflow('action')
+            self.statusBar().showMessage('DBセレクタの処理メソッドを追加しました。1件処理は「編集 → 補助メソッド管理」で変更できます。')
+        dialog.deleteLater()
+
     def insert_net_component(self,gadget):
         """Insert the complete recipe as one undoable operation."""
         if gadget is None:return False
@@ -2614,7 +2644,7 @@ class Window(QMainWindow):
         if container and container.kind != 'frame': container = self.form.parent_gadget(container)
         if direction == 'TOOLBAR':
             if self.form.form_type != 'MAIN':
-                self.statusBar().showMessage('表示形式を MAIN フォームに変更してからツールバーを追加してください。');return
+                self.statusBar().showMessage('標準ツールバーは MAIN 専用です。「その他 → ツールバーを簡単作成」で形式とボタンを案内付きで設定できます。');return
             container = None
         if container and container.frame_style == 'TOOLBAR' and kind not in ('button','toggle','option','text','combo','slider'):
             self.statusBar().showMessage('ツールバーにはボタン・チェック・OPTION・入力・COMBO・SLIDER を追加できます。');return

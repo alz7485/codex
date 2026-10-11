@@ -1,0 +1,52 @@
+Kill !!dbSelectorDemo
+
+Setup Form !!dbSelectorDemo Size 70 22 Dialog
+  Title 'DB Selector Demo'
+  Selector .targets At X 1 Y 2 'Database elements' Multiple Width 36 Height 10 Database Members
+  Button .runSelector1 At X 0 Y 0 'Process selected' Call '!this.runSelector1Click()' Width 18
+  Button .refreshSelector1 At X 19 Y 0 'Refresh list' Call '!this.refreshSelector1Click()' Width 18
+Exit
+
+Show !!dbSelectorDemo
+
+Define Method .processSelector1Element (!element is DBREF)
+import 'MyDataAddin'
+handle (1000,0)
+  -- Assembly already loaded
+endhandle
+using namespace 'Aveva.Core.Presentation.MyDataAddin'
+!myData = object PMLMyData()
+!name = !element.name
+!myData.AddElement(!name)
+$p Added to My Data: $!name
+Endmethod
+
+Define Method .processSelector1 ()
+!selectedNames = object ARRAY()
+do !selected selector !this.targets
+  !selectedNames.append(!selected)
+enddo
+if (!selectedNames.size() eq 0) then
+  $p Select at least one database element.
+  return
+endif
+!processedCount = 0
+do !selected values !selectedNames
+  !element = object DBREF(!selected)
+  if (BADREF(!element)) then
+    $p Invalid database reference: $!selected
+  else
+    !this.processSelector1Element(!element)
+    !processedCount = !processedCount + 1
+  endif
+enddo
+$p Processed count: $!processedCount
+Endmethod
+
+Define Method .runSelector1Click()
+!this.processSelector1()
+Endmethod
+
+Define Method .refreshSelector1Click()
+!this.targets.Refresh()
+Endmethod

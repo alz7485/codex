@@ -128,7 +128,7 @@ class NetWizardTests(unittest.TestCase):
         self.assertEqual(len(w.palette_actions), 23)
         with patch('e3d_designer.net_component_dialog.NetComponentWizard') as wizard:
             wizard.return_value.exec.return_value=QDialog.Rejected
-            w.palette_buttons['other'].menu().actions()[-1].trigger()
+            next(a for a in w.palette_buttons['other'].menu().actions() if a.data()=='net_components').trigger()
             w.net_component_action.trigger()
             self.assertEqual(wizard.call_count, 2)
         self.assertEqual(w.form.gadgets, [])

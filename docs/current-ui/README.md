@@ -1,3 +1,22 @@
+# ツールバーとDBセレクタの簡単作成（2026-10-11）
+
+- [ツールバー: 形式を選ぶ](toolbar-builder-type.png)
+- [ツールバー: ボタンを設定](toolbar-builder-buttons.png)
+- [ツールバー: 生成内容を確認](toolbar-builder-review.png)
+- [作成したボタン列](toolbar-builder-result.png)
+- [DBセレクタのメソッド作成](db-selector-method-wizard.png)
+- [DBセレクタと処理・更新ボタン](db-selector-methods.png)
+
+ツールバーは3段階の案内付きです。通常フォームのボタン列とMAIN用TOOLBARを選べます。
+CE情報・直属の上位への移動・配下一覧のサンプルを用意しています。
+DBセレクタは情報表示・CE移動・My Data登録・1件処理のメソッドを生成します。
+各画面はQtの実際の描画で、E3D実機の画面ではありません。
+既存の部品パレットは16個・8列×2行を保ち、最上段はメニューバーです。
+キャンバス上部のコード・プレビューボタンは削除済みです。
+以下は変更履歴の画面です。
+
+---
+
 # 既存タブから複製する操作（2026-10-08）
 
 ![タブ複製の操作行](tab-duplicate-controls.png)

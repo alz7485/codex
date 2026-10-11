@@ -1,0 +1,57 @@
+Kill !!navigationrow
+
+Setup Form !!navigationrow Size 70 22 Dialog
+  Title 'Navigation buttons'
+  Frame .tools1 'Tools'
+    Button .tools1Button1 At X 1 Y 1 'CE info' Call '!this.on_tools1Button1()' Width 12
+    Button .tools1Button2 At X 14 Y 1 'Up' Call '!this.on_tools1Button2()' Width 8
+    Button .tools1Button3 At X 23 Y 1 'Members' Call '!this.on_tools1Button3()' Width 12
+  Exit
+Exit
+
+Show !!navigationrow
+
+Define Method .on_tools1Button1()
+!element = !!CE
+if (BADREF(!element)) then
+  $p No valid current element.
+  return
+endif
+!name = !element.name
+!type = !element.type
+$p Current element: $!name  Type: $!type
+Endmethod
+
+Define Method .on_tools1Button2()
+!element = !!CE
+if (BADREF(!element)) then
+  $p No valid current element.
+  return
+endif
+!owner = !element.owner
+if (BADREF(!owner)) then
+  $p No owner to navigate to.
+  return
+endif
+!!CE = !owner
+!name = !owner.name
+$p Current element: $!name
+Endmethod
+
+Define Method .on_tools1Button3()
+!element = !!CE
+if (BADREF(!element)) then
+  $p No valid current element.
+  return
+endif
+!members = !element.members
+if (!members.size() eq 0) then
+  $p No direct members.
+  return
+endif
+do !member values !members
+  !name = !member.name
+  !type = !member.type
+  $p Member: $!name  Type: $!type
+enddo
+Endmethod

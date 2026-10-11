@@ -1,0 +1,46 @@
+Kill !!dbSelectorDemo
+
+Setup Form !!dbSelectorDemo Size 70 22 Dialog
+  Title 'DB Selector Demo'
+  Selector .targets At X 1 Y 2 'Database elements' Single Width 36 Height 10 Database Members Callback '!this.selectSelector1()'
+  Button .refreshSelector1 At X 0 Y 0 'Refresh list' Call '!this.refreshSelector1Click()' Width 18
+Exit
+
+Show !!dbSelectorDemo
+
+Define Method .processSelector1Element (!element is DBREF)
+!value = !element.name
+$p Name: $!value
+!value = !element.type
+$p Type: $!value
+Endmethod
+
+Define Method .processSelector1 ()
+!selectedNames = object ARRAY()
+do !selected selector !this.targets
+  !selectedNames.append(!selected)
+enddo
+if (!selectedNames.size() eq 0) then
+  $p Select at least one database element.
+  return
+endif
+!processedCount = 0
+do !selected values !selectedNames
+  !element = object DBREF(!selected)
+  if (BADREF(!element)) then
+    $p Invalid database reference: $!selected
+  else
+    !this.processSelector1Element(!element)
+    !processedCount = !processedCount + 1
+  endif
+enddo
+$p Processed count: $!processedCount
+Endmethod
+
+Define Method .selectSelector1()
+!this.processSelector1()
+Endmethod
+
+Define Method .refreshSelector1Click()
+!this.targets.Refresh()
+Endmethod

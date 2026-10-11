@@ -23,7 +23,7 @@ class GroupedPaletteTests(unittest.TestCase):
         w=self.w
         groups={'image':['image','image_option'],'option':['option','combo'],'frame':['frame','tabset'],
             'line':['line_horiz','line_vert'],'slider':['slider_horiz','slider_vert'],
-            'other':['selector','container','toolbar','net_components']}
+            'other':['selector','container','toolbar','net_components','db_selector_methods','toolbar_builder']}
         self.assertEqual(len(w.palette_buttons),16)
         self.assertEqual(len(w.palette_actions),23)
         for group,keys in groups.items():self.assertEqual([a.data() for a in w.palette_buttons[group].menu().actions()],keys)

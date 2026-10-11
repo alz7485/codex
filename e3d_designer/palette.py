@@ -53,6 +53,8 @@ class GadgetPalette(QWidget):
     addRequested=Signal(str,object)
     menuRequested=Signal()
     netRequested=Signal()
+    selectorMethodRequested=Signal()
+    toolbarRequested=Signal()
     def __init__(self,parent=None):
         super().__init__(parent)
         self.setObjectName('gadgetPalette')
@@ -88,6 +90,12 @@ class GadgetPalette(QWidget):
         net_action=self.buttons['other'].menu().addAction('.NET部品を簡単作成…')
         net_action.setData('net_components')
         net_action.triggered.connect(self.netRequested.emit)
+        selector_action=self.buttons['other'].menu().addAction('DBセレクタのメソッドを簡単作成…')
+        selector_action.setData('db_selector_methods')
+        selector_action.triggered.connect(self.selectorMethodRequested.emit)
+        toolbar_action=self.buttons['other'].menu().addAction('ツールバーを簡単作成…')
+        toolbar_action.setData('toolbar_builder')
+        toolbar_action.triggered.connect(self.toolbarRequested.emit)
         self.reflow(COLUMNS)
     def activate(self,button,action,kind,direction):
         button.setDefaultAction(action)
