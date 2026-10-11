@@ -233,5 +233,31 @@ class SelectorWizardTests(unittest.TestCase):
         d.method_name.setText('bad name');d.accept();self.assertIsNone(d.result_form)
         self.assertEqual(w.history,[]);d.close()
 
+    def test_range_selection_and_processing_are_applied_together_in_one_dialog(self):
+        w=self.w;before=w.form.dumps()
+        d=SelectorMethodDialog(w,w.form,0)
+        d.database.setCurrentIndex(d.database.findData('OWNERS'))
+        d.selection_mode.setCurrentIndex(d.selection_mode.findData('SINGLE'))
+        d.recipe.setCurrentIndex(d.recipe.findData('navigate'))
+        self.assertEqual(d.error.text(),'');self.assertEqual(w.form.dumps(),before)
+        self.assertIn('Database Owners',d.preview.toPlainText())
+        d.accept();g=d.result_form.gadgets[0]
+        self.assertEqual((g.database,g.selection_mode),('OWNERS','SINGLE'))
+        self.assertIn('!!CE = !element',d.result_form.extra_methods[1].body)
+        self.assertEqual(w.form.dumps(),before);d.close()
+
+    def test_auto_enforces_single_selection_and_cancel_keeps_original_configuration(self):
+        original=selector_form();before=original.dumps()
+        d=SelectorMethodDialog(self.w,original,0)
+        d.database.setCurrentIndex(d.database.findData('AUTO'))
+        self.assertEqual(d.selection_mode.currentData(),'SINGLE')
+        self.assertFalse(d.selection_mode.model().item(d.selection_mode.findData('MULTIPLE')).isEnabled())
+        self.assertEqual(d.error.text(),'');self.assertIn('Database Auto',d.preview.toPlainText())
+        d.database.setCurrentIndex(d.database.findData('MEMBERS'))
+        self.assertTrue(d.selection_mode.model().item(d.selection_mode.findData('MULTIPLE')).isEnabled())
+        d.selection_mode.setCurrentIndex(d.selection_mode.findData('MULTIPLE'))
+        self.assertEqual(d.error.text(),'');d.reject()
+        self.assertEqual(original.dumps(),before);self.assertIsNone(d.result_form);d.close()
+
 
 if __name__=='__main__':unittest.main()

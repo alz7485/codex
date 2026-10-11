@@ -38,6 +38,8 @@ class NetComponentWizard(QDialog):
         self.width = QDoubleSpinBox(); self.width.setRange(1, 300); self.width.setValue(36)
         self.height = QDoubleSpinBox(); self.height.setRange(1, 300); self.height.setValue(9)
         fields.addRow('幅（文字単位）', self.width); fields.addRow('高さ（行単位）', self.height)
+        self.advanced = QCheckBox('接続先・初期化の詳細を変更する')
+        fields.addRow(self.advanced)
         self.assembly = QLineEdit(); fields.addRow('DLL／アセンブリ名', self.assembly)
         self.namespace = QLineEdit(); fields.addRow('名前空間', self.namespace)
         self.control_type = QLineEdit(); fields.addRow('コントロール型', self.control_type)
@@ -65,8 +67,10 @@ class NetComponentWizard(QDialog):
         layout.addWidget(self.error)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Ok).setText('フォームへ追加')
+        buttons.button(QDialogButtonBox.Cancel).setText('キャンセル')
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
         self.recipe.currentIndexChanged.connect(self.select_recipe)
+        self.advanced.toggled.connect(self.update_details)
         for editor in (self.name, self.label, self.assembly, self.namespace, self.control_type,
                        self.directory, self.seed, self.file_filter): editor.textChanged.connect(self.update_preview)
         for editor in (self.headings, self.rows, self.setup_code): editor.textChanged.connect(self.update_preview)
@@ -88,16 +92,28 @@ class NetComponentWizard(QDialog):
         for editor, value in zip((self.assembly, self.namespace, self.control_type),
                                  DEFAULT_CONNECTIONS.get(kind, ('', '', ''))): editor.setText(value)
         container = kind in CONTAINERS
+        self.advanced.setChecked(kind in ('flexible', 'dimension', 'custom'))
         self.width.setValue(36 if container else 18); self.height.setValue(9 if container else 1)
         self.setup_code.clear()
         self.fields.setRowVisible(self.height, container)
-        for editor in (self.assembly, self.namespace, self.control_type, self.connection_note, self.setup_code):
-            self.fields.setRowVisible(editor, container)
         for editor in (self.data_source, self.headings, self.rows, self.single): self.fields.setRowVisible(editor, kind == 'grid')
         for editor in (self.mode, self.directory, self.seed, self.file_filter): self.fields.setRowVisible(editor, kind == 'file')
         self.loading = False
+        self.update_details()
         self.select_data_source()
         self.update_preview()
+
+    def update_details(self, *_):
+        kind = self.recipe.currentData(); container = kind in CONTAINERS
+        external = kind in ('flexible', 'dimension', 'custom')
+        detailed = container and (external or self.advanced.isChecked())
+        self.fields.setRowVisible(self.advanced, container and not external)
+        for editor in (self.assembly, self.namespace, self.control_type, self.setup_code):
+            self.fields.setRowVisible(editor, detailed)
+        self.fields.setRowVisible(self.connection_note, container)
+        self.connection_note.setText(
+            'E3D側の部品に合わせて変更できます。DLL名は拡張子なし、または読込可能なパスを指定します。'
+            if detailed else '接続情報は入力済みです。DLLや初期化処理を変更する場合は、詳細設定を開いてください。')
 
     def select_data_source(self, *_):
         manual = self.recipe.currentData() == 'grid' and self.data_source.currentData() == 'ROWS'

@@ -160,6 +160,34 @@ class NetWizardTests(unittest.TestCase):
         self.assertIn('Sample-1',d.preview.toPlainText())
         d.close()
 
+    def test_standard_container_requires_only_basic_inputs_and_retains_advanced_edits(self):
+        d=NetComponentWizard(self.w,self.w.form);d.show()
+        self.assertTrue(d.assembly.isHidden());self.assertTrue(d.namespace.isHidden())
+        self.assertTrue(d.control_type.isHidden());self.assertTrue(d.setup_code.isHidden())
+        self.assertFalse(d.advanced.isHidden());self.assertEqual(d.error.text(),'')
+        d.label.setText('結果一覧');d.headings.setPlainText('名前\n種類')
+        d.rows.setPlainText('PUMP-1\tEQUI\nPIPE-1\tPIPE');d.single.setChecked(True)
+        d.advanced.setChecked(True);self.assertFalse(d.assembly.isHidden())
+        d.setup_code.setPlainText('!this.netGrid1Control.RefreshTable()')
+        d.advanced.setChecked(False);self.assertTrue(d.setup_code.isHidden())
+        d.accept();g=d.result_gadget
+        self.assertEqual(g.label,'結果一覧');self.assertEqual(g.assembly,'GridControl')
+        self.assertIn('SingleRowSelection(TRUE)',g.net_setup)
+        self.assertIn('RefreshTable()',g.net_setup)
+        self.assertTrue(self.w.insert_net_component(g));d.close()
+
+    def test_external_container_always_exposes_required_connection_fields(self):
+        d=NetComponentWizard(self.w,self.w.form);d.show()
+        for recipe in ('flexible','dimension','custom'):
+            d.recipe.setCurrentIndex(d.recipe.findData(recipe))
+            self.assertTrue(d.advanced.isHidden());self.assertFalse(d.assembly.isHidden())
+            self.assertFalse(d.namespace.isHidden());self.assertFalse(d.control_type.isHidden())
+            if recipe!='dimension':
+                d.accept();self.assertIsNone(d.result_gadget);self.assertIn('DLL名',d.error.text())
+            d.assembly.setText('Vendor');d.namespace.setText('Vendor.Controls');d.control_type.setText('PmlControl')
+            self.assertEqual(d.error.text(),'')
+        d.close()
+
     def test_real_menu_dialog_and_initialization_editor(self):
         w=self.w
         def create():

@@ -20,7 +20,7 @@ class SelectorMethodDialog(QDialog):
         self.resize(980, 690)
         layout = QVBoxLayout(self)
         note = QLabel('対象と用途を選ぶと、選択要素を処理するPMLメソッドを作ります。\n'
-                      '1件処理へ !element（DBREF）を渡します。選択範囲・単一／複数は対象の設定を使います。')
+                      '表示範囲・単一／複数・処理をこの画面で設定できます。1件処理へ !element（DBREF）を渡します。')
         note.setWordWrap(True); layout.addWidget(note)
         splitter = QSplitter(); layout.addWidget(splitter, 1)
         panel = QWidget(); self.fields = QFormLayout(panel)
@@ -35,6 +35,15 @@ class SelectorMethodDialog(QDialog):
         if selected is not None and self.target.findData(selected) >= 0:
             self.target.setCurrentIndex(self.target.findData(selected))
         self.target_info = QLabel(); self.target_info.setWordWrap(True); self.fields.addRow(self.target_info)
+        self.database = QComboBox()
+        for title, value in (('現在要素の上位（OWNERS）', 'OWNERS'), ('現在要素の配下（MEMBERS）', 'MEMBERS'),
+                             ('CE変更に合わせて自動更新（AUTO）', 'AUTO')):
+            self.database.addItem(title, value)
+        self.fields.addRow('一覧の表示範囲', self.database)
+        self.selection_mode = QComboBox()
+        self.selection_mode.addItem('1件だけ選択する（SINGLE）', 'SINGLE')
+        self.selection_mode.addItem('複数件を選択する（MULTIPLE）', 'MULTIPLE')
+        self.fields.addRow('選択方法', self.selection_mode)
         self.recipe = QComboBox()
         for key, title, _ in RECIPES: self.recipe.addItem(title, key)
         self.fields.addRow('行う処理', self.recipe)
@@ -58,8 +67,11 @@ class SelectorMethodDialog(QDialog):
         self.error = QLabel(); self.error.setWordWrap(True); self.error.setStyleSheet('color: #b42318'); layout.addWidget(self.error)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Ok).setText('メソッドを追加')
+        buttons.button(QDialogButtonBox.Cancel).setText('キャンセル')
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
         self.target.currentIndexChanged.connect(self.select_target)
+        self.database.currentIndexChanged.connect(self.select_database)
+        self.selection_mode.currentIndexChanged.connect(self.update_fields)
         self.recipe.currentIndexChanged.connect(self.update_fields)
         self.trigger.currentIndexChanged.connect(self.update_fields)
         for editor in (self.method_name, self.button_label): editor.textChanged.connect(self.update_preview)
@@ -67,7 +79,7 @@ class SelectorMethodDialog(QDialog):
         for editor in (self.refresh, self.report_name, self.report_type, self.report_owner, self.replace_existing):
             editor.toggled.connect(self.update_preview)
         self.select_target()
-        self.loading = False; self.update_fields()
+        self.loading = False; self.select_database()
 
     def select_target(self, *_):
         previous = self.loading; self.loading = True
@@ -76,14 +88,27 @@ class SelectorMethodDialog(QDialog):
         index = self.target.currentData()
         if index is not None:
             gadget = self.form.gadgets[index]
+            self.database.setCurrentIndex(self.database.findData(gadget.database))
+            self.selection_mode.setCurrentIndex(self.selection_mode.findData('MULTIPLE' if gadget.selection_mode=='MULTI' else gadget.selection_mode))
             self.target_info.setText('表示範囲: '+gadget.database+' ／ '+
                 ('単一選択（SINGLE）' if gadget.selection_mode == 'SINGLE' else '複数選択（MULTIPLE）'))
         else: self.target_info.setText('先に「その他 → DBセレクタ」で部品を追加してください。')
         self.loading = previous
-        if not self.loading: self.update_fields()
+        if not self.loading: self.select_database()
+
+    def select_database(self, *_):
+        if self.loading: return
+        automatic = self.database.currentData() == 'AUTO'
+        self.selection_mode.model().item(self.selection_mode.findData('MULTIPLE')).setEnabled(not automatic)
+        if automatic: self.selection_mode.setCurrentIndex(self.selection_mode.findData('SINGLE'))
+        self.update_fields()
 
     def update_fields(self, *_):
         if self.loading: return
+        mode = '単一選択（SINGLE）' if self.selection_mode.currentData()=='SINGLE' else '複数選択（MULTIPLE）'
+        self.target_info.setText(mode+'。設定は「メソッドを追加」でまとめて反映します。'+
+            ('AUTOは現在要素が変わると一覧を更新し、単一選択で使用します。' if self.database.currentData()=='AUTO' else
+             '現在要素が変わったら更新ボタンで一覧を更新できます。'))
         kind = self.recipe.currentData()
         self.description.setText(next(note for key, _, note in RECIPES if key == kind))
         button = self.trigger.currentData() == 'BUTTON'
@@ -101,7 +126,8 @@ class SelectorMethodDialog(QDialog):
             trigger=self.trigger.currentData(), button_label=self.button_label.text(), refresh=self.refresh.isChecked(),
             report_name=self.report_name.isChecked(), report_type=self.report_type.isChecked(),
             report_owner=self.report_owner.isChecked(), custom_body=self.custom_body.toPlainText(),
-            replace_existing=self.replace_existing.isChecked())
+            replace_existing=self.replace_existing.isChecked(), database=self.database.currentData(),
+            selection_mode=self.selection_mode.currentData())
 
     def update_preview(self, *_):
         if self.loading: return

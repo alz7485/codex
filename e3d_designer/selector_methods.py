@@ -35,6 +35,8 @@ class SelectorMethodSpec:
     report_owner: bool = False
     custom_body: str = ''
     replace_existing: bool = False
+    database: str | None = None
+    selection_mode: str | None = None
 
     def build(self, form, selector_index):
         """Return a new form; errors never mutate the input or its history."""
@@ -46,8 +48,10 @@ class SelectorMethodSpec:
         if form.program_mode == 'SOURCE':
             raise ValueError('「取り込みコード」で表示プログラムを自動生成へ変更してから追加してください。')
         draft = copy.deepcopy(form)
-        draft.pml()
         selector = draft.gadgets[selector_index]
+        if self.database is not None: selector.database = self.database
+        if self.selection_mode is not None: selector.selection_mode = self.selection_mode
+        draft.pml()
         if self.recipe not in {key for key, _, _ in RECIPES} or self.trigger not in ('BUTTON', 'SELECTION'):
             raise ValueError('処理または実行方法が不正です。')
         if not IDENTIFIER.fullmatch(self.method_name):

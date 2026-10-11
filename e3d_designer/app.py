@@ -969,7 +969,7 @@ class Window(QMainWindow):
         self.view_code.setPlaceholderText('LIMITS AUTO など。VIEW の外枠・EXIT は不要')
         self.prop_layout.addRow('VIEW 内の追加 PML', self.view_code)
         self.view_code.textChanged.connect(self.update_gadget)
-        self.container_hint = QLabel('外部 DLL が必要です。未設定時は DEFAULT で Control を接続してください。')
+        self.container_hint = QLabel('簡単な作成は「その他 → .NET部品を簡単作成」から用途を選んでください。接続先のDLLはE3D側に必要です。')
         self.container_hint.setWordWrap(True); self.prop_layout.addRow(self.container_hint)
         self.net_setup_button=QPushButton('NET初期化コードを編集…')
         self.net_setup_button.clicked.connect(self.edit_net_setup)
