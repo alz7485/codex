@@ -41,7 +41,7 @@ class ExplorerTests(unittest.TestCase):
         self.assertEqual(self.w.palette_panel.width(),self.w.view.width())
         self.assertTrue(all(b.isVisible() and b.height()<=35 for b in self.w.palette_buttons.values()))
         self.assertEqual(self.w.palette_panel._columns,7)
-        self.assertLessEqual(self.w.palette_panel.height(),90)
+        self.assertLessEqual(self.w.palette_panel.height(),115)
         self.node('Group').setExpanded(False);self.w.refresh();self.assertFalse(self.node('Group').isExpanded())
         self.w.objects.setCurrentItem(self.w.objects.root);self.app.processEvents();self.assertIsNone(self.w.selected)
         self.assertEqual(self.w.selection_stack.currentIndex(),0)

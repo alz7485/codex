@@ -5,13 +5,15 @@ from PySide6.QtGui import QAction,QActionGroup
 from PySide6.QtWidgets import QWidget,QToolButton,QMenu,QGridLayout,QLayout,QSizePolicy
 from .palette_icons import palette_icon
 
-BUTTON_HEIGHT,SPACING,PADDING,MENU_WIDTH=35,5,6,22
-BUTTON_STYLE=f'''
+BUTTON_HEIGHT,SPACING,PADDING,MENU_WIDTH=30,5,6,22
+BUTTON_BASE_STYLE=f'''
 QToolButton {{ background: white; color: #273b52; border: 1px solid #d3dce7;
     border-radius: 4px; padding: 1px 2px; font-size: 11px; }}
 QToolButton:hover {{ background: #edf5ff; border-color: #8cafdc; }}
 QToolButton:pressed {{ background: #dcecff; border-color: #608bc2; }}
 QToolButton:focus {{ border-color: #3566a8; }}
+'''
+BUTTON_STYLE=BUTTON_BASE_STYLE+f'''
 QToolButton::menu-button {{ width: {MENU_WIDTH}px; border-left: 1px solid #e2e8f0;
     border-top-right-radius: 4px; border-bottom-right-radius: 4px; }}
 QToolButton::menu-button:hover {{ background: #e4effd; }}
@@ -21,19 +23,23 @@ QToolButton::menu-arrow {{ width: 7px; height: 7px; }}
 
 GROUPS = (
     ('button',(('button','button',None,'🖱️','ボタン'),)),
-    ('option',(('option','option',None,'🔽','プルダウン'),('combo','combo',None,'📝','コンボ'),('image_option','option','PIXMAP','🖼️','画像選択'))),
-    ('frame',(('frame','frame',None,'📁','フレーム'),('tabset','frame','TABSET','🗂️','タブ'))),
-    ('toggle',(('toggle','toggle',None,'☑️','チェック'),('rtoggle','rtoggle',None,'🔘','ラジオ'))),
-    ('line',(('line_horiz','line','HORIZ','📏','横線'),('line_vert','line','VERT','↕️','縦線'))),
-    ('menubar',(('menubar',None,None,'📑','メニューバー'),)),
-    ('container',(('container','container',None,'🧩','コンテナ'),)),
     ('text',(('text','text',None,'✏️','入力'),)),
-    ('paragraph',(('paragraph','paragraph',None,'🏷️','ラベル'),('image','paragraph','PIXMAP','🖼️','画像'))),
-    ('list',(('list','list',None,'📋','リスト'),('textpane','textpane',None,'📄','複数行'))),
+    ('paragraph',(('paragraph','paragraph',None,'🏷️','ラベル'),)),
+    ('image',(('image','paragraph','PIXMAP','🖼️','画像'),('image_option','option','PIXMAP','🖼️','画像選択'))),
+    ('toggle',(('toggle','toggle',None,'☑️','チェック'),)),
+    ('rtoggle',(('rtoggle','rtoggle',None,'🔘','ラジオ'),)),
+    ('line',(('line_horiz','line','HORIZ','📏','横線'),('line_vert','line','VERT','↕️','縦線'))),
+    ('option',(('option','option',None,'🔽','プルダウン'),)),
+    ('combo',(('combo','combo',None,'📝','コンボ'),)),
+    ('list',(('list','list',None,'📋','リスト'),)),
+    ('textpane',(('textpane','textpane',None,'📄','複数行'),)),
+    ('frame',(('frame','frame',None,'📁','フレーム'),)),
+    ('tabset',(('tabset','frame','TABSET','🗂️','タブ'),)),
     ('slider',(('slider_horiz','slider','HORIZONTAL','🎚️','横スライダー'),('slider_vert','slider','VERTICAL','🎚️','縦スライダー'))),
-    ('commandline',(('commandline','commandline',None,'⌨️','コマンド'),('view','view',None,'👁️','ビュー'))),
-    ('selector',(('selector','selector',None,'🗃️','DBセレクタ'),)),
-    ('toolbar',(('toolbar','frame','TOOLBAR','🛠️','ツールバー'),)),
+    ('commandline',(('commandline','commandline',None,'⌨️','コマンド'),)),
+    ('view',(('view','view',None,'👁️','ビュー'),)),
+    ('menubar',(('menubar',None,None,'📑','メニューバー'),)),
+    ('other',(('selector','selector',None,'🗃️','DBセレクタ'),('container','container',None,'🧩','コンテナ'),('toolbar','frame','TOOLBAR','🛠️','ツールバー'))),
 )
 
 
@@ -56,8 +62,8 @@ class GadgetPalette(QWidget):
         self.grid=QGridLayout(self);self.grid.setContentsMargins(PADDING,PADDING,PADDING,PADDING);self.grid.setSpacing(SPACING)
         self.grid.setSizeConstraint(QLayout.SetNoConstraint)
         for group,variants in GROUPS:
-            button=PaletteButton(self);button.setFixedHeight(BUTTON_HEIGHT)
-            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon);button.setIconSize(QSize(18,18))
+            button=PaletteButton(self);button.setFixedHeight(BUTTON_HEIGHT);button.setProperty('paletteGroup',group)
+            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon);button.setIconSize(QSize(16,16))
             button.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Fixed)
             button.setMinimumWidth(0)
             button.setStyleSheet(BUTTON_STYLE)
@@ -66,7 +72,7 @@ class GadgetPalette(QWidget):
             button.setToolTip(title+'：矢印で種類を選択、ボタン本体で同じ種類を追加' if len(variants)>1 else title+'を編集' if group=='menubar' else title+'を追加')
             menu=QMenu(button) if len(variants)>1 else None
             if menu:
-                button.setMenu(menu);button.setPopupMode(QToolButton.MenuButtonPopup)
+                button.setMenu(menu);button.setPopupMode(QToolButton.InstantPopup if group=='other' else QToolButton.MenuButtonPopup)
                 choices=QActionGroup(button);choices.setExclusive(True);self.action_groups.append(choices)
             for key,kind,direction,icon,label in variants:
                 action=QAction(palette_icon(key),label,button);action.setData(key)
@@ -77,13 +83,11 @@ class GadgetPalette(QWidget):
                     action.setCheckable(True);choices.addAction(action);menu.addAction(action)
             button.setDefaultAction(self.actions[variants[0][0]])
             if menu:self.actions[variants[0][0]].setChecked(True)
-            if group=='slider':button.setText('スライダー')
             self.describe_choice(button,button.defaultAction(),menu is not None)
             self.buttons[group]=button
         self.reflow(7)
     def activate(self,button,action,kind,direction):
         button.setDefaultAction(action)
-        if action.data() in ('slider_horiz','slider_vert'):button.setText('スライダー')
         self.describe_choice(button,action,button.menu() is not None)
         if kind is None:self.menuRequested.emit()
         else:self.addRequested.emit(kind,direction)
@@ -93,11 +97,21 @@ class GadgetPalette(QWidget):
         # rather than a toggle, even though its default QAction is checkable.
         button.setCheckable(False)
         label=action.text()
+        group=button.property('paletteGroup')
+        if group in ('image','line','slider','other'):
+            button.setText({'image':'画像','line':'線','slider':'スライダー','other':'その他'}[group])
+        if group=='other':
+            button.setIcon(palette_icon('more'));button.setAccessibleName('その他')
+            operation='DBセレクタ・コンテナ・ツールバーをメニューから選んで追加'
+            button.setAccessibleDescription(operation);button.setToolTip('その他：'+operation);return
         operation='↓ / Alt＋↓ / F4で種類を選択、ボタン本体で同じ種類を追加' if has_menu else 'メニューバーを編集' if action.data()=='menubar' else 'この部品を追加'
         hint=label+'：'+operation
         button.setAccessibleName(label);button.setAccessibleDescription(operation);button.setToolTip(hint)
-    def sizeHint(self):return QSize(754,2*BUTTON_HEIGHT+SPACING+2*PADDING)
-    def minimumSizeHint(self):return QSize(104+2*PADDING,2*BUTTON_HEIGHT+SPACING+2*PADDING)
+    def height_for_columns(self,columns):
+        rows=ceil(len(self.buttons)/columns)
+        return rows*BUTTON_HEIGHT+(rows-1)*SPACING+2*PADDING
+    def sizeHint(self):return QSize(754,self.height_for_columns(7))
+    def minimumSizeHint(self):return QSize(104+2*PADDING,self.height_for_columns(7))
     def resizeEvent(self,event):
         self.reflow(max(1,min(7,(event.size().width()-2*PADDING+SPACING)//104)))
         super().resizeEvent(event)
@@ -108,5 +122,4 @@ class GadgetPalette(QWidget):
         for index,button in enumerate(self.buttons.values()):self.grid.addWidget(button,index//columns,index%columns)
         for column in range(columns):self.grid.setColumnStretch(column,1)
         self._columns=columns
-        rows=ceil(len(self.buttons)/columns)
-        self.setFixedHeight(rows*BUTTON_HEIGHT+(rows-1)*SPACING+2*PADDING)
+        self.setFixedHeight(self.height_for_columns(columns))

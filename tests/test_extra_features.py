@@ -179,8 +179,8 @@ class ExtraGuiTests(unittest.TestCase):
         self.w.undo();self.assertEqual(self.w.form.gadgets[0].popup_menu,'actions')
 
     def test_toolbar_palette_callbacks_role_and_history(self):
-        self.w.palette_buttons['toolbar'].click();self.assertEqual(self.w.form.gadgets,[])
-        self.w.docking.setCurrentIndex(5);self.w.palette_buttons['toolbar'].click()
+        self.w.palette_actions['toolbar'].trigger();self.assertEqual(self.w.form.gadgets,[])
+        self.w.docking.setCurrentIndex(5);self.w.palette_actions['toolbar'].trigger()
         self.assertEqual(self.w.form.gadgets[0].frame_style,'TOOLBAR')
         self.w.add('button');self.assertIn(canonical_pml('MAIN'),self.w.code.toPlainText())
         self.assertFalse(self.w.fields['x'].isEnabled())
@@ -191,7 +191,7 @@ class ExtraGuiTests(unittest.TestCase):
         self.assertEqual(self.w.form.okcall,'SAVEWORK');self.assertIn(canonical_pml("!this.okcall = 'SAVEWORK'"),self.w.code.toPlainText())
 
     def test_toolbar_image_height_and_full_width_noop(self):
-        self.w.docking.setCurrentIndex(5);self.w.palette_buttons['toolbar'].click()
+        self.w.docking.setCurrentIndex(5);self.w.palette_actions['toolbar'].trigger()
         self.w.palette_actions['image_option'].trigger();self.w.form.validate()
         self.assertEqual(self.w.form.gadgets[1].height,78)
         # Simulate a previously saved, full-width image (image dimensions are now read-only).

@@ -1,4 +1,4 @@
-"""Consistent blue outline icons for the gadget palette and its variants."""
+"""Consistent blue outline icons for editor actions and gadget variants."""
 from PySide6.QtCore import Qt,QPointF,QRectF
 from PySide6.QtGui import QPixmap,QPainter,QPen,QColor,QIcon,QPolygonF
 
@@ -9,7 +9,40 @@ def palette_icon(kind):
     if kind in ('line_vert','slider_vert'):
         p.translate(28,0);p.rotate(90)
     kind={'line_horiz':'line','line_vert':'line','slider_horiz':'slider','slider_vert':'slider','combo':'option'}.get(kind,kind)
-    if kind in ('image','image_option'):
+    if kind=='new':
+        p.drawPolyline(QPolygonF([QPointF(18,3),QPointF(5,3),QPointF(5,25),QPointF(23,25),QPointF(23,8),QPointF(18,3),QPointF(18,8),QPointF(23,8)]))
+        p.drawLine(10,16,18,16);p.drawLine(14,12,14,20)
+    elif kind=='open':
+        p.drawPolyline(QPolygonF([QPointF(3,21),QPointF(3,6),QPointF(11,6),QPointF(14,9),QPointF(24,9),QPointF(24,12)]))
+        p.drawPolygon(QPolygonF([QPointF(3,23),QPointF(7,12),QPointF(26,12),QPointF(22,23)]))
+    elif kind=='save':
+        p.drawPolygon(QPolygonF([QPointF(4,3),QPointF(21,3),QPointF(25,7),QPointF(25,25),QPointF(4,25)]))
+        p.drawRect(QRectF(9,3,10,8));p.drawRect(QRectF(9,17,11,8));p.drawLine(16,5,16,9)
+    elif kind=='export':
+        p.drawPolyline(QPolygonF([QPointF(12,4),QPointF(5,4),QPointF(5,24),QPointF(22,24),QPointF(22,18)]))
+        p.drawLine(12,14,24,4);p.drawPolyline(QPolygonF([QPointF(17,4),QPointF(24,4),QPointF(24,11)]))
+    elif kind in ('undo','redo'):
+        if kind=='redo':p.translate(28,0);p.scale(-1,1)
+        p.drawPolyline(QPolygonF([QPointF(10,5),QPointF(4,11),QPointF(10,17)]))
+        p.drawLine(4,11,17,11);p.drawArc(QRectF(12,11,12,12),-90*16,180*16)
+        p.drawLine(12,23,18,23)
+    elif kind=='code':
+        p.drawPolyline(QPolygonF([QPointF(9,7),QPointF(3,14),QPointF(9,21)]))
+        p.drawPolyline(QPolygonF([QPointF(19,7),QPointF(25,14),QPointF(19,21)]))
+        p.drawLine(16,5,12,23)
+    elif kind=='preview':
+        p.drawRoundedRect(QRectF(3,4,22,16),2,2);p.drawLine(14,20,14,24);p.drawLine(8,24,20,24)
+        p.drawPolygon(QPolygonF([QPointF(11,8),QPointF(18,12),QPointF(11,16)]))
+    elif kind=='more':
+        p.setBrush(QColor('#3566a8'))
+        for x in (5,12,19):p.drawEllipse(QRectF(x,12,4,4))
+    elif kind=='center':
+        p.drawEllipse(QRectF(8,8,12,12))
+        p.drawLine(14,3,14,10);p.drawLine(14,18,14,25)
+        p.drawLine(3,14,10,14);p.drawLine(18,14,25,14)
+    elif kind=='recent':
+        p.drawEllipse(QRectF(4,4,20,20));p.drawLine(14,7,14,14);p.drawLine(14,14,19,17)
+    elif kind in ('image','image_option'):
         p.drawRect(QRectF(3,4,22,20));p.drawEllipse(QRectF(17,7,4,4))
         p.drawPolyline(QPolygonF([QPointF(5,21),QPointF(11,13),QPointF(16,18),QPointF(20,15),QPointF(24,21)]))
     elif kind=='rtoggle':

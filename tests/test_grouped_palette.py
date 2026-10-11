@@ -21,12 +21,16 @@ class GroupedPaletteTests(unittest.TestCase):
         self.app.clipboard().clear();self.w.dirty=False;self.w.close();self.app.processEvents();self.temp.cleanup()
     def test_requested_groups_and_canvas_column_layout(self):
         w=self.w
-        groups={'paragraph':['paragraph','image'],'toggle':['toggle','rtoggle'],
-            'option':['option','combo','image_option'],'frame':['frame','tabset'],
+        groups={'image':['image','image_option'],
             'line':['line_horiz','line_vert'],'slider':['slider_horiz','slider_vert'],
-            'list':['list','textpane'],'commandline':['commandline','view']}
-        self.assertEqual(len(w.palette_buttons),14)
+            'other':['selector','container','toolbar']}
+        self.assertEqual(len(w.palette_buttons),18)
+        self.assertEqual(len(w.palette_actions),23)
         for group,keys in groups.items():self.assertEqual([a.data() for a in w.palette_buttons[group].menu().actions()],keys)
+        for group,button in w.palette_buttons.items():
+            if group not in groups:self.assertIsNone(button.menu())
+            self.assertEqual(button.height(),30)
+        self.assertEqual(w.palette_panel.grid.rowCount(),3)
         self.assertTrue(w.canvas_panel.isAncestorOf(w.palette_panel))
         self.assertEqual(w.palette_panel.width(),w.view.width())
         self.assertLess(w.library_panel.mapTo(w,w.library_panel.rect().topLeft()).y(),w.view.mapTo(w,w.view.rect().topLeft()).y())
@@ -64,14 +68,15 @@ class GroupedPaletteTests(unittest.TestCase):
         palette.menuRequested.connect(lambda:menus.append(True))
         expected={'image':('paragraph','PIXMAP'),'rtoggle':('rtoggle',None),'combo':('combo',None),
             'image_option':('option','PIXMAP'),'tabset':('frame','TABSET'),'line_vert':('line','VERT'),
-            'slider_vert':('slider','VERTICAL'),'textpane':('textpane',None),'view':('view',None)}
+            'slider_vert':('slider','VERTICAL'),'textpane':('textpane',None),'view':('view',None),
+            'selector':('selector',None),'container':('container',None),'toolbar':('frame','TOOLBAR')}
         for key,pair in expected.items():
             palette.actions[key].trigger();self.assertEqual(received[-1],pair)
         self.assertEqual(len(received),len(expected));palette.actions['menubar'].trigger();self.assertEqual(menus,[True])
         palette.close();palette.deleteLater()
 
     def test_current_variant_is_checked_named_and_repeat_keeps_it_selected(self):
-        for group,key,label in (('option','combo','コンボ'),('toggle','rtoggle','ラジオ'),('slider','slider_vert','縦スライダー')):
+        for group,key,label in (('image','image_option','画像選択'),('line','line_vert','縦線'),('slider','slider_vert','縦スライダー')):
             with self.subTest(group=group):
                 button=self.w.palette_buttons[group];action=self.w.palette_actions[key]
                 action.trigger()
@@ -83,6 +88,7 @@ class GroupedPaletteTests(unittest.TestCase):
                 QTest.mouseClick(button,Qt.LeftButton,Qt.NoModifier,QPoint(10,button.height()//2));self.app.processEvents()
                 self.assertEqual(len(self.w.form.gadgets),count+1)
                 self.assertTrue(action.isChecked());self.assertIs(button.defaultAction(),action)
+                self.assertEqual(button.text(),{'image':'画像','line':'線','slider':'スライダー'}[group])
                 self.assertFalse(button.isCheckable())
 
     def test_keyboard_can_open_menu_select_and_repeat_without_extra_activation(self):

@@ -72,6 +72,18 @@ class OutputSettingsTests(unittest.TestCase):
         path=self.folder/'bad.json';path.write_text('not JSON')
         settings=Settings(path);self.assertEqual(settings.output_folder,application_directory());self.assertTrue(settings.error)
 
+    def test_invalid_recent_files_does_not_partially_apply_folder_settings(self):
+        path=self.folder/'bad.json'
+        path.write_text(json.dumps({'version':1,'output_folder':str(self.folder),
+            'macro_folder':str(self.folder),'recent_files':[None]}),encoding='utf-8')
+        before=path.read_bytes()
+        settings=Settings(path)
+        self.assertTrue(settings.error)
+        self.assertEqual(settings.macro_folder,application_directory())
+        self.assertEqual(settings.output_folder,application_directory())
+        self.assertEqual(settings.recent_files,[])
+        self.assertEqual(path.read_bytes(),before)
+
     def test_comments_edit_export_copy_and_undo(self):
         w=self.window;w.add('button');w.gadget_comment.setPlainText('用途: ポンプの起動\n-- 注意: test Mixed Case')
         self.assertEqual(w.form.gadgets[0].comment,'用途: ポンプの起動\n-- 注意: test Mixed Case')

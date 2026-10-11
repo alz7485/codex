@@ -645,6 +645,8 @@ class Window(QMainWindow):
         recent_button=QToolButton();recent_button.setText('最近の設計')
         recent_button.setMenu(self.recent_menu);recent_button.setPopupMode(QToolButton.InstantPopup)
         toolbar.addWidget(recent_button)
+        from .editor_chrome import style_header
+        style_header(toolbar, self.menuBar(), recent_button)
         file_menu.addMenu(self.recent_menu)
         recovery_action=file_menu.addAction('作業を復元');recovery_action.triggered.connect(self.recover_work)
         self.refresh_recent_menu()
@@ -686,7 +688,7 @@ class Window(QMainWindow):
         preview_layout = QVBoxLayout(preview); preview_layout.setContentsMargins(0,0,0,0)
         preview_layout.addWidget(self.palette_panel)
         drag_controls=QWidget();drag_row=QHBoxLayout(drag_controls)
-        drag_row.setContentsMargins(6,0,6,0);drag_row.setSpacing(6)
+        drag_row.setContentsMargins(6,4,6,4);drag_row.setSpacing(5)
         drag_row.addWidget(QLabel('移動量'))
         self.drag_step_combo=QComboBox();self.drag_step_combo.setObjectName('dragStepPresets')
         for value in (.1,.2,.5,1.,2.,5.,10.):self.drag_step_combo.addItem(f'{value:.1f}',value)
@@ -718,14 +720,7 @@ class Window(QMainWindow):
         self.view.setToolTip('中ボタンドラッグ／Space＋左ドラッグでパン。Ctrl＋ホイールで拡大縮小。部品の座標は変わりません。')
         self.view.zoomChanged.connect(self.sync_zoom_text)
         for widget in (self.zoom_out_button,self.zoom_in_button,self.zoom_text,self.zoom_reset_button,self.pan_center_button):drag_row.addWidget(widget)
-        self.code_display_button=QPushButton('📝 コード')
-        self.code_display_button.setToolTip('生成コードを別ウィンドウに表示（Ctrl＋Shift＋C）')
-        self.code_display_button.clicked.connect(self.show_code)
-        self.runtime_preview_button=QPushButton('🖥️ プレビュー')
-        self.runtime_preview_button.setToolTip('実機仕様の参考表示を開きます。表示中も手前へ戻します（F6で表示切り替え）。')
-        self.runtime_preview_button.clicked.connect(self.show_runtime_preview)
-        drag_row.addWidget(self.code_display_button);drag_row.addWidget(self.runtime_preview_button)
-        self.bulk_edit_button=QPushButton('📋 一覧編集')
+        self.bulk_edit_button=QPushButton('一覧編集')
         self.bulk_edit_button.setToolTip('部品タイプで絞り込み、項目を切り替えて個別入力・一括設定（Ctrl＋Shift＋B）')
         self.bulk_edit_button.clicked.connect(self.edit_bulk_properties)
         drag_row.addWidget(self.bulk_edit_button)
@@ -733,6 +728,13 @@ class Window(QMainWindow):
         self.display_font_button=QPushButton('表示フォント…');self.display_font_button.clicked.connect(self.choose_display_font)
         self.display_font_button.setToolTip('編集画面と参考表示の表示フォントを設定します。')
         drag_row.addWidget(self.display_font_button)
+        from .editor_chrome import style_canvas_controls
+        style_canvas_controls(drag_controls, (
+            (self.zoom_out_button, None), (self.zoom_in_button, None),
+            (self.zoom_reset_button, None), (self.pan_center_button, 'center'),
+            (self.bulk_edit_button, 'list'), (self.display_font_button, 'paragraph'),
+        ))
+        for widget in (self.drag_step_combo, self.drag_step_spin, self.zoom_text):widget.setFixedHeight(28)
         preview_layout.addWidget(drag_controls)
         self.preview_menu_bar = QMenuBar(); self.preview_menu_bar.setNativeMenuBar(False)
         self.preview_menu_frame=QFrame();self.preview_menu_frame.setObjectName("previewMenuFrame")

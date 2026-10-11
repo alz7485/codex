@@ -23,9 +23,9 @@ class Settings:
                 macro=data.get('macro_folder',str(self.app_directory))
                 if not isinstance(macro,str):raise ValueError('マクロフォルダの設定が不正です。')
                 macro=Path(macro)
-                self.macro_folder=macro if macro.is_absolute() else self.app_directory/macro
                 recent=data.get('recent_files',[])
                 if not isinstance(recent,list) or any(not isinstance(item,str) for item in recent):raise ValueError('最近の設計の設定が不正です。')
+                self.macro_folder=macro if macro.is_absolute() else self.app_directory/macro
                 self.output_folder=folder if folder.is_absolute() else self.app_directory/folder
                 self.recent_files=recent[:10]
             except (OSError,ValueError,TypeError,AttributeError) as error:self.error=str(error)

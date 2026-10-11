@@ -38,8 +38,10 @@ class MultiSelectionTests(unittest.TestCase):
         action=next(a for a in popup.actions() if a.text()=='子を含めてすべて選択')
         QTest.mouseClick(popup,Qt.LeftButton,Qt.NoModifier,popup.actionGeometry(action).center())
         self.app.processEvents()
-    def test_button_order_in_two_rows(self):
-        expected=['button','option','frame','toggle','line','menubar','container','text','paragraph','list','slider','commandline','selector','toolbar']
+    def test_button_order_in_three_rows(self):
+        expected=['button','text','paragraph','image','toggle','rtoggle','line',
+            'option','combo','list','textpane','frame','tabset','slider',
+            'commandline','view','menubar','other']
         self.assertEqual(list(self.w.palette_buttons),expected)
         self.assertEqual(self.w.palette_panel._columns,7)
     def test_canvas_ctrl_selection_tree_sync_and_disabled_inspector(self):
