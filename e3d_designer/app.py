@@ -651,6 +651,7 @@ class Window(QMainWindow):
         recovery_action=file_menu.addAction('作業を復元');recovery_action.triggered.connect(self.recover_work)
         self.refresh_recent_menu()
         root = QWidget(); outer = QVBoxLayout(root)
+        margins=outer.contentsMargins();outer.setContentsMargins(margins.left(),0,margins.right(),margins.bottom())
         columns = QSplitter();self.columns=columns
         left = QWidget();self.library_panel=left;ll = QVBoxLayout(left)
         ll.addWidget(QLabel('ツリーエクスプローラ'))
@@ -686,9 +687,10 @@ class Window(QMainWindow):
         self.view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         preview = QWidget();self.canvas_panel=preview
         preview_layout = QVBoxLayout(preview); preview_layout.setContentsMargins(0,0,0,0)
+        preview_layout.setSpacing(2)
         preview_layout.addWidget(self.palette_panel)
         drag_controls=QWidget();drag_row=QHBoxLayout(drag_controls)
-        drag_row.setContentsMargins(6,4,6,4);drag_row.setSpacing(5)
+        drag_row.setContentsMargins(6,2,6,2);drag_row.setSpacing(5)
         drag_row.addWidget(QLabel('移動量'))
         self.drag_step_combo=QComboBox();self.drag_step_combo.setObjectName('dragStepPresets')
         for value in (.1,.2,.5,1.,2.,5.,10.):self.drag_step_combo.addItem(f'{value:.1f}',value)
@@ -2271,7 +2273,7 @@ class Window(QMainWindow):
 
     def update_scene_rect(self):
         rect=QRectF(-12,-30,self.form.width*SX+24,self.form.height*SY+42)
-        if hasattr(self,'form_item'):rect=rect.united(self.form_item.boundingRect().adjusted(-12,-12,12,12))
+        if hasattr(self,'form_item'):rect=rect.united(self.form_item.boundingRect().adjusted(-12,0,12,12))
         for item in self.scene.selectedItems():
             if isinstance(item,Item) and item.isVisible():rect=rect.united(item.sceneBoundingRect().adjusted(-12,-12,12,12))
         self.scene.setSceneRect(rect)

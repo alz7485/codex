@@ -5,7 +5,7 @@ from PySide6.QtGui import QAction,QActionGroup
 from PySide6.QtWidgets import QWidget,QToolButton,QMenu,QGridLayout,QLayout,QSizePolicy
 from .palette_icons import palette_icon
 
-BUTTON_HEIGHT,SPACING,PADDING,MENU_WIDTH=30,5,6,22
+BUTTON_HEIGHT,BUTTON_WIDTH,SPACING,PADDING,MENU_WIDTH,COLUMNS=30,92,2,3,18,8
 BUTTON_BASE_STYLE=f'''
 QToolButton {{ background: white; color: #273b52; border: 1px solid #d3dce7;
     border-radius: 4px; padding: 1px 2px; font-size: 11px; }}
@@ -29,12 +29,10 @@ GROUPS = (
     ('toggle',(('toggle','toggle',None,'☑️','チェック'),)),
     ('rtoggle',(('rtoggle','rtoggle',None,'🔘','ラジオ'),)),
     ('line',(('line_horiz','line','HORIZ','📏','横線'),('line_vert','line','VERT','↕️','縦線'))),
-    ('option',(('option','option',None,'🔽','プルダウン'),)),
-    ('combo',(('combo','combo',None,'📝','コンボ'),)),
+    ('option',(('option','option',None,'🔽','プルダウン'),('combo','combo',None,'📝','コンボ'))),
     ('list',(('list','list',None,'📋','リスト'),)),
     ('textpane',(('textpane','textpane',None,'📄','複数行'),)),
-    ('frame',(('frame','frame',None,'📁','フレーム'),)),
-    ('tabset',(('tabset','frame','TABSET','🗂️','タブ'),)),
+    ('frame',(('frame','frame',None,'📁','フレーム'),('tabset','frame','TABSET','🗂️','タブ'))),
     ('slider',(('slider_horiz','slider','HORIZONTAL','🎚️','横スライダー'),('slider_vert','slider','VERTICAL','🎚️','縦スライダー'))),
     ('commandline',(('commandline','commandline',None,'⌨️','コマンド'),)),
     ('view',(('view','view',None,'👁️','ビュー'),)),
@@ -60,12 +58,13 @@ class GadgetPalette(QWidget):
         self.setStyleSheet('QWidget#gadgetPalette { background: #f5f8fc; border: 1px solid #dce4ef; border-radius: 5px; }')
         self.buttons={};self.actions={};self._columns=0;self.action_groups=[]
         self.grid=QGridLayout(self);self.grid.setContentsMargins(PADDING,PADDING,PADDING,PADDING);self.grid.setSpacing(SPACING)
+        self.grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.grid.setSizeConstraint(QLayout.SetNoConstraint)
         for group,variants in GROUPS:
             button=PaletteButton(self);button.setFixedHeight(BUTTON_HEIGHT);button.setProperty('paletteGroup',group)
-            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon);button.setIconSize(QSize(16,16))
-            button.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Fixed)
-            button.setMinimumWidth(0)
+            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon);button.setIconSize(QSize(14,14))
+            button.setSizePolicy(QSizePolicy.Fixed,QSizePolicy.Fixed)
+            button.setFixedWidth(BUTTON_WIDTH)
             button.setStyleSheet(BUTTON_STYLE)
             title=' / '.join(entry[4] for entry in variants)
             button.setAccessibleName(title)
@@ -85,7 +84,7 @@ class GadgetPalette(QWidget):
             if menu:self.actions[variants[0][0]].setChecked(True)
             self.describe_choice(button,button.defaultAction(),menu is not None)
             self.buttons[group]=button
-        self.reflow(7)
+        self.reflow(COLUMNS)
     def activate(self,button,action,kind,direction):
         button.setDefaultAction(action)
         self.describe_choice(button,action,button.menu() is not None)
@@ -110,16 +109,15 @@ class GadgetPalette(QWidget):
     def height_for_columns(self,columns):
         rows=ceil(len(self.buttons)/columns)
         return rows*BUTTON_HEIGHT+(rows-1)*SPACING+2*PADDING
-    def sizeHint(self):return QSize(754,self.height_for_columns(7))
-    def minimumSizeHint(self):return QSize(104+2*PADDING,self.height_for_columns(7))
+    def sizeHint(self):return QSize(COLUMNS*BUTTON_WIDTH+(COLUMNS-1)*SPACING+2*PADDING,self.height_for_columns(COLUMNS))
+    def minimumSizeHint(self):return QSize(BUTTON_WIDTH+2*PADDING,self.height_for_columns(COLUMNS))
     def resizeEvent(self,event):
-        self.reflow(max(1,min(7,(event.size().width()-2*PADDING+SPACING)//104)))
+        self.reflow(max(1,min(COLUMNS,(event.size().width()-2*PADDING+SPACING)//(BUTTON_WIDTH+SPACING))))
         super().resizeEvent(event)
     def reflow(self,columns):
         if columns==self._columns:return
         for index in range(self.grid.count()-1,-1,-1):self.grid.takeAt(index)
-        for column in range(max(7,self._columns)):self.grid.setColumnStretch(column,0)
+        for column in range(max(COLUMNS,self._columns)):self.grid.setColumnStretch(column,0)
         for index,button in enumerate(self.buttons.values()):self.grid.addWidget(button,index//columns,index%columns)
-        for column in range(columns):self.grid.setColumnStretch(column,1)
         self._columns=columns
         self.setFixedHeight(self.height_for_columns(columns))

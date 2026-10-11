@@ -1,7 +1,7 @@
 """Match the main menus and toolbar to the gadget palette."""
 from pathlib import Path
 from PySide6.QtCore import Qt, QSize
-from .palette import BUTTON_BASE_STYLE, BUTTON_STYLE, SPACING
+from .palette import BUTTON_BASE_STYLE, BUTTON_STYLE
 from .palette_icons import palette_icon
 
 
@@ -15,14 +15,14 @@ ACTION_ICONS = {
 def style_header(toolbar, menu_bar, recent_button):
     toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
     toolbar.setIconSize(QSize(18, 18))
-    toolbar.setStyleSheet(BUTTON_STYLE + f'''
-QToolBar {{ background: #f5f8fc; border: 1px solid #dce4ef;
-    padding: 6px; spacing: {SPACING}px; }}
-QToolButton {{ padding: 0px 9px; min-height: 33px; }}
-QToolButton:checked {{ background: #dcecff; border-color: #608bc2; }}
-QToolButton:disabled {{ background: #f5f8fc; color: #8b95a3; border-color: #e2e8f0; }}
-QToolButton::menu-indicator {{ subcontrol-origin: padding;
-    subcontrol-position: right center; right: 4px; }}
+    toolbar.setStyleSheet(BUTTON_STYLE + '''
+QToolBar { background: #f5f8fc; border: 1px solid #dce4ef;
+    padding: 3px 6px; spacing: 5px; }
+QToolButton { padding: 0px 9px; min-height: 33px; }
+QToolButton:checked { background: #dcecff; border-color: #608bc2; }
+QToolButton:disabled { background: #f5f8fc; color: #8b95a3; border-color: #e2e8f0; }
+QToolButton::menu-indicator { subcontrol-origin: padding;
+    subcontrol-position: right center; right: 4px; }
 ''')
     for action in toolbar.actions():
         kind = ACTION_ICONS.get(action.text())
@@ -32,13 +32,7 @@ QToolButton::menu-indicator {{ subcontrol-origin: padding;
     recent_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
     recent_button.setStyleSheet('QToolButton { padding-right: 20px; }')
     recent_button.setToolTip('最近開いた設計を選んで開きます。')
-    menu_bar.setStyleSheet('''
-QMenuBar { background: #f5f8fc; color: #273b52; padding: 5px 6px; spacing: 5px; }
-QMenuBar::item { background: white; border: 1px solid #d3dce7;
-    border-radius: 4px; padding: 7px 12px; font-size: 11px; }
-QMenuBar::item:selected { background: #edf5ff; border-color: #8cafdc; }
-QMenuBar::item:pressed { background: #dcecff; border-color: #608bc2; }
-''')
+    menu_bar.setStyleSheet('')
 
 
 def style_canvas_controls(controls, buttons):

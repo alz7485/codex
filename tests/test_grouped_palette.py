@@ -21,16 +21,17 @@ class GroupedPaletteTests(unittest.TestCase):
         self.app.clipboard().clear();self.w.dirty=False;self.w.close();self.app.processEvents();self.temp.cleanup()
     def test_requested_groups_and_canvas_column_layout(self):
         w=self.w
-        groups={'image':['image','image_option'],
+        groups={'image':['image','image_option'],'option':['option','combo'],'frame':['frame','tabset'],
             'line':['line_horiz','line_vert'],'slider':['slider_horiz','slider_vert'],
             'other':['selector','container','toolbar']}
-        self.assertEqual(len(w.palette_buttons),18)
+        self.assertEqual(len(w.palette_buttons),16)
         self.assertEqual(len(w.palette_actions),23)
         for group,keys in groups.items():self.assertEqual([a.data() for a in w.palette_buttons[group].menu().actions()],keys)
         for group,button in w.palette_buttons.items():
             if group not in groups:self.assertIsNone(button.menu())
             self.assertEqual(button.height(),30)
-        self.assertEqual(w.palette_panel.grid.rowCount(),3)
+            self.assertEqual(button.width(),92)
+        self.assertEqual(w.palette_panel.grid.rowCount(),2)
         self.assertTrue(w.canvas_panel.isAncestorOf(w.palette_panel))
         self.assertEqual(w.palette_panel.width(),w.view.width())
         self.assertLess(w.library_panel.mapTo(w,w.library_panel.rect().topLeft()).y(),w.view.mapTo(w,w.view.rect().topLeft()).y())
@@ -53,8 +54,8 @@ class GroupedPaletteTests(unittest.TestCase):
             if menu.isVisible():QTest.mouseClick(menu,Qt.LeftButton,Qt.NoModifier,menu.actionGeometry(action).center())
             menu.close()
         QTimer.singleShot(50,choose)
-        # 18px from the right is inside the expanded arrow area.
-        QTest.mouseClick(button,Qt.LeftButton,Qt.NoModifier,QPoint(button.width()-18,button.height()//2))
+        # 12px from the right is inside the compact arrow area.
+        QTest.mouseClick(button,Qt.LeftButton,Qt.NoModifier,QPoint(button.width()-12,button.height()//2))
         self.app.processEvents()
         QTest.qWait(80);self.app.processEvents()
         self.assertEqual(observations,[(True,0)])
@@ -92,7 +93,7 @@ class GroupedPaletteTests(unittest.TestCase):
                 self.assertFalse(button.isCheckable())
 
     def test_keyboard_can_open_menu_select_and_repeat_without_extra_activation(self):
-        palette=GadgetPalette();palette.resize(754,palette.height());palette.show();self.app.processEvents()
+        palette=GadgetPalette();palette.resize(756,palette.height());palette.show();self.app.processEvents()
         received=[];observations=[];palette.addRequested.connect(lambda kind,direction:received.append((kind,direction)))
         button=palette.buttons['line'];menu=button.menu();action=palette.actions['line_vert']
         def choose():
