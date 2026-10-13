@@ -1,7 +1,7 @@
 # FormDesigner 利用用パッケージ
 
 AVEVA E3D向けのPMLフォームを設計する日本語のデスクトップアプリです。
-監査済みの `2ef827e` を基に、アプリ・マニュアル・サンプル・Windows EXE作成手順をまとめています。
+更新版 `e63284f` を基に、アプリ・マニュアル・サンプル・Windows EXE作成手順をまとめています。
 
 このZIPはPython版です。起動にはPython 3.12と依存パッケージが必要です。
 ビルド済みWindows EXEは含みません。E3D 4.0実機での互換性は未検証です。
@@ -60,4 +60,4 @@ Windows EXEのビルドはこのクラウド環境では未検証です。
 配布フォルダーの構成を保って使用してください。
 使用者ごとの `settings.json` や復元データは、起動後にアプリが作成します。
 
-元のソース版: https://github.com/alz7485/codex/tree/2ef827e153d6fd8d38b12ddc321015ddfc92902c
+元のソース版: https://github.com/alz7485/codex/tree/e63284fc5b64f76f589b8c2e7201f39995de3ff4
