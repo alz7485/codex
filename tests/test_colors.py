@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from PySide6.QtWidgets import QApplication,QDialog
 from PySide6.QtGui import QColor,QImage,QPainter
-from e3d_designer.colors import PREVIEW_COLORS,preview_color,foreground_color
+from e3d_designer.colors import PREVIEW_COLORS,preview_color,foreground_color,_calibrated_palette,_photo_palette
 from e3d_designer.color_picker import ColorPicker
 from e3d_designer.app import Window,Item
 from e3d_designer.model import Form,Gadget
@@ -29,6 +29,19 @@ class ColorTests(unittest.TestCase):
         dialog.choose('');self.assertEqual(dialog.value,'')
         dialog.close()
         dialog=ColorPicker(None,'2');dialog.reject();self.assertEqual(dialog.value,'2');dialog.close()
+
+    def test_exact_eight_bit_rgb_and_whole_palette_correction(self):
+        expected={1:'#424242',2:'#500000',3:'#5d3c00',4:'#505000',5:'#005000',6:'#005d5d'}
+        for number,color in expected.items():self.assertEqual(preview_color(number),color)
+        photo=_photo_palette()
+        self.assertTrue(all(PREVIEW_COLORS[number]!=photo[number] for number in range(7,321)))
+        neutrals=_calibrated_palette({**photo,321:'#000000',322:'#ffffff',323:'#808080'})
+        self.assertEqual(neutrals[321],'#000000')
+        for number in (322,323):
+            color=neutrals[number];self.assertEqual(color[1:3],color[3:5]);self.assertEqual(color[3:5],color[5:7])
+        dialog=ColorPicker(None,'1')
+        self.assertIn('指定RGB',dialog.buttons[1].toolTip());self.assertIn('(66, 66, 66)',dialog.buttons[1].toolTip())
+        self.assertIn('近似色',dialog.buttons[7].toolTip());dialog.close()
 
     def test_button_background_is_rendered_and_number_exported(self):
         gadget=Gadget(background='2');form=Form(gadgets=[gadget]);item=Item(gadget,form)

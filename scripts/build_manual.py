@@ -98,7 +98,8 @@ def content(parsed, pdf=False, image_width=620):
                 from PySide6.QtGui import QImage
                 picture = QImage(str(path)); width = min(image_width, picture.width())
                 height = round(width*picture.height()/picture.width())
-                output.append(f'<p><img src="{path.as_uri()}" width="{width}" height="{height}"><br>{html.escape(label)}</p>')
+                page_break=' style="page-break-before: always"' if height>200 else ''
+                output.append(f'<p{page_break}><img src="{path.as_uri()}" width="{width}" height="{height}"><br>{html.escape(label)}</p>')
             else:
                 encoded = base64.b64encode(path.read_bytes()).decode()
                 output.append(f'<figure><img src="data:image/png;base64,{encoded}" alt="{html.escape(label,quote=True)}"><figcaption>{html.escape(label)}</figcaption></figure>')
